@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.3';
+const APP_VERSION = 'v2.8.4';
 
 const KAEFIG_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block"><line x1="3" y1="0" x2="3" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="7" y1="0" x2="7" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="11" y1="0" x2="11" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="0" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.6"/><line x1="0" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="1.6"/></svg>`;
 const OXAL_BLOCK_ICON = `<img class="oxblock-icon" src="./icons/varroa_block.png" alt="Blockbehandlung">`;
@@ -808,6 +808,24 @@ backBtn.addEventListener('click',()=>{
   if(['colonies','settings','archive','all','honey','fuetterung','gewicht','lastentries','varroacount','varroahistory','sirupcalc','fuetterungsvorschlag'].includes(nav.view)) go('apiaries');
 });
 
+/* Update-Hinweis im Header (nur Pi-Betrieb + wenn eine neuere Version
+   vorliegt) - klein gehalten, damit normale Nutzer die Update-Seite (Port
+   80) nicht extra ansteuern muessen, um von einem verfuegbaren Update zu
+   erfahren. */
+let piUpdateAvailable=false;
+function updatePiUpdateBadge(){
+  const el=document.getElementById('update-badge-tag');
+  if(el) el.style.display=piUpdateAvailable?'':'none';
+}
+(async()=>{
+  try{
+    const r=await fetch('./api/platform');
+    const d=await r.json();
+    piUpdateAvailable=!!(d && d.pi && d.updateAvailable);
+    updatePiUpdateBadge();
+  }catch(_){}
+})();
+
 /* Header mit Version */
 function setHeader(title,showBack){
   titleEl.textContent=title;
@@ -820,6 +838,18 @@ function setHeader(title,showBack){
     titleEl.parentNode.insertBefore(vEl,titleEl.nextSibling);
   }
   vEl.textContent=APP_VERSION;
+  let updEl=document.getElementById('update-badge-tag');
+  if(!updEl){
+    updEl=document.createElement('span');
+    updEl.id='update-badge-tag';
+    updEl.className='update-badge-tag';
+    updEl.textContent='🔄 Update';
+    updEl.title='Update verfügbar – antippen für Details';
+    updEl.style.display='none';
+    updEl.onclick=()=>{ window.location.href=location.protocol+'//'+location.hostname+'/update'; };
+    vEl.parentNode.insertBefore(updEl,vEl.nextSibling);
+  }
+  updatePiUpdateBadge();
   /* Datum oben rechts – nur auf Startseite */
   let dateEl=document.getElementById('header-date');
   if(!dateEl){

@@ -302,6 +302,11 @@ textarea.inp{resize:vertical}
 .app-version-tag{font-size:.7rem;font-weight:400;color:var(--ink-soft);
   opacity:.7;margin-left:.4rem;vertical-align:middle}
 
+/* Update-Hinweis neben Titel (nur Pi-Betrieb, wenn Update verfuegbar) */
+.update-badge-tag{font-size:.7rem;font-weight:600;color:#fff;background:var(--watch);
+  border-radius:999px;padding:.15rem .5rem;margin-left:.4rem;vertical-align:middle;
+  cursor:pointer;white-space:nowrap}
+
 /* Königin-Nr ohne Farbe */
 .queen-nr-plain{color:var(--ink-soft);font-size:.85rem}
 

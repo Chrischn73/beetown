@@ -20,6 +20,10 @@ DB_PATH    = os.path.join(DATA_DIR, "app.db")
 # vollstaendige Backup-Seite (Datenbank+Fotos) statt der einfachen
 # JSON-Sicherung zu verweisen.
 PI_MARKER_DIR = "/opt/imkerei-wifi-setup"
+# Wird vom taeglichen Update-Check-Timer (imkerei-wifi-setup) geschrieben -
+# hier nur best-effort mitgelesen, um im Frontend einen kleinen Hinweis
+# anzuzeigen, ohne selbst GitHub kontaktieren zu muessen.
+UPDATE_CHECK_STATE_PATH = os.path.join(PI_MARKER_DIR, "update_check.json")
 
 os.makedirs(PHOTO_DIR, exist_ok=True)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
@@ -237,7 +241,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_get(self, path):
         if path=="/api/platform":
-            return self._json({"pi": os.path.isdir(PI_MARKER_DIR)})
+            is_pi=os.path.isdir(PI_MARKER_DIR)
+            update_available=False
+            latest_version=None
+            if is_pi:
+                try:
+                    with open(UPDATE_CHECK_STATE_PATH) as f:
+                        state=json.load(f)
+                    update_available=bool(state.get("update_available"))
+                    latest_version=state.get("latest")
+                except Exception:
+                    pass
+            return self._json({"pi": is_pi, "updateAvailable": update_available, "latestVersion": latest_version})
         if path=="/api/logo":
             if not os.path.isfile(LOGO_PATH): return self._err(404,"Kein Logo")
             with open(LOGO_PATH,"rb") as f: data=f.read()
