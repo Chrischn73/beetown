@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.0';
+const APP_VERSION = 'v2.8.1';
 
 const KAEFIG_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block"><line x1="3" y1="0" x2="3" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="7" y1="0" x2="7" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="11" y1="0" x2="11" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="0" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.6"/><line x1="0" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="1.6"/></svg>`;
 const OXAL_BLOCK_ICON = `<img class="oxblock-icon" src="./icons/varroa_block.png" alt="Blockbehandlung">`;
