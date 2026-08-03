@@ -15,6 +15,11 @@ STATIC_DIR = os.environ.get("IMKEREI_STATIC", os.path.join(BASE, "static"))
 PHOTO_DIR  = os.path.join(DATA_DIR, "photos")
 LOGO_PATH  = os.path.join(DATA_DIR, "logo.jpg")
 DB_PATH    = os.path.join(DATA_DIR, "app.db")
+# Nur bei einer Raspberry-Pi-Installation (setup/install.sh) angelegt - dient
+# als Erkennungsmerkmal fuer /api/platform, um im Frontend auf die dortige
+# vollstaendige Backup-Seite (Datenbank+Fotos) statt der einfachen
+# JSON-Sicherung zu verweisen.
+PI_MARKER_DIR = "/opt/imkerei-wifi-setup"
 
 os.makedirs(PHOTO_DIR, exist_ok=True)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
@@ -231,6 +236,8 @@ class Handler(BaseHTTPRequestHandler):
         with open(full,"rb") as f: self._bytes(f.read(),ct)
 
     def api_get(self, path):
+        if path=="/api/platform":
+            return self._json({"pi": os.path.isdir(PI_MARKER_DIR)})
         if path=="/api/logo":
             if not os.path.isfile(LOGO_PATH): return self._err(404,"Kein Logo")
             with open(LOGO_PATH,"rb") as f: data=f.read()

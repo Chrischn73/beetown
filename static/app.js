@@ -3472,9 +3472,15 @@ async function renderSettings() {
           <input type="checkbox" class="obs-btn-chk" data-key="${k}" checked><span>${esc(l)}</span>
         </label>`).join('')}
       </div>`)}
-    ${settingsSection('datensicherung','Datensicherung',`
-      <a class="btn btn-ghost block" href="./api/backup" download>Backup exportieren (.json)</a>
-      <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>`)}
+    ${settingsSection('datensicherung','Backup',`
+      <div id="backup-json">
+        <a class="btn btn-ghost block" href="./api/backup" download>Backup exportieren (.json)</a>
+        <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>
+      </div>
+      <div id="backup-pi" style="display:none">
+        <p class="muted">Vollständige Sicherung (Datenbank + Fotos, Zeitplan, USB-Stick) läuft über die Setup-Seite des Pi.</p>
+        <a class="btn btn-ghost block" id="backup-pi-link" target="_blank" rel="noopener">📦 Zur Backup-Seite</a>
+      </div>`)}
     ${settingsSection('bereinigen','Daten bereinigen',`
       <button type="button" class="btn btn-danger block" id="btn-clear-fuetterung">Alle Fütterungs-Einträge entfernen</button>
       <button type="button" class="btn btn-danger block" id="btn-clear-honigraeume" style="margin-top:.5rem">Alle Honigräume entfernen</button>
@@ -3488,6 +3494,23 @@ async function renderSettings() {
     if(localStorage.getItem(key)==='1') sec.open=true;
     sec.addEventListener('toggle', ()=>{ localStorage.setItem(key, sec.open?'1':'0'); });
   });
+  // Backup-Bereich: auf einem Raspberry Pi die vollstaendige Sicherung
+  // (Datenbank+Fotos, Zeitplan, USB-Stick) auf der Setup-Seite bewerben,
+  // sonst bleibt die einfache JSON-Sicherung (einzige Option ohne Pi).
+  (async()=>{
+    try{
+      const r=await fetch('./api/platform');
+      const d=await r.json();
+      if(d && d.pi){
+        const j=document.getElementById('backup-json');
+        const p=document.getElementById('backup-pi');
+        const link=document.getElementById('backup-pi-link');
+        if(j) j.style.display='none';
+        if(p) p.style.display='';
+        if(link) link.href=location.protocol+'//'+location.hostname+'/backup';
+      }
+    }catch(_){}
+  })();
   // Logo-Vorschau
   (async()=>{
     try{
