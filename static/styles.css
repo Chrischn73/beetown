@@ -1,0 +1,726 @@
+:root{
+  color-scheme: light;
+  --bg:#faf6ee; --surface:#ffffff; --ink:#241f17; --ink-soft:#6e6353; --line:#ece3d2;
+  --honey:#d98e04; --honey-dark:#b87503; --comb:#1e1a14;
+  --ok:#2f9e44; --watch:#f08c00; --varroa:#8b2e2e; --weak:#e8590c; --dead:#868e96; --danger:#c92a2a;
+  --shadow:0 1px 2px rgba(36,31,23,.06), 0 6px 18px rgba(36,31,23,.06);
+  --input-bg:#ffffff;
+  --chip-bg:#fff3d6; --chip-ink:#7a5200; --chip-line:#f0dca8;
+  --warn-bg:#ffe3e3; --warn-ink:#c0341d; --warn-line:#f5c2c2;
+  --photo-bg:#fff7e6; --photo-ink:#b87503;
+  --badge-bg:#fff3d6; --badge-ink:#b87503;
+  --notes-ink:#48402f;
+  --danger-soft-bg:#fff4f4; --danger-soft-line:#f1c2c2;
+  --card-active:#fffdf8; --thumb-bg:#eeeeee;
+  --radius:14px;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+
+/* ===== Darkmode ===== */
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#15120d; --surface:#211c15; --ink:#efe7d8; --ink-soft:#b0a48d; --line:#352d22;
+  --honey:#eaa92a; --honey-dark:#c9901a; --comb:#0e0c08;
+  --ok:#51cf66; --watch:#ffa94d; --varroa:#c25c5c; --weak:#ff922b; --dead:#909296; --danger:#ff6b6b;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.45);
+  --input-bg:#2b2419;
+  --chip-bg:#3a2e15; --chip-ink:#f0c869; --chip-line:#5a4a22;
+  --warn-bg:#4a1f1f; --warn-ink:#ff9b9b; --warn-line:#6e2f2f;
+  --photo-bg:#2e2613; --photo-ink:#eaa92a;
+  --badge-bg:#3a2e15; --badge-ink:#f0c869;
+  --notes-ink:#cdbfa6;
+  --danger-soft-bg:#3a1f1f; --danger-soft-line:#5e2c2c;
+  --card-active:#272016; --thumb-bg:#333333;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#15120d; --surface:#211c15; --ink:#efe7d8; --ink-soft:#b0a48d; --line:#352d22;
+    --honey:#eaa92a; --honey-dark:#c9901a; --comb:#0e0c08;
+    --ok:#51cf66; --watch:#ffa94d; --varroa:#c25c5c; --weak:#ff922b; --dead:#909296; --danger:#ff6b6b;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.45);
+    --input-bg:#2b2419;
+    --chip-bg:#3a2e15; --chip-ink:#f0c869; --chip-line:#5a4a22;
+    --warn-bg:#4a1f1f; --warn-ink:#ff9b9b; --warn-line:#6e2f2f;
+    --photo-bg:#2e2613; --photo-ink:#eaa92a;
+    --badge-bg:#3a2e15; --badge-ink:#f0c869;
+    --notes-ink:#cdbfa6;
+    --danger-soft-bg:#3a1f1f; --danger-soft-line:#5e2c2c;
+    --card-active:#272016; --thumb-bg:#333333;
+  }
+}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg); color:var(--ink);
+  -webkit-text-size-adjust:100%; line-height:1.45;
+}
+
+/* ---------- Topbar ---------- */
+.topbar{
+  position:sticky; top:0; z-index:20;
+  display:flex; align-items:center; gap:.25rem;
+  background:var(--comb); color:#fff;
+  padding:calc(.7rem + var(--safe-top)) 1rem .7rem;
+}
+.topbar h1{font-size:1.15rem; font-weight:650; margin:0; letter-spacing:.2px}
+.back{background:none; border:0; color:#fff; font-size:1.9rem; line-height:1;
+  width:2rem; height:2rem; margin:-.3rem .1rem -.3rem -.4rem; cursor:pointer}
+
+/* ---------- Layout ---------- */
+#app{max-width:680px; margin:0 auto; padding:1rem 1rem calc(2rem + var(--safe-bottom))}
+.toolbar{display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap}
+.search-box{margin-bottom:1rem}
+.search-box .inp{width:100%}
+.search-box-wrap{position:relative}
+.search-box-wrap .inp{padding-right:2.4rem}
+.search-clear-btn{position:absolute; right:.3rem; top:50%; transform:translateY(-50%);
+  background:none; border:none; font-size:1.15rem; line-height:1; color:var(--ink-soft);
+  cursor:pointer; padding:.4rem .5rem}
+.search-box-wrap input[type="search"]::-webkit-search-cancel-button{display:none}
+.search-snippet{font-style:italic; opacity:.85}
+.search-result-item{cursor:pointer}
+.section-h{font-size:.8rem; text-transform:uppercase; letter-spacing:.8px; color:var(--ink-soft); margin:1.4rem 0 .6rem}
+.muted{color:var(--ink-soft)} .small{font-size:.85rem}
+
+/* ---------- Buttons ---------- */
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:.4rem;
+  font:inherit; font-weight:600; border:1px solid transparent; border-radius:11px;
+  padding:.7rem 1rem; min-height:46px; cursor:pointer; text-decoration:none}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--honey); color:#fff}
+.btn-primary:hover{background:var(--honey-dark)}
+.btn-ghost{background:var(--surface); color:var(--ink); border-color:var(--line)}
+.btn-danger{background:var(--surface); color:var(--danger); border-color:var(--danger-soft-line)}
+.btn-sm{min-height:38px; padding:.4rem .7rem; font-size:.9rem}
+.btn.block{display:flex; width:100%; margin:.5rem 0}
+.btn-photo{background:var(--photo-bg); color:var(--photo-ink); border:1px dashed var(--honey)}
+.btn-photo.busy{opacity:.6; pointer-events:none}
+
+/* ---------- Karten ---------- */
+.card-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.6rem}
+.card{display:flex; align-items:center; gap:.8rem; background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius); padding:.9rem 1rem;
+  box-shadow:var(--shadow); cursor:pointer}
+.card:active{background:var(--card-active)}
+.card-main{flex:1; min-width:0}
+.card-title{font-weight:650; font-size:1.05rem}
+.card-sub{color:var(--ink-soft); font-size:.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.badge{background:var(--badge-bg); color:var(--badge-ink); font-size:.8rem; font-weight:650;
+  padding:.25rem .6rem; border-radius:999px; white-space:nowrap}
+
+.dot{width:12px; height:12px; border-radius:50%; flex:none; background:var(--ok)}
+.dot-lg{width:18px; height:18px}
+.dot-ok{background:var(--ok)} .dot-watch{background:var(--watch)}
+.dot-varroa{background:var(--varroa)}
+.dot-weak{background:var(--weak)} .dot-dead{background:var(--dead)}
+
+/* ---------- Volk-Kopf ---------- */
+.colony-head{display:flex; align-items:flex-start; gap:.8rem; background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius); padding:1rem;
+  box-shadow:var(--shadow); margin-bottom:.4rem}
+.colony-meta{flex:1; min-width:0}
+.note-block{margin-top:.4rem; white-space:pre-wrap; font-size:.92rem}
+
+/* ---------- Timeline ---------- */
+.timeline{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.6rem}
+.entry{display:flex; gap:.8rem; align-items:flex-start; background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius); padding:.9rem 1rem; box-shadow:var(--shadow);
+  transition:background-color .3s ease, border-color .3s ease}
+.entry-highlight{background-color:rgba(245,166,35,0.22) !important; border-color:var(--honey,#f5a623) !important}
+.entry-date{font-variant-numeric:tabular-nums; font-weight:650; font-size:.82rem;
+  color:var(--honey-dark); white-space:nowrap; padding-top:.1rem}
+.entry-body{flex:1; min-width:0}
+.entry-type{font-weight:600}
+.entry-notes{margin-top:.2rem; white-space:pre-wrap; font-size:.92rem; color:var(--notes-ink)}
+
+/* ---------- Königin-Jahr-Badge (farbiger Hintergrund) ---------- */
+.qbadge{display:inline-block; min-width:2.6em; text-align:center; font-weight:700;
+  font-variant-numeric:tabular-nums; padding:.08rem .5rem; border-radius:6px;
+  border:1px solid rgba(0,0,0,.18); box-shadow:0 0 0 1px var(--line)}
+.q-white{background:#ffffff; color:#241f17}
+.q-yellow{background:#f5c518; color:#241f17}
+.q-red{background:#e03131; color:#fff}
+.q-green{background:#2f9e44; color:#fff}
+.q-blue{background:#1971c2; color:#fff}
+
+/* ---------- Fotos (Formular) ---------- */
+.thumb{object-fit:cover; border-radius:10px; border:1px solid var(--line); cursor:pointer; background:var(--thumb-bg)}
+.photo-grid{display:flex; flex-wrap:wrap; gap:.6rem; margin-top:.4rem}
+.photo-card{width:108px}
+.photo-card .thumb-wrap{position:relative}
+.photo-card .thumb{width:108px; height:108px}
+.thumb-del{position:absolute; top:-7px; right:-7px; width:22px; height:22px; border-radius:50%;
+  background:var(--danger); color:#fff; border:2px solid var(--surface); font-size:.7rem; cursor:pointer; line-height:1}
+.cap-inp{width:108px; margin-top:.3rem; font:inherit; font-size:.78rem; padding:.35rem .45rem;
+  border:1px solid var(--line); border-radius:7px; background:var(--input-bg); color:var(--ink)}
+.photo-row{display:flex; gap:.5rem; margin-top:.5rem}
+.photo-row .btn-photo{flex:1}
+
+/* ---------- Fotos (Timeline) ---------- */
+.photos{display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.6rem}
+.photo-fig{margin:0; width:84px}
+.photo-fig .thumb{width:84px; height:84px}
+.photo-fig figcaption{font-size:.72rem; color:var(--ink-soft); margin-top:.15rem; line-height:1.2; word-break:break-word}
+
+/* ---------- Beobachtungen ---------- */
+.obs-toggles{display:flex; flex-wrap:wrap; gap:.45rem; margin:.1rem 0 .3rem}
+.obs-btn{font:inherit; font-size:.88rem; font-weight:600; padding:.5rem .8rem; min-height:42px;
+  border:1px solid var(--line); border-radius:999px; background:var(--surface); color:var(--ink); cursor:pointer}
+.obs-btn.on{background:var(--honey); color:#fff; border-color:var(--honey)}
+.obs-btn:active{transform:translateY(1px)}
+.obs-chips{display:flex; flex-wrap:wrap; gap:.35rem; margin:.35rem 0 .1rem}
+.obs-chip{font-size:.76rem; font-weight:600; background:var(--chip-bg); color:var(--chip-ink);
+  border:1px solid var(--chip-line); border-radius:999px; padding:.18rem .55rem}
+.obs-chip-warn{background:var(--warn-bg); color:var(--warn-ink); border-color:var(--warn-line)}
+
+/* ---------- Mehrfachauswahl ---------- */
+.check-list{display:flex; flex-direction:column; gap:.45rem; margin:.2rem 0 .3rem}
+.check-item{display:flex; align-items:center; gap:.7rem; padding:.6rem .7rem;
+  border:1px solid var(--line); border-radius:10px; cursor:pointer; background:var(--surface)}
+.check-item input{width:22px; height:22px; accent-color:var(--honey)}
+
+/* ---------- Wabe: Typ je Position ---------- */
+.wabe-pos-grid{display:flex; flex-direction:column; gap:.4rem; margin:.2rem 0 .3rem}
+.wabe-pos-row{display:flex; align-items:center; gap:.7rem; padding:.4rem .7rem;
+  border:1px solid var(--line); border-radius:10px; background:var(--surface)}
+.wabe-pos-label{width:5.5rem; flex-shrink:0; font-size:.9rem}
+.wabe-type-select{flex:1; margin:0}
+.wabe-swap-lbl{display:flex; align-items:center; gap:.3rem; font-size:.8rem;
+  color:var(--ink-soft); white-space:nowrap; flex-shrink:0}
+.wabe-swap-lbl input{width:18px; height:18px; accent-color:var(--honey)}
+
+/* Tausch-Zeichen vorne in der +Wabe-Übersicht (statt „+"), größer für bessere Erkennbarkeit */
+.wabe-swap-mark{font-weight:800; font-size:1.4em; line-height:1;
+  vertical-align:-0.08em; display:inline-block}
+
+/* ---------- Leerzustand & Marke ---------- */
+.empty{text-align:center; padding:2.6rem 1rem 1rem; color:var(--ink-soft)}
+.hex{width:64px; height:64px; margin-bottom:.8rem}
+.hex polygon{fill:none; stroke:var(--honey); stroke-width:4; opacity:.55}
+.empty-title{font-weight:650; color:var(--ink); font-size:1.05rem}
+.empty-sub{margin-top:.25rem}
+.brand{display:flex; align-items:center; gap:.7rem; margin:.2rem 0 1.1rem}
+.brand svg{width:38px; height:38px; flex:none}
+.brand svg polygon{fill:none; stroke:var(--honey); stroke-width:5}
+.brand svg circle{fill:var(--honey)}
+.brand .name{font-size:1.3rem; font-weight:750; letter-spacing:.2px; color:var(--ink)}
+
+/* ---------- Formularfelder ---------- */
+.lbl{display:block; font-size:.82rem; font-weight:600; color:var(--ink-soft); margin:.9rem 0 .3rem}
+.inp{width:100%; font:inherit; padding:.7rem .8rem; border:1px solid var(--line);
+  border-radius:10px; background:var(--input-bg); color:var(--ink)}
+.inp:focus{outline:2px solid var(--honey); outline-offset:1px; border-color:var(--honey)}
+textarea.inp{resize:vertical}
+
+/* ---------- Modal ---------- */
+.modal-back{position:fixed; inset:0; z-index:50; background:rgba(10,8,5,.55);
+  display:flex; align-items:flex-end; justify-content:center}
+.modal{background:var(--surface); width:100%; max-width:680px; border-radius:18px 18px 0 0;
+  max-height:92vh; display:flex; flex-direction:column; padding-bottom:var(--safe-bottom)}
+.modal-head{display:flex; align-items:center; justify-content:space-between; padding:1rem 1rem .4rem}
+.modal-head h2{margin:0; font-size:1.1rem}
+.modal-body{padding:0 1rem .5rem; overflow:auto}
+.modal-foot{display:flex; justify-content:space-between; align-items:center; gap:.6rem;
+  padding:.8rem 1rem calc(.8rem + var(--safe-bottom)); border-top:1px solid var(--line)}
+@media(min-width:680px){ .modal-back{align-items:center} .modal{border-radius:18px; max-width:520px} }
+
+/* ---------- Toast (kurze Rückmeldung) ---------- */
+.toast{position:fixed; left:50%; top:4.2rem; transform:translateX(-50%) translateY(0);
+  background:var(--ink); color:var(--bg); padding:.65rem 1.1rem; border-radius:999px;
+  font-size:.9rem; font-weight:600; box-shadow:0 4px 16px rgba(0,0,0,.25); z-index:80;
+  opacity:1; transition:opacity .3s ease, transform .3s ease; pointer-events:none; text-align:center; max-width:90vw}
+.toast-out{opacity:0; transform:translateX(-50%) translateY(-8px)}
+
+/* ---------- Lightbox ---------- */
+.lightbox{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.92);
+  display:flex; align-items:center; justify-content:center; padding:1rem; cursor:zoom-out}
+.lightbox figure{margin:0; max-width:100%; max-height:100%; display:flex; flex-direction:column; align-items:center}
+.lightbox img{max-width:100%; max-height:88vh; border-radius:8px}
+.lightbox figcaption{color:#eee; margin-top:.6rem; font-size:.9rem; text-align:center}
+
+/* ---------- Fehlerbanner ---------- */
+.banner-error{background:var(--danger-soft-bg); border:1px solid var(--danger-soft-line); color:var(--danger);
+  border-radius:var(--radius); padding:1rem; display:flex; flex-direction:column; gap:.7rem; align-items:flex-start}
+
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- Schwarmzellen-Zähler (v1.4) ---------- */
+.obs-swarm-row{display:flex; align-items:center; gap:.5rem; flex-wrap:wrap}
+.swarm-counter{display:flex; align-items:center; gap:.3rem}
+.swarm-counter.hidden{display:none}
+.cnt-btn{width:30px; height:30px; border:1px solid var(--line); border-radius:8px;
+  background:var(--surface); color:var(--ink); font-size:1.1rem; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; padding:0}
+.cnt-btn:active{background:var(--honey); color:#fff}
+.cnt-val{min-width:22px; text-align:center; font-weight:700; font-size:1rem}
+
+/* ---------- Königin-Nummer & Herkunft Badge (v1.4) ---------- */
+.queen-nr{display:inline-block; background:var(--honey); color:#fff;
+  border-radius:5px; padding:0 .35rem; font-size:.78rem; font-weight:700; vertical-align:middle}
+.queen-source{color:var(--ink-soft); font-size:.85rem}
+
+/* ---------- Eintrag-Bewertungs-Badge (v1.4) ---------- */
+.entry-badge{display:inline-block; background:var(--surface-raised,var(--surface));
+  border:1px solid var(--line); border-radius:6px; padding:.15rem .5rem;
+  font-size:.8rem; color:var(--ink-soft); margin:.2rem .2rem 0 0}
+
+/* ---------- Schwarmzellen-Zähler (v1.4) ---------- */
+.obs-swarm-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.swarm-counter{display:flex;align-items:center;gap:.3rem}
+.swarm-counter.hidden{display:none}
+.cnt-btn{width:30px;height:30px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface);color:var(--ink);font-size:1.1rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;padding:0}
+.cnt-btn:active{background:var(--honey);color:#fff}
+.cnt-val{min-width:22px;text-align:center;font-weight:700;font-size:1rem}
+
+/* ---------- Königin Badges (v1.4) ---------- */
+.queen-nr{display:inline-block;background:var(--honey);color:#fff;
+  border-radius:5px;padding:0 .35rem;font-size:.78rem;font-weight:700;vertical-align:middle}
+.queen-source{color:var(--ink-soft);font-size:.85rem}
+.queen-gen{display:inline-block;background:var(--surface-raised,var(--surface));
+  border:1px solid var(--line);border-radius:5px;padding:0 .35rem;
+  font-size:.78rem;font-weight:700;vertical-align:middle;color:var(--ink-soft)}
+.qbadge.q-unknown{background:#888;color:#fff}
+
+/* ---------- Eintrag-Bewertungs-Badge (v1.4) ---------- */
+.entry-badge{display:inline-block;background:var(--surface-raised,var(--surface));
+  border:1px solid var(--line);border-radius:6px;padding:.15rem .5rem;
+  font-size:.8rem;color:var(--ink-soft);margin:.2rem .2rem 0 0}
+
+/* ---------- Waagen (v1.5) ---------- */
+.scale-link{margin-top:.4rem;display:inline-flex;align-items:center;gap:.3rem}
+.scale-url-preview{font-size:.78rem;color:var(--ink-soft);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+
+/* ---------- v1.6 ---------- */
+/* Version-Tag neben Titel */
+.app-version-tag{font-size:.7rem;font-weight:400;color:var(--ink-soft);
+  opacity:.7;margin-left:.4rem;vertical-align:middle}
+
+/* Königin-Nr ohne Farbe */
+.queen-nr-plain{color:var(--ink-soft);font-size:.85rem}
+
+/* Drag & Drop Sortierung */
+.drag-handle{font-size:1.2rem;color:var(--ink-soft);cursor:grab;
+  padding:0 .5rem 0 0;user-select:none;touch-action:none}
+li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
+
+/* ---------- Sortier-Buttons (v1.6.1, ersetzt Drag) ---------- */
+.sort-ctrl{display:flex;flex-direction:column;gap:2px;margin-left:auto;padding-left:.4rem}
+.sort-btn{width:32px;height:28px;border:1px solid var(--line);border-radius:7px;
+  background:var(--surface);color:var(--ink);font-size:.85rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;padding:0}
+.sort-btn:active{background:var(--honey);color:#fff}
+.sort-btn:disabled{opacity:.25;cursor:default}
+
+/* ---------- v1.7 ---------- */
+
+/* Lade-Biene */
+.loading-bee {
+  width: 28px; height: 28px;
+  margin-left: auto; margin-right: .6rem;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s;
+}
+.loading-bee.bee-active {
+  opacity: 1;
+  animation: bee-fly .5s ease-in-out infinite alternate;
+}
+@keyframes bee-fly {
+  from { transform: translateY(0px) rotate(-4deg); }
+  to   { transform: translateY(-4px) rotate(4deg); }
+}
+
+/* Demaree-Badge in der Völkerliste */
+.demaree-badge {
+  display: inline-block; margin-top: .2rem;
+  background: #fff3bf; color: #7c5e00;
+  border: 1px solid #f5c518;
+  border-radius: 6px; padding: .1rem .5rem;
+  font-size: .78rem; font-weight: 600;
+}
+[data-theme="dark"] .demaree-badge {
+  background: #3d2e00; color: #f5c518; border-color: #7c5e00;
+}
+.demaree-badge.demaree-done {
+  background: #ebfbee; color: #2f7a3a; border-color: #2f9e44;
+}
+[data-theme="dark"] .demaree-badge.demaree-done {
+  background: #1a3d22; color: #69db7c; border-color: #2f7a3a;
+}
+
+/* Käfigung-Anzeige: dezenter als die gelben Badges */
+.kaef-badge {
+  display: block; margin-top: .2rem;
+  color: var(--ink-soft, #666);
+  font-size: .78rem; font-weight: 500;
+}
+[data-theme="dark"] .kaef-badge { color: #a8a8a8; }
+
+/* Formular-Trenner und Abschnitts-Label */
+.form-divider { border: none; border-top: 1px solid var(--line); margin: 1rem 0 .5rem; }
+.form-section-label { font-weight: 700; font-size: .9rem; color: var(--ink); }
+
+/* ---------- v1.8 ---------- */
+/* Punkt 10: Schließen-Kreuz größer */
+.modal-close{font-size:1.4rem !important;min-width:36px;min-height:36px;
+  display:flex;align-items:center;justify-content:center}
+
+/* Status-Spalte mit Dot + Flags */
+.status-col{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:22px}
+.requeue-dot{font-size:.85rem;line-height:1}
+.breed-dot{font-size:.85rem;line-height:1}
+
+/* Punkt 9: Umweiselungs-Badge */
+.requeue-badge{display:inline-block;background:#e03131;color:#fff;border-radius:6px;
+  padding:.15rem .5rem;font-size:.78rem;font-weight:700;margin:.2rem 0}
+/* Punkt 11: Nachzucht-Badge */
+.breed-badge{display:inline-block;background:#f5c518;color:#241f17;border-radius:6px;
+  padding:.15rem .5rem;font-size:.78rem;font-weight:700;margin:.2rem 0}
+
+/* Punkt 8: F0-Krone – via queenInfoLine emoji direkt */
+
+/* Punkt 12: "keine SS mehr" Chip */
+.obs-chip-info{background:#e7f5ff;color:#1971c2;border-color:#74c0fc}
+
+/* Demaree-Eintrag Badge */
+.entry-badge-demaree{background:#fff3bf;color:#7a5400;border-color:#ffd43b}
+.entry-badge-oxblock{background:#e0e7ff;color:#3730a3;border-color:#a5b4fc}
+.entry-badge-varroacount{background:#ffe8e8;color:#9c2626;border-color:#f3a5a5}
+
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--line);margin-top:.6rem}
+.data-table{width:100%;border-collapse:collapse;font-size:.85rem;background:var(--surface)}
+.data-table th,.data-table td{padding:.5rem .6rem;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+.data-table th{background:var(--bg);color:var(--ink-soft);font-weight:700;font-size:.78rem}
+.data-table td.wrap{white-space:normal}
+.data-table td.ellipsis{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:520px){
+  .data-table td.ellipsis{max-width:70px}
+}
+.data-table tbody tr:hover{background:var(--card-active)}
+.data-table tbody tr:last-child td{border-bottom:none}
+.data-table-compact th,.data-table-compact td{padding:.25rem .5rem}
+
+/* Aktions-Buttons im Eintrag */
+.action-btns{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem}
+
+/* Volk-Formular Trennlinie */
+.form-divider{border:none;border-top:1px solid var(--line);margin:1rem 0}
+.form-section-label{font-weight:700;color:var(--ink-soft)}
+
+/* ---------- Honigraume (v1.9) ---------- */
+.hr-badge{display:inline-block;background:transparent;color:var(--ink-soft);border-radius:5px;
+  padding:0 .4rem;font-size:.8rem;font-weight:700;vertical-align:middle;margin-left:.3rem}
+.hr-row{display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--line)}
+.hr-nr{font-weight:700;min-width:60px}
+.hr-date{color:var(--ink-soft);font-size:.85rem;flex:1}
+.entry-badge-hr{background:#fff3bf;color:#7a5400;border-color:#ffd43b}
+
+/* ---------- v1.9.2 ---------- */
+/* Punkt 3: BeeTown Logo */
+.brand-logo{width:56px;height:56px;flex-shrink:0}
+
+/* Punkt 5: Umweiselungs-Dreieck rot */
+.requeue-dot{color:var(--honey,#f5a623);font-size:.95rem;line-height:1}
+.requeue-badge{background:#e03131 !important;color:#fff !important}
+
+/* Punkt 6: keine-SS-mehr – gleiche Farbe wie normale obs-chip (kein extra class nötig) */
+/* obs-chip-info entfernen – wird nun als normale obs-chip dargestellt */
+.obs-chip-info{background:var(--chip-bg,#f1f3f5);color:var(--ink);border-color:var(--line)}
+
+/* Punkt 6: HR-Nummern in Klammern klein */
+.hr-nrs{font-size:.75rem;opacity:.65;font-weight:400}
+
+/* Punkt 7: Erinnerungen */
+.reminders-section{margin-top:1.5rem;border-top:2px solid var(--honey,#f5a623);padding-top:1rem}
+.reminder-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem}
+.reminder-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.4rem}
+.reminder-item{display:flex;align-items:flex-start;gap:.5rem;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:.5rem .7rem}
+.reminder-body{flex:1}
+.reminder-text{font-size:.95rem;line-height:1.4;white-space:pre-wrap}
+.reminder-date{font-size:.75rem;color:var(--ink-soft);margin-top:.15rem}
+.reminder-del{flex-shrink:0;color:var(--ink-soft)}
+.reminder-item-due{border-color:var(--honey,#f5a623);border-width:2px;background:rgba(245,166,35,0.09)}
+.reminder-item-due .reminder-date{color:var(--honey,#f5a623);font-weight:600}
+
+/* Punkt 2: Foto verschieben Button */
+.thumb-move{position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:4px;padding:2px 5px;font-size:.75rem;cursor:pointer}
+
+/* HR Sortierung im Editor */
+.hr-sort-ctrl{display:flex;flex-direction:column;gap:1px}
+.hr-nr-inp{width:3rem !important;display:inline !important;padding:.1rem .3rem !important}
+
+/* ---------- v1.9.3 ---------- */
+.apiary-name-tag{
+  font-size:.85rem; font-weight:600; color:var(--ink-soft);
+  margin-left:.6rem; align-self:center; white-space:nowrap;
+}
+.hr-date-inp{
+  width:9rem !important; display:inline !important;
+  padding:.1rem .3rem !important; font-size:.85rem;
+}
+
+/* ---------- v1.9.5 ---------- */
+.brand{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+.brand-text-col{ display:flex; flex-direction:column; line-height:1.2; }
+.brand-logo-wrap{ margin-left:auto; display:flex; align-items:center; }
+.brand-logo-custom{ max-height:52px; max-width:160px; object-fit:contain; border-radius:4px; }
+.brand-bee{ width:48px; height:48px; flex-shrink:0; }
+
+/* ---------- v1.9.6 ---------- */
+
+/* Punkt 2: Überschriften deutlicher */
+.form-section-label,
+.section-h {
+  font-size: 1.05rem !important;
+  font-weight: 800 !important;
+  letter-spacing: .01em;
+}
+.form-divider { border-color: var(--honey, #f5a623) !important; opacity: .5; }
+
+/* Umlarv-Info Block */
+.umlarv-info {
+  display: flex; flex-wrap: wrap; gap: .3rem .6rem;
+  align-items: center; margin: .4rem 0;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; padding: .4rem .6rem; font-size: .85rem;
+}
+.umlarv-label { font-weight: 700; color: var(--ink-soft); }
+.umlarv-sep   { color: var(--line); }
+.umlarv-future { color: #2f9e44; font-weight: 700; }
+.umlarv-past   { color: var(--ink-soft); text-decoration: line-through; }
+
+/* ---------- v1.9.9 – Alle Völker ---------- */
+.all-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.3rem}
+.all-row{
+  display:flex;align-items:center;gap:.4rem;flex-wrap:nowrap;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:.45rem .6rem;cursor:pointer;overflow:hidden;
+}
+.all-row:active{background:var(--surface-raised,var(--surface))}
+.all-status{display:flex;align-items:center;gap:2px;flex-shrink:0;font-size:.85rem}
+.all-name{font-weight:700;font-size:.9rem;flex-shrink:1;min-width:0;white-space:nowrap}
+.all-sub{font-size:.75rem;color:var(--ink-soft);flex-shrink:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.all-queen{font-size:.75rem;flex-shrink:0;white-space:nowrap}
+.all-badges{display:flex;gap:.25rem;align-items:center;margin-left:auto;flex-shrink:0;flex-wrap:nowrap}
+.all-badge{font-size:.7rem;border-radius:4px;padding:.1rem .3rem;white-space:nowrap;font-weight:700}
+.all-demaree{background:#fff3bf;color:#7a5400}
+.all-oxblock{background:#e0e7ff;color:#3730a3}
+.all-hr{background:transparent;color:var(--ink-soft)}
+.all-umlarv{background:#d3f9d8;color:#2f9e44}
+.all-umlarv-done{background:var(--surface);color:var(--ink-soft);text-decoration:line-through}
+.requeue-dot-sm{font-size:.8rem}
+.requeue-red{color:#e03131 !important}
+.requeue-orange{color:#f5a623 !important}
+.breed-dot-sm{font-size:.8rem}
+
+/* ---------- v1.9.10 – Umlarv-Info Tabellenzeilen ---------- */
+.umlarv-info{
+  display:flex; flex-direction:column; gap:.2rem;
+  background:var(--surface); border:1px solid var(--line);
+  border-radius:8px; padding:.45rem .65rem; font-size:.87rem;
+  margin:.3rem 0;
+}
+.umlarv-row{
+  display:flex; align-items:baseline; gap:.5rem;
+}
+.umlarv-label{
+  font-weight:700; color:var(--ink-soft);
+  min-width:120px; flex-shrink:0;
+}
+.umlarv-date{ font-weight:600; }
+.umlarv-future{ color:#2f9e44; }
+.umlarv-past  { color:var(--ink-soft); text-decoration:line-through; }
+
+/* ---------- v1.9.11 ---------- */
+/* Punkt 2: Zustand "ok" – transparenter Kreis in Schriftfarbe */
+.dot.dot-ok {
+  background: transparent !important;
+  border: 2px solid var(--ink, #241f17);
+}
+[data-theme="dark"] .dot.dot-ok {
+  border-color: var(--ink, #f0ece4);
+}
+
+/* ---------- v1.9.13 ---------- */
+
+/* Überschriften in App-Einstellungen und Volk-Formular */
+.section-h,
+.form-section-label {
+  color: var(--honey, #f5a623) !important;
+  font-size: 1.05rem !important;
+  font-weight: 800 !important;
+  text-decoration: underline;
+  text-decoration-color: var(--honey, #f5a623);
+  text-underline-offset: 3px;
+  letter-spacing: .01em;
+}
+
+/* Standort über der Erinnerung */
+.reminder-apiary {
+  font-size: .75rem;
+  font-weight: 700;
+  color: var(--honey, #f5a623);
+  margin-bottom: .15rem;
+}
+
+/* ---------- v1.9.14 ---------- */
+.kaefigung-badge {
+  display:inline-block; background:#e7f5ff; color:#1971c2;
+  border:1px solid #74c0fc; border-radius:6px;
+  padding:.15rem .5rem; font-size:.8rem; font-weight:700; margin:.2rem 0;
+}
+[data-theme="dark"] .kaefigung-badge {
+  background:#1a2a3a; color:#74c0fc; border-color:#1971c2;
+}
+.reminder-group-head {
+  font-size:.82rem; font-weight:800;
+  color:var(--honey,#f5a623);
+  margin:.6rem 0 .2rem 0;
+  padding-bottom:.2rem;
+  border-bottom:1px solid var(--honey,#f5a623);
+}
+.reminder-no-apiary {
+  color:var(--ink-soft); border-color:var(--line);
+}
+.obs-btn.hidden { display:none !important; }
+.obs-swarm-row.hidden { display:none !important; }
+
+/* ---------- Einstellungen: aufklappbare Bereiche ---------- */
+.settings-section {
+  border-bottom: 1px solid var(--line);
+}
+.settings-section:last-of-type {
+  border-bottom: none;
+}
+.settings-section > summary.section-h {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: .9rem .1rem;
+  user-select: none;
+}
+.settings-section > summary.section-h::-webkit-details-marker { display: none; }
+.settings-section > summary.section-h::after {
+  content: '▸';
+  font-size: .7rem;
+  color: var(--ink-soft);
+  transition: transform .15s ease;
+  margin-left: .6rem;
+}
+.settings-section[open] > summary.section-h::after {
+  transform: rotate(90deg);
+}
+.settings-section-body {
+  padding: 0 .1rem 1.1rem;
+}
+
+/* ---------- v1.9.16 ---------- */
+.weiselprobe-badge {
+  display:inline-block; background:#d3f9d8; color:#2f9e44;
+  border:1px solid #8ce99a; border-radius:6px;
+  padding:.15rem .5rem; font-size:.8rem; font-weight:700; margin:.2rem 0;
+}
+[data-theme="dark"] .weiselprobe-badge {
+  background:#1a3a1a; color:#8ce99a; border-color:#2f9e44;
+}
+/* Käfigung + Weiselprobe gleich ausgerichtet wie Demaree */
+.kaefigung-badge, .weiselprobe-badge {
+  display:block; width:fit-content;
+}
+
+/* ---------- v1.9.18 ---------- */
+.all-weisel { background:#d3f9d8; color:#2f9e44; }
+.all-kaef   { background:#e7f5ff; color:#1971c2; }
+
+/* ---------- v1.9.19 ---------- */
+.obs-chip-action {
+  background: #e7f5ff;
+  color: #1971c2;
+  border-color: #74c0fc;
+}
+[data-theme="dark"] .obs-chip-action {
+  background: #1a2a3a;
+  color: #74c0fc;
+  border-color: #1971c2;
+}
+
+/* ---------- v1.9.24 ---------- */
+.header-date {
+  margin-left: auto;
+  font-size: .8rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* ---------- v1.9.25 – Eintrag-Labels wie section-h ---------- */
+.lbl {
+  color: var(--honey, #f5a623) !important;
+  font-weight: 800 !important;
+  font-size: .95rem !important;
+  text-decoration: underline;
+  text-decoration-color: var(--honey, #f5a623);
+  text-underline-offset: 2px;
+}
+
+/* ---------- v1.9.26 ---------- */
+.hr-position {
+  font-size: .75rem;
+  color: var(--ink-soft);
+  min-width: 1.2rem;
+  text-align: right;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+/* ---------- v1.9.27 ---------- */
+.card-source {
+  font-size: .78rem;
+  color: var(--ink-soft);
+  margin-top: .1rem;
+}
+
+/* v1.9.32 */
+.status-skull{font-size:1.1rem;line-height:1;flex-shrink:0}
+.status-skull-lg{font-size:1.5rem}
+.status-varroa-icon{width:18px;height:18px;object-fit:contain;flex-shrink:0}
+.status-varroa-icon-lg{width:26px;height:26px}
+.status-varroa-icon-sm{width:14px;height:14px;object-fit:contain;vertical-align:middle}
+.oxblock-icon{width:14px;height:14px;object-fit:contain;vertical-align:middle;display:inline-block}
+
+/* ---------- v1.9.34 ---------- */
+.entry-count-badge {
+  font-size:.72rem; color:var(--ink-soft);
+  background:transparent; font-weight:400;
+}
+.requeue-dot-red { color:#e03131 !important; }
+/* orange bleibt Standard aus requeue-dot */
+
+/* ---------- v1.9.35 ---------- */
+.btn-save-settings {
+  background: #862e2e;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: .35rem .9rem;
+  font-size: .82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-save-settings:active { background: #2b8a3e; }
+
+.entry-count-badge {
+  font-size: .72rem;
+  color: var(--ink-soft);
+  font-weight: 400;
+}

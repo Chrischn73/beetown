@@ -1,0 +1,7 @@
+[Unit]
+Description=BeeTown – taegliches Backup nach /opt/backup
+After=imkerei.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/backup-scripts/imkerei-backup.sh

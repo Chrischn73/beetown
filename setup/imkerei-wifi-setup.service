@@ -1,0 +1,15 @@
+[Unit]
+Description=BeeTown – Setup-Seite (Port 80) + WLAN-Einstellungen (Port 8081)
+After=NetworkManager.service
+Wants=NetworkManager.service
+# Bewusst KEIN Before=imkerei.service: Die App soll unabhaengig davon
+# sofort starten, auch wenn WLAN nie eingerichtet wird (reine Kabelnutzung).
+
+[Service]
+Type=simple
+ExecStart=/opt/imkerei-wifi-setup/imkerei-wifi-setup.sh
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

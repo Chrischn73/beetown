@@ -1,0 +1,677 @@
+#!/usr/bin/env python3
+"""
+BeeTown – kleiner Server (nur Python-Standardbibliothek). v1.9.37
+"""
+
+import os, re, json, sqlite3, secrets, mimetypes
+from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+BASE       = os.path.dirname(os.path.abspath(__file__))
+HOST       = os.environ.get("IMKEREI_HOST", "0.0.0.0")
+PORT       = int(os.environ.get("IMKEREI_PORT", "8080"))
+DATA_DIR   = os.environ.get("IMKEREI_DATA",   os.path.join(BASE, "data"))
+STATIC_DIR = os.environ.get("IMKEREI_STATIC", os.path.join(BASE, "static"))
+PHOTO_DIR  = os.path.join(DATA_DIR, "photos")
+LOGO_PATH  = os.path.join(DATA_DIR, "logo.jpg")
+DB_PATH    = os.path.join(DATA_DIR, "app.db")
+
+os.makedirs(PHOTO_DIR, exist_ok=True)
+ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+
+def now_iso(): return datetime.now(timezone.utc).isoformat()
+def new_id():  return secrets.token_hex(8)
+def db():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
+    return con
+def column_exists(con, table, col):
+    return any(r[1]==col for r in con.execute(f"PRAGMA table_info({table})").fetchall())
+
+def init_db():
+    con = db()
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS apiaries(
+            id TEXT PRIMARY KEY, name TEXT, location TEXT, notes TEXT, createdAt TEXT);
+        CREATE TABLE IF NOT EXISTS colonies(
+            id TEXT PRIMARY KEY, apiaryId TEXT, name TEXT, queenYear TEXT,
+            queenNr TEXT, queenGen TEXT, status TEXT, source TEXT, notes TEXT,
+            scaleId TEXT, sortOrder INTEGER DEFAULT 0, createdAt TEXT,
+            archived INTEGER DEFAULT 0, archivedAt TEXT,
+            demareeStage TEXT, demareedAt TEXT, demareeEndedAt TEXT,
+            requeueFlag INTEGER DEFAULT 0, requeueReasons TEXT, requeueNote TEXT,
+            breedFlag INTEGER DEFAULT 0, honigRaeume TEXT, umlarvDate TEXT, weiselprobeDate TEXT, kaefigungDate TEXT, koeniginFreiDate TEXT,
+            currentWeight TEXT, currentWeightDate TEXT, zielGewicht TEXT,
+            oxalBlockStage TEXT, oxalBlockStartAt TEXT, oxalBlockLastAt TEXT);
+        CREATE TABLE IF NOT EXISTS entries(
+            id TEXT PRIMARY KEY, colonyId TEXT, date TEXT, type TEXT,
+            notes TEXT, photoIds TEXT, obs TEXT, photos TEXT,
+            obs_extra TEXT, temper TEXT, strength TEXT, food TEXT, demareeAction TEXT, entryHrNr TEXT, oxalBlockAction TEXT,
+            varroaCount TEXT, varroaAnts INTEGER DEFAULT 0, createdAt TEXT);
+        CREATE TABLE IF NOT EXISTS scales(
+            id TEXT PRIMARY KEY, name TEXT, url TEXT, notes TEXT, createdAt TEXT);
+        CREATE TABLE IF NOT EXISTS settings(
+            key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE IF NOT EXISTS reminders(
+            id TEXT PRIMARY KEY, text TEXT, apiaryId TEXT, apiaryName TEXT, createdAt TEXT,
+            dueDate TEXT, remindDaysBefore INTEGER DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS honey_harvests(
+            id TEXT PRIMARY KEY, year INTEGER, tracht TEXT, menge REAL, notizen TEXT, apiaryId TEXT, apiaryName TEXT, anzahlVoelker INTEGER DEFAULT 0, createdAt TEXT);
+        CREATE TABLE IF NOT EXISTS sirup_calc(
+            id TEXT PRIMARY KEY, date TEXT, ratio TEXT, mode TEXT,
+            inputValue TEXT, sugar TEXT, water TEXT, result TEXT, createdAt TEXT);
+        CREATE INDEX IF NOT EXISTS idx_col_apiary ON colonies(apiaryId);
+        CREATE INDEX IF NOT EXISTS idx_ent_colony ON entries(colonyId);
+    """)
+    migrations = [
+        ("colonies","archived",      "ALTER TABLE colonies ADD COLUMN archived INTEGER DEFAULT 0"),
+        ("colonies","archivedAt",    "ALTER TABLE colonies ADD COLUMN archivedAt TEXT"),
+        ("colonies","queenYear",     "ALTER TABLE colonies ADD COLUMN queenYear TEXT"),
+        ("colonies","source",        "ALTER TABLE colonies ADD COLUMN source TEXT"),
+        ("colonies","notes",         "ALTER TABLE colonies ADD COLUMN notes TEXT"),
+        ("colonies","queenNr",       "ALTER TABLE colonies ADD COLUMN queenNr TEXT"),
+        ("colonies","queenGen",      "ALTER TABLE colonies ADD COLUMN queenGen TEXT"),
+        ("colonies","scaleId",       "ALTER TABLE colonies ADD COLUMN scaleId TEXT"),
+        ("colonies","sortOrder",     "ALTER TABLE colonies ADD COLUMN sortOrder INTEGER DEFAULT 0"),
+        ("colonies","demareeStage",  "ALTER TABLE colonies ADD COLUMN demareeStage TEXT"),
+        ("colonies","demareedAt",    "ALTER TABLE colonies ADD COLUMN demareedAt TEXT"),
+        ("colonies","demareeEndedAt","ALTER TABLE colonies ADD COLUMN demareeEndedAt TEXT"),
+        ("colonies","requeueFlag",   "ALTER TABLE colonies ADD COLUMN requeueFlag INTEGER DEFAULT 0"),
+        ("colonies","requeueReasons","ALTER TABLE colonies ADD COLUMN requeueReasons TEXT"),
+        ("colonies","requeueNote",   "ALTER TABLE colonies ADD COLUMN requeueNote TEXT"),
+        ("colonies","breedFlag",     "ALTER TABLE colonies ADD COLUMN breedFlag INTEGER DEFAULT 0"),
+        ("entries","obs",        "ALTER TABLE entries ADD COLUMN obs TEXT"),
+        ("entries","photos",     "ALTER TABLE entries ADD COLUMN photos TEXT"),
+        ("entries","obs_extra",  "ALTER TABLE entries ADD COLUMN obs_extra TEXT"),
+        ("entries","temper",     "ALTER TABLE entries ADD COLUMN temper TEXT"),
+        ("entries","strength",   "ALTER TABLE entries ADD COLUMN strength TEXT"),
+        ("entries","food",       "ALTER TABLE entries ADD COLUMN food TEXT"),
+        ("entries","demareeAction","ALTER TABLE entries ADD COLUMN demareeAction TEXT"),
+        ("entries","entryHrNr",    "ALTER TABLE entries ADD COLUMN entryHrNr TEXT"),
+        ("colonies","honigRaeume",   "ALTER TABLE colonies ADD COLUMN honigRaeume TEXT"),
+        ("colonies","umlarvDate",    "ALTER TABLE colonies ADD COLUMN umlarvDate TEXT"),
+        ("reminders","apiaryId",    "ALTER TABLE reminders ADD COLUMN apiaryId TEXT"),
+        ("reminders","apiaryName",  "ALTER TABLE reminders ADD COLUMN apiaryName TEXT"),
+        ("colonies","weiselprobeDate","ALTER TABLE colonies ADD COLUMN weiselprobeDate TEXT"),
+        ("colonies","kaefigungDate",    "ALTER TABLE colonies ADD COLUMN kaefigungDate TEXT"),
+        ("colonies","koeniginFreiDate", "ALTER TABLE colonies ADD COLUMN koeniginFreiDate TEXT"),
+        ("honey_harvests","apiaryId",   "ALTER TABLE honey_harvests ADD COLUMN apiaryId TEXT"),
+        ("honey_harvests","apiaryName", "ALTER TABLE honey_harvests ADD COLUMN apiaryName TEXT"),
+        ("honey_harvests","anzahlVoelker", "ALTER TABLE honey_harvests ADD COLUMN anzahlVoelker INTEGER DEFAULT 0"),
+        ("colonies","currentWeight",     "ALTER TABLE colonies ADD COLUMN currentWeight TEXT"),
+        ("colonies","currentWeightDate", "ALTER TABLE colonies ADD COLUMN currentWeightDate TEXT"),
+        ("colonies","zielGewicht",       "ALTER TABLE colonies ADD COLUMN zielGewicht TEXT"),
+        ("colonies","oxalBlockStage",    "ALTER TABLE colonies ADD COLUMN oxalBlockStage TEXT"),
+        ("colonies","oxalBlockStartAt",  "ALTER TABLE colonies ADD COLUMN oxalBlockStartAt TEXT"),
+        ("colonies","oxalBlockLastAt",   "ALTER TABLE colonies ADD COLUMN oxalBlockLastAt TEXT"),
+        ("entries","oxalBlockAction",    "ALTER TABLE entries ADD COLUMN oxalBlockAction TEXT"),
+        ("entries","varroaCount",        "ALTER TABLE entries ADD COLUMN varroaCount TEXT"),
+        ("entries","varroaAnts",         "ALTER TABLE entries ADD COLUMN varroaAnts INTEGER DEFAULT 0"),
+        ("reminders","dueDate",          "ALTER TABLE reminders ADD COLUMN dueDate TEXT"),
+        ("reminders","remindDaysBefore", "ALTER TABLE reminders ADD COLUMN remindDaysBefore INTEGER DEFAULT 0"),
+    ]
+    for table, col, sql in migrations:
+        if not column_exists(con, table, col):
+            con.execute(sql)
+    if column_exists(con,"entries","photoIds"):
+        for r in con.execute("SELECT id, photoIds FROM entries WHERE photos IS NULL").fetchall():
+            try: ids = json.loads(r["photoIds"] or "[]")
+            except: ids = []
+            con.execute("UPDATE entries SET photos=? WHERE id=?",
+                        (json.dumps([{"id":p,"caption":""} for p in ids]), r["id"]))
+    con.commit(); con.close()
+
+def rows(con, sql, args=()):
+    return [dict(r) for r in con.execute(sql, args).fetchall()]
+
+def parse_entry(r):
+    photos = entry_photos(r); d = dict(r)
+    try: d["obs"] = json.loads(d.get("obs") or "[]")
+    except: d["obs"] = []
+    try: d["obs_extra"] = json.loads(d.get("obs_extra") or "{}")
+    except: d["obs_extra"] = {}
+    d["photos"] = photos; d.pop("photoIds", None)
+    return d
+
+def photo_ids(photos):
+    return [p.get("id") for p in (photos or []) if isinstance(p,dict) and p.get("id")]
+
+def entry_photos(row):
+    try: raw = row["photos"]
+    except: raw = None
+    if raw:
+        try: photos = json.loads(raw)
+        except: photos = []
+        if photos: return photos
+    try: rawi = row["photoIds"]
+    except: rawi = None
+    if rawi:
+        try: return [{"id":p,"caption":""} for p in json.loads(rawi)]
+        except: pass
+    return []
+
+def delete_photos(ids):
+    for pid in (ids or []):
+        if ID_RE.match(str(pid)):
+            try: os.remove(os.path.join(PHOTO_DIR, pid+".jpg"))
+            except FileNotFoundError: pass
+
+def delete_colony_cascade(con, cid):
+    for e in con.execute("SELECT photos,photoIds FROM entries WHERE colonyId=?",(cid,)).fetchall():
+        delete_photos(photo_ids(entry_photos(e)))
+    con.execute("DELETE FROM entries WHERE colonyId=?",(cid,))
+    con.execute("DELETE FROM colonies WHERE id=?",(cid,))
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "BeeTown/1.9.83"
+
+    def _json(self, obj, code=200):
+        body = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type","application/json; charset=utf-8")
+        self.send_header("Content-Length",str(len(body)))
+        self.end_headers(); self.wfile.write(body)
+
+    def _bytes(self, data, ct, code=200, cache=False):
+        self.send_response(code)
+        self.send_header("Content-Type",ct)
+        self.send_header("Content-Length",str(len(data)))
+        if cache: self.send_header("Cache-Control","public,max-age=31536000,immutable")
+        self.end_headers(); self.wfile.write(data)
+
+    def _err(self, code, msg): self._json({"error":msg}, code)
+
+    def _rjson(self):
+        n=int(self.headers.get("Content-Length",0))
+        return json.loads(self.rfile.read(n).decode()) if n>0 else {}
+
+    def _rraw(self):
+        n=int(self.headers.get("Content-Length",0))
+        return self.rfile.read(n) if n>0 else b""
+
+    def do_HEAD(self):
+        if self.path == "/api/logo":
+            if os.path.isfile(LOGO_PATH):
+                self.send_response(200)
+                self.send_header("Content-Type","image/jpeg")
+                self.end_headers()
+            else:
+                self.send_response(404)
+                self.end_headers()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_GET(self):
+        p=self.path.split("?",1)[0]
+        if p.startswith("/api/"): return self.api_get(p)
+        self.serve_static(p)
+
+    def do_POST(self):
+        if self.path.startswith("/api/"): return self.api_post(self.path)
+        self._err(404,"Not found")
+
+    def do_PUT(self):
+        if self.path.startswith("/api/"): return self.api_put(self.path)
+        self._err(404,"Not found")
+
+    def do_DELETE(self):
+        if self.path.startswith("/api/"): return self.api_delete(self.path)
+        self._err(404,"Not found")
+
+    def serve_static(self, path):
+        if path in ("/",""): path="/index.html"
+        rel=path.lstrip("/")
+        full=os.path.normpath(os.path.join(STATIC_DIR,rel))
+        if not full.startswith(STATIC_DIR) or not os.path.isfile(full):
+            return self._err(404,"Not found")
+        ct=mimetypes.guess_type(full)[0] or "application/octet-stream"
+        with open(full,"rb") as f: self._bytes(f.read(),ct)
+
+    def api_get(self, path):
+        if path=="/api/logo":
+            if not os.path.isfile(LOGO_PATH): return self._err(404,"Kein Logo")
+            with open(LOGO_PATH,"rb") as f: data=f.read()
+            return self._bytes(data,"image/jpeg")
+        from urllib.parse import urlparse, parse_qs
+        q=parse_qs(urlparse(self.path).query); con=db()
+        try:
+            if path=="/api/apiaries":
+                return self._json(rows(con,"SELECT * FROM apiaries ORDER BY name"))
+            if path=="/api/colonies":
+                aid=(q.get("apiaryId") or [""])[0]
+                return self._json(rows(con,
+                    "SELECT * FROM colonies WHERE apiaryId=? AND archived=0 ORDER BY sortOrder,name",(aid,)))
+            if path=="/api/archive":
+                return self._json(rows(con,"""
+                    SELECT c.*,a.name AS apiaryName FROM colonies c
+                    LEFT JOIN apiaries a ON a.id=c.apiaryId
+                    WHERE c.archived=1 ORDER BY c.archivedAt DESC,c.name"""))
+            if path=="/api/entries":
+                cid=(q.get("colonyId") or [""])[0]
+                return self._json([parse_entry(r) for r in
+                    con.execute("SELECT * FROM entries WHERE colonyId=? ORDER BY date DESC, createdAt DESC",(cid,)).fetchall()])
+            if path=="/api/entries/varroa":
+                rs=con.execute("""
+                    SELECT e.*, c.name AS colonyName, c.apiaryId AS apiaryId, a.name AS apiaryName
+                    FROM entries e
+                    JOIN colonies c ON c.id = e.colonyId
+                    LEFT JOIN apiaries a ON a.id = c.apiaryId
+                    WHERE e.varroaCount IS NOT NULL AND e.varroaCount != ''
+                    ORDER BY e.date DESC, e.createdAt DESC
+                """).fetchall()
+                return self._json([parse_entry(r) for r in rs])
+            if path=="/api/entries/all":
+                rs=con.execute("""
+                    SELECT e.*, c.name AS colonyName, c.apiaryId AS apiaryId, a.name AS apiaryName
+                    FROM entries e
+                    JOIN colonies c ON c.id = e.colonyId
+                    LEFT JOIN apiaries a ON a.id = c.apiaryId
+                    ORDER BY e.date DESC, e.createdAt DESC
+                """).fetchall()
+                return self._json([parse_entry(r) for r in rs])
+            if path=="/api/entries/latest":
+                rs=con.execute("""
+                    SELECT e.*, c.name AS colonyName, c.apiaryId AS apiaryId, a.name AS apiaryName
+                    FROM (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY colonyId ORDER BY date DESC, createdAt DESC
+                        ) AS rn
+                        FROM entries
+                    ) e
+                    JOIN colonies c ON c.id = e.colonyId
+                    LEFT JOIN apiaries a ON a.id = c.apiaryId
+                    WHERE e.rn = 1 AND c.archived = 0
+                    ORDER BY e.date DESC, e.createdAt DESC
+                """).fetchall()
+                return self._json([parse_entry(r) for r in rs])
+            if path=="/api/scales":
+                return self._json(rows(con,"SELECT * FROM scales ORDER BY name"))
+            if path=="/api/settings":
+                r=con.execute("SELECT key,value FROM settings").fetchall()
+                return self._json({row[0]:row[1] for row in r})
+            if path=="/api/reminders":
+                return self._json(rows(con,"SELECT * FROM reminders ORDER BY createdAt DESC"))
+            if path=="/api/honey_harvests":
+                return self._json(rows(con,"SELECT * FROM honey_harvests ORDER BY year DESC, createdAt DESC"))
+            if path=="/api/sirup_calc":
+                return self._json(rows(con,"SELECT * FROM sirup_calc ORDER BY createdAt DESC LIMIT 20"))
+            if path=="/api/backup": return self.api_backup(con)
+            m=re.match(r"^/api/photos/([^/]+)$",path)
+            if m:
+                pid=m.group(1)
+                if not ID_RE.match(pid): return self._err(400,"Bad id")
+                fp=os.path.join(PHOTO_DIR,pid+".jpg")
+                if not os.path.isfile(fp): return self._err(404,"Not found")
+                with open(fp,"rb") as f: return self._bytes(f.read(),"image/jpeg",cache=True)
+            m=re.match(r"^/api/colonies/([^/]+)$",path)
+            if m:
+                r=con.execute("SELECT * FROM colonies WHERE id=?",(m.group(1),)).fetchone()
+                return self._json(dict(r) if r else None)
+            self._err(404,"Not found")
+        finally: con.close()
+
+    def api_post(self, path):
+        if path=="/api/settings":
+            body2=self._rjson()
+            con2=db()
+            for k,v in body2.items():
+                con2.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",(k,str(v)))
+            con2.commit(); con2.close()
+            return self._json({"ok":True})
+        if path=="/api/reminders":
+            body2=self._rjson()
+            rid=new_id()
+            con2=db()
+            con2.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore) VALUES(?,?,?,?,?,?,?)",(rid,body2.get("text",""),body2.get("apiaryId",""),body2.get("apiaryName",""),body2.get("createdAt",""),body2.get("dueDate",""),int(body2.get("remindDaysBefore",0) or 0)))
+            con2.commit(); con2.close()
+            return self._json({"id":rid})
+        if path=="/api/honey_harvests":
+            body2=self._rjson()
+            rid=new_id()
+            con2=db()
+            con2.execute("INSERT INTO honey_harvests(id,year,tracht,menge,notizen,apiaryId,apiaryName,anzahlVoelker,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
+                (rid,int(body2.get("year",0)),body2.get("tracht",""),float(body2.get("menge",0)),
+                 body2.get("notizen",""),body2.get("apiaryId",""),body2.get("apiaryName",""),int(body2.get("anzahlVoelker",0) or 0),now_iso()))
+            con2.commit(); con2.close()
+            return self._json({"id":rid})
+        if path=="/api/sirup_calc":
+            body2=self._rjson()
+            rid=new_id()
+            con2=db()
+            con2.execute("INSERT INTO sirup_calc(id,date,ratio,mode,inputValue,sugar,water,result,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
+                (rid,body2.get("date",""),body2.get("ratio",""),body2.get("mode",""),
+                 body2.get("inputValue",""),body2.get("sugar",""),body2.get("water",""),body2.get("result",""),
+                 body2.get("createdAt","") or now_iso()))
+            con2.execute("DELETE FROM sirup_calc WHERE id NOT IN (SELECT id FROM sirup_calc ORDER BY createdAt DESC LIMIT 20)")
+            con2.commit(); con2.close()
+            return self._json({"id":rid})
+        if path=="/api/logo":
+            data=self._rraw()
+            if not data: return self._err(400,"Leerer Upload")
+            with open(LOGO_PATH,"wb") as f: f.write(data)
+            return self._json({"ok":True})
+        if path=="/api/photos":
+            data=self._rraw()
+            if not data: return self._err(400,"Leerer Upload")
+            pid=new_id()
+            with open(os.path.join(PHOTO_DIR,pid+".jpg"),"wb") as f: f.write(data)
+            return self._json({"id":pid})
+
+        con=db()
+        try:
+            # archive / restore
+            m=re.match(r"^/api/colonies/([^/]+)/(archive|restore)$",path)
+            if m:
+                cid,action=m.group(1),m.group(2)
+                if not ID_RE.match(cid): return self._err(400,"Bad id")
+                if action=="archive":
+                    row=con.execute("SELECT name FROM colonies WHERE id=?",(cid,)).fetchone()
+                    name=(row["name"] if row else "") or ""
+                    if name and not name.startswith("Archiv-"):
+                        name="Archiv-"+name
+                    con.execute("UPDATE colonies SET archived=1,archivedAt=?,name=? WHERE id=?",(now_iso(),name,cid))
+                else:
+                    target=(self._rjson() or {}).get("apiaryId")
+                    if target:
+                        con.execute("UPDATE colonies SET archived=0,archivedAt=NULL,apiaryId=? WHERE id=?",(target,cid))
+                    else:
+                        con.execute("UPDATE colonies SET archived=0,archivedAt=NULL WHERE id=?",(cid,))
+                con.commit(); return self._json({"ok":True})
+
+            # move colony to different apiary
+            m=re.match(r"^/api/colonies/([^/]+)/move$",path)
+            if m:
+                cid=m.group(1)
+                if not ID_RE.match(cid): return self._err(400,"Bad id")
+                body=self._rjson()
+                target=body.get("apiaryId","")
+                if not target: return self._err(400,"apiaryId fehlt")
+                con.execute("UPDATE colonies SET apiaryId=? WHERE id=?",(target,cid))
+                con.commit(); return self._json({"ok":True})
+
+            body=self._rjson()
+
+            if path=="/api/apiaries":
+                rid=new_id()
+                con.execute("INSERT INTO apiaries(id,name,location,notes,createdAt) VALUES(?,?,?,?,?)",
+                    (rid,body.get("name",""),body.get("location",""),body.get("notes",""),body.get("createdAt","")))
+                con.commit(); return self._json({"id":rid})
+
+            if path=="/api/colonies":
+                rid=new_id()
+                # Zielgewicht: falls nicht mitgeschickt, aus allgemeiner Einstellung übernehmen
+                zg = body.get("zielGewicht","")
+                if not zg:
+                    row = con.execute("SELECT value FROM settings WHERE key='zielGewicht'").fetchone()
+                    zg = row["value"] if row else ""
+                con.execute("""INSERT INTO colonies
+                    (id,apiaryId,name,queenYear,queenNr,queenGen,status,source,notes,scaleId,
+                     sortOrder,createdAt,archived,demareeStage,demareedAt,demareeEndedAt,
+                     requeueFlag,requeueReasons,requeueNote,breedFlag,honigRaeume,umlarvDate,weiselprobeDate,kaefigungDate,koeniginFreiDate,
+                     currentWeight,currentWeightDate,zielGewicht,oxalBlockStage,oxalBlockStartAt,oxalBlockLastAt)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (rid,body.get("apiaryId",""),body.get("name",""),body.get("queenYear",""),
+                     body.get("queenNr",""),body.get("queenGen",""),body.get("status","ok"),
+                     body.get("source",""),body.get("notes",""),body.get("scaleId",""),
+                     body.get("sortOrder",0),body.get("createdAt",""),
+                     body.get("demareeStage",""),body.get("demareedAt",""),body.get("demareeEndedAt",""),
+                     int(body.get("requeueFlag",0) or 0),body.get("requeueReasons","[]"),
+                     body.get("requeueNote",""),int(body.get("breedFlag",0) or 0),
+                     body.get("honigRaeume","[]"),body.get("umlarvDate",""),
+                     body.get("weiselprobeDate",""),body.get("kaefigungDate",""),body.get("koeniginFreiDate",""),
+                     body.get("currentWeight",""),body.get("currentWeightDate",""),zg,
+                     body.get("oxalBlockStage",""),body.get("oxalBlockStartAt",""),body.get("oxalBlockLastAt","")))
+                con.commit(); return self._json({"id":rid})
+
+            if path=="/api/entries":
+                rid=new_id()
+                con.execute("""INSERT INTO entries
+                    (id,colonyId,date,type,notes,photos,obs,obs_extra,temper,strength,food,demareeAction,entryHrNr,oxalBlockAction,varroaCount,varroaAnts,createdAt)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (rid,body.get("colonyId",""),body.get("date",""),body.get("type",""),
+                     body.get("notes",""),json.dumps(body.get("photos",[])),
+                     json.dumps(body.get("obs",[])),json.dumps(body.get("obs_extra",{})),
+                     body.get("temper",""),body.get("strength",""),body.get("food",""),
+                     body.get("demareeAction",""),body.get("entryHrNr",""),body.get("oxalBlockAction",""),
+                     body.get("varroaCount",""),int(body.get("varroaAnts",0) or 0),body.get("createdAt","")))
+                con.commit(); return self._json({"id":rid})
+
+            if path=="/api/scales":
+                rid=new_id()
+                con.execute("INSERT INTO scales(id,name,url,notes,createdAt) VALUES(?,?,?,?,?)",
+                    (rid,body.get("name",""),body.get("url",""),body.get("notes",""),now_iso()))
+                con.commit(); return self._json({"id":rid})
+
+            if path=="/api/colonies/bulk-update":
+                ids=body.get("ids",[]); fields=body.get("fields",{})
+                allowed={"queenYear","queenNr","queenGen","status","source","scaleId","notes","umlarvDate","zielGewicht"}
+                sets={k:v for k,v in fields.items() if k in allowed}
+                if sets and ids:
+                    sql="UPDATE colonies SET "+", ".join(f"{k}=?" for k in sets)+\
+                        " WHERE id IN ("+",".join("?"*len(ids))+")"
+                    con.execute(sql, list(sets.values())+ids)
+                    con.commit()
+                return self._json({"ok":True})
+
+            if path=="/api/entries/clear-fuetterung":
+                rows_=con.execute("SELECT id,obs_extra,photos,photoIds FROM entries").fetchall()
+                deleted=0
+                for r in rows_:
+                    try: extra=json.loads(r["obs_extra"] or "{}")
+                    except: extra={}
+                    if extra.get("fuetterType"):
+                        delete_photos(photo_ids(entry_photos(r)))
+                        con.execute("DELETE FROM entries WHERE id=?",(r["id"],))
+                        deleted+=1
+                con.commit()
+                return self._json({"ok":True,"deleted":deleted})
+
+            if path=="/api/colonies/clear-honigraeume":
+                con.execute("UPDATE colonies SET honigRaeume='[]'")
+                con.commit()
+                return self._json({"ok":True})
+
+            if path=="/api/colonies/clear-demaree":
+                con.execute("UPDATE colonies SET demareeStage='',demareedAt='',demareeEndedAt=''")
+                con.commit()
+                return self._json({"ok":True})
+
+            if path=="/api/colonies/clear-oxalblock":
+                con.execute("UPDATE colonies SET oxalBlockStage='',oxalBlockStartAt='',oxalBlockLastAt=''")
+                con.commit()
+                return self._json({"ok":True})
+
+            if path=="/api/colonies/clear-umlarv":
+                con.execute("UPDATE colonies SET umlarvDate=''")
+                con.commit()
+                return self._json({"ok":True})
+
+            if path=="/api/colonies/reorder":
+                for i,cid in enumerate(body.get("order",[])):
+                    if ID_RE.match(str(cid)):
+                        con.execute("UPDATE colonies SET sortOrder=? WHERE id=?",(i,cid))
+                con.commit(); return self._json({"ok":True})
+
+            if path=="/api/restore": return self.api_restore(con, body)
+            self._err(404,"Not found")
+        finally: con.close()
+
+    def api_put(self, path):
+        con=db()
+        try:
+            body=self._rjson()
+            m=re.match(r"^/api/(apiaries|colonies|entries|scales|reminders|honey_harvests)/([^/]+)$",path)
+            if not m: return self._err(404,"Not found")
+            kind,rid=m.group(1),m.group(2)
+            if not ID_RE.match(rid): return self._err(400,"Bad id")
+            if kind=="apiaries":
+                con.execute("UPDATE apiaries SET name=?,location=?,notes=? WHERE id=?",
+                    (body.get("name",""),body.get("location",""),body.get("notes",""),rid))
+            elif kind=="colonies":
+                con.execute("""UPDATE colonies SET
+                    apiaryId=?,name=?,queenYear=?,queenNr=?,queenGen=?,status=?,source=?,notes=?,scaleId=?,
+                    demareeStage=?,demareedAt=?,demareeEndedAt=?,
+                    requeueFlag=?,requeueReasons=?,requeueNote=?,breedFlag=?,honigRaeume=?,umlarvDate=?,weiselprobeDate=?,kaefigungDate=?,koeniginFreiDate=?,
+                    currentWeight=?,currentWeightDate=?,zielGewicht=?,oxalBlockStage=?,oxalBlockStartAt=?,oxalBlockLastAt=?
+                    WHERE id=?""",
+                    (body.get("apiaryId",""),body.get("name",""),body.get("queenYear",""),body.get("queenNr",""),
+                     body.get("queenGen",""),body.get("status","ok"),body.get("source",""),
+                     body.get("notes",""),body.get("scaleId",""),
+                     body.get("demareeStage",""),body.get("demareedAt",""),body.get("demareeEndedAt",""),
+                     int(body.get("requeueFlag",0) or 0),body.get("requeueReasons","[]"),
+                     body.get("requeueNote",""),int(body.get("breedFlag",0) or 0),
+                     body.get("honigRaeume","[]"),body.get("umlarvDate",""),
+                     body.get("weiselprobeDate",""),body.get("kaefigungDate",""),body.get("koeniginFreiDate",""),
+                     body.get("currentWeight",""),body.get("currentWeightDate",""),body.get("zielGewicht",""),
+                     body.get("oxalBlockStage",""),body.get("oxalBlockStartAt",""),body.get("oxalBlockLastAt",""),rid))
+            elif kind=="entries":
+                old=con.execute("SELECT photos,photoIds FROM entries WHERE id=?",(rid,)).fetchone()
+                old_ids=photo_ids(entry_photos(old)) if old else []
+                new_photos=body.get("photos",[])
+                delete_photos([p for p in old_ids if p not in photo_ids(new_photos)])
+                con.execute("""UPDATE entries SET
+                    date=?,type=?,notes=?,photos=?,obs=?,obs_extra=?,temper=?,strength=?,food=?,demareeAction=?,entryHrNr=?,oxalBlockAction=?,varroaCount=?,varroaAnts=?
+                    WHERE id=?""",
+                    (body.get("date",""),body.get("type",""),body.get("notes",""),
+                     json.dumps(new_photos),json.dumps(body.get("obs",[])),
+                     json.dumps(body.get("obs_extra",{})),
+                     body.get("temper",""),body.get("strength",""),body.get("food",""),
+                     body.get("demareeAction",""),body.get("entryHrNr",""),body.get("oxalBlockAction",""),
+                     body.get("varroaCount",""),int(body.get("varroaAnts",0) or 0),rid))
+            elif kind=="reminders":
+                con.execute("UPDATE reminders SET text=?,apiaryId=?,apiaryName=?,dueDate=?,remindDaysBefore=? WHERE id=?",
+                    (body.get("text",""),body.get("apiaryId",""),body.get("apiaryName",""),
+                     body.get("dueDate",""),int(body.get("remindDaysBefore",0) or 0),rid))
+            elif kind=="scales":
+                con.execute("UPDATE scales SET name=?,url=?,notes=? WHERE id=?",
+                    (body.get("name",""),body.get("url",""),body.get("notes",""),rid))
+            elif kind=="honey_harvests":
+                con.execute("UPDATE honey_harvests SET year=?,tracht=?,menge=?,notizen=?,apiaryId=?,apiaryName=?,anzahlVoelker=? WHERE id=?",
+                    (int(body.get("year",0)),body.get("tracht",""),float(body.get("menge",0)),
+                     body.get("notizen",""),body.get("apiaryId",""),body.get("apiaryName",""),int(body.get("anzahlVoelker",0) or 0),rid))
+            con.commit(); self._json({"ok":True})
+        finally: con.close()
+
+    def api_delete(self, path):
+        if path=="/api/logo":
+            try: os.remove(LOGO_PATH)
+            except FileNotFoundError: pass
+            return self._json({"ok":True})
+        con=db()
+        try:
+            m=re.match(r"^/api/(apiaries|colonies|entries|scales|reminders|honey_harvests|sirup_calc)/([^/]+)$",path)
+            if not m: return self._err(404,"Not found")
+            kind,rid=m.group(1),m.group(2)
+            if not ID_RE.match(rid): return self._err(400,"Bad id")
+            if kind=="apiaries":
+                for c in con.execute("SELECT id FROM colonies WHERE apiaryId=? AND archived=0",(rid,)).fetchall():
+                    delete_colony_cascade(con,c["id"])
+                con.execute("DELETE FROM apiaries WHERE id=?",(rid,))
+            elif kind=="colonies": delete_colony_cascade(con,rid)
+            elif kind=="entries":
+                e=con.execute("SELECT photos,photoIds FROM entries WHERE id=?",(rid,)).fetchone()
+                if e: delete_photos(photo_ids(entry_photos(e)))
+                con.execute("DELETE FROM entries WHERE id=?",(rid,))
+            elif kind=="reminders":
+                con.execute("DELETE FROM reminders WHERE id=?",(rid,))
+            elif kind=="honey_harvests":
+                con.execute("DELETE FROM honey_harvests WHERE id=?",(rid,))
+            elif kind=="sirup_calc":
+                con.execute("DELETE FROM sirup_calc WHERE id=?",(rid,))
+            elif kind=="scales":
+                con.execute("UPDATE colonies SET scaleId='' WHERE scaleId=?",(rid,))
+                con.execute("DELETE FROM scales WHERE id=?",(rid,))
+            con.commit(); self._json({"ok":True})
+        finally: con.close()
+
+    def api_backup(self, con):
+        out={"app":"imkerei","version":7,
+             "apiaries":rows(con,"SELECT * FROM apiaries"),
+             "colonies":rows(con,"SELECT * FROM colonies"),
+             "entries":[parse_entry(r) for r in con.execute("SELECT * FROM entries").fetchall()],
+             "scales":rows(con,"SELECT * FROM scales"),
+             "honey_harvests":rows(con,"SELECT * FROM honey_harvests"),
+             "reminders":rows(con,"SELECT * FROM reminders"),
+             "sirup_calc":rows(con,"SELECT * FROM sirup_calc"),
+             "settings":rows(con,"SELECT * FROM settings")}
+        body=json.dumps(out).encode()
+        self.send_response(200)
+        self.send_header("Content-Type","application/json; charset=utf-8")
+        self.send_header("Content-Disposition",'attachment; filename="beetown-backup.json"')
+        self.send_header("Content-Length",str(len(body)))
+        self.end_headers(); self.wfile.write(body)
+
+    def api_restore(self, con, body):
+        if body.get("app")!="imkerei": return self._err(400,"Keine gültige Backup-Datei")
+        for t in ("apiaries","colonies","entries","scales","honey_harvests","reminders","sirup_calc","settings"): con.execute(f"DELETE FROM {t}")
+        for a in body.get("apiaries",[]):
+            con.execute("INSERT INTO apiaries(id,name,location,notes,createdAt) VALUES(?,?,?,?,?)",
+                (a["id"],a.get("name",""),a.get("location",""),a.get("notes",""),a.get("createdAt","")))
+        for c in body.get("colonies",[]):
+            con.execute("""INSERT INTO colonies
+                (id,apiaryId,name,queenYear,queenNr,queenGen,status,source,notes,scaleId,
+                 sortOrder,createdAt,archived,archivedAt,demareeStage,demareedAt,demareeEndedAt,
+                 requeueFlag,requeueReasons,requeueNote,breedFlag,honigRaeume,umlarvDate,
+                 weiselprobeDate,kaefigungDate,koeniginFreiDate,currentWeight,currentWeightDate,zielGewicht,
+                 oxalBlockStage,oxalBlockStartAt,oxalBlockLastAt)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (c["id"],c.get("apiaryId",""),c.get("name",""),c.get("queenYear",""),
+                 c.get("queenNr",""),c.get("queenGen",""),c.get("status","ok"),
+                 c.get("source",""),c.get("notes",""),c.get("scaleId",""),
+                 c.get("sortOrder",0),c.get("createdAt",""),
+                 int(c.get("archived",0) or 0),c.get("archivedAt"),
+                 c.get("demareeStage",""),c.get("demareedAt",""),c.get("demareeEndedAt",""),
+                 int(c.get("requeueFlag",0) or 0),c.get("requeueReasons","[]"),
+                 c.get("requeueNote",""),int(c.get("breedFlag",0) or 0),
+                 c.get("honigRaeume","[]"),c.get("umlarvDate",""),
+                 c.get("weiselprobeDate",""),c.get("kaefigungDate",""),c.get("koeniginFreiDate",""),
+                 c.get("currentWeight",""),c.get("currentWeightDate",""),c.get("zielGewicht",""),
+                 c.get("oxalBlockStage",""),c.get("oxalBlockStartAt",""),c.get("oxalBlockLastAt","")))
+        for e in body.get("entries",[]):
+            photos=e.get("photos") or [{"id":p,"caption":""} for p in e.get("photoIds",[])]
+            con.execute("""INSERT INTO entries
+                (id,colonyId,date,type,notes,photos,obs,obs_extra,temper,strength,food,demareeAction,entryHrNr,oxalBlockAction,varroaCount,varroaAnts,createdAt)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (e["id"],e.get("colonyId",""),e.get("date",""),e.get("type",""),
+                 e.get("notes",""),json.dumps(photos),json.dumps(e.get("obs",[])),
+                 json.dumps(e.get("obs_extra",{})),
+                 e.get("temper",""),e.get("strength",""),e.get("food",""),
+                 e.get("demareeAction",""),e.get("entryHrNr",""),e.get("oxalBlockAction",""),
+                 e.get("varroaCount",""),int(e.get("varroaAnts",0) or 0),e.get("createdAt","")))
+        for s in body.get("scales",[]):
+            con.execute("INSERT INTO scales(id,name,url,notes,createdAt) VALUES(?,?,?,?,?)",
+                (s["id"],s.get("name",""),s.get("url",""),s.get("notes",""),s.get("createdAt","")))
+        for h in body.get("honey_harvests",[]):
+            con.execute("""INSERT INTO honey_harvests
+                (id,year,tracht,menge,notizen,apiaryId,apiaryName,anzahlVoelker,createdAt)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
+                (h["id"],int(h.get("year",0) or 0),h.get("tracht",""),float(h.get("menge",0) or 0),
+                 h.get("notizen",""),h.get("apiaryId",""),h.get("apiaryName",""),
+                 int(h.get("anzahlVoelker",0) or 0),h.get("createdAt","")))
+        for r in body.get("reminders",[]):
+            con.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore) VALUES(?,?,?,?,?,?,?)",
+                (r["id"],r.get("text",""),r.get("apiaryId",""),r.get("apiaryName",""),r.get("createdAt",""),
+                 r.get("dueDate",""),int(r.get("remindDaysBefore",0) or 0)))
+        for sc in body.get("sirup_calc",[]):
+            con.execute("INSERT INTO sirup_calc(id,date,ratio,mode,inputValue,sugar,water,result,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
+                (sc["id"],sc.get("date",""),sc.get("ratio",""),sc.get("mode",""),
+                 sc.get("inputValue",""),sc.get("sugar",""),sc.get("water",""),sc.get("result",""),sc.get("createdAt","")))
+        for s in body.get("settings",[]):
+            con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
+                (s.get("key",""),s.get("value","")))
+        con.commit(); self._json({"ok":True})
+
+    def log_message(self, fmt, *args): pass
+
+
+def main():
+    init_db()
+    httpd = ThreadingHTTPServer((HOST,PORT),Handler)
+    print(f"BeeTown-Server läuft auf http://{HOST}:{PORT}  (Daten: {DATA_DIR})")
+    try: httpd.serve_forever()
+    except KeyboardInterrupt: httpd.shutdown()
+
+if __name__=="__main__": main()

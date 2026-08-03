@@ -1,0 +1,25 @@
+[Unit]
+Description=Imkerei – Stockkarten-Server
+After=network.target
+
+[Service]
+Type=simple
+User=imkerei
+Group=imkerei
+WorkingDirectory=/opt/imkerei
+ExecStart=/usr/bin/python3 /opt/imkerei/server.py
+Environment=IMKEREI_HOST=0.0.0.0
+Environment=IMKEREI_PORT=8080
+Environment=IMKEREI_DATA=/opt/imkerei/data
+Environment=IMKEREI_STATIC=/opt/imkerei/static
+Restart=on-failure
+RestartSec=3
+# Härtung
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/imkerei/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
