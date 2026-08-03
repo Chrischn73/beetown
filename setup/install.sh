@@ -23,6 +23,21 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Dieser Ordner ist NUR fuer Raspberry Pi OS gedacht (setzt raspi-config,
+# WLAN per NetworkManager, Boot-Banner in /etc/issue etc. voraus) und
+# startet mehrere Dienste auf den Ports 80/8080/8081. Auf einem normalen
+# Debian-/Linux-Server wuerde das u. a. einen ggf. aktiven
+# wpa_supplicant.service deaktivieren und Port 80 belegen - daher hier
+# hart abbrechen, BEVOR irgendetwas am System veraendert wird.
+if ! grep -qi "raspberry pi" /proc/device-tree/model 2>/dev/null; then
+    echo "FEHLER: Dies ist kein Raspberry Pi (/proc/device-tree/model passt nicht)."
+    echo "Dieses Skript ist nur fuer Raspberry Pi OS (Lite/Core) gedacht."
+    echo "Fuer einen normalen Debian-/Linux-Server bitte stattdessen dem"
+    echo "Abschnitt 'Bereitstellung auf einem allgemeinen Linux Server' in"
+    echo "der README.md folgen (manuelle Einrichtung, kein install.sh)."
+    exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OWNER="${SUDO_USER:-}"
 NEW_HOSTNAME="beetown"

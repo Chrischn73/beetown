@@ -11,6 +11,16 @@ Kleine Web-App (PWA) zur Imkereiverwaltung: Standorte, Völker, Stockkarten-Eint
 
 ## Bereitstellung auf einem Raspberry Pi
 
+> ⚠️ **Nur für Raspberry Pi OS (Lite/Core)!** Der Ordner `setup/` und
+> `install.sh` setzen `raspi-config`, WLAN-Verwaltung per NetworkManager
+> und mehrere permanent laufende Dienste auf den Ports 80/8080/8081
+> voraus. `install.sh` bricht auf einem normalen Debian-/Linux-Server
+> automatisch mit einer Fehlermeldung ab, bevor es etwas verändert
+> (`raspi-config` fehlt dort i. d. R.) – für so einen Server bitte
+> stattdessen dem Abschnitt [„Bereitstellung auf einem allgemeinen Linux
+> Server"](#bereitstellung-auf-einem-allgemeinen-linux-server) unten
+> folgen (manuelle Einrichtung).
+
 Alternativ zum Debian-LXC-Container (unten) lässt sich die App auch direkt
 auf einem Raspberry Pi betreiben – inklusive WLAN-Ersteinrichtung per
 Netzwerkkabel (Kabel anschließen, Formular im Browser ausfüllen, Kabel
