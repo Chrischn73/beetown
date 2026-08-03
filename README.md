@@ -1,18 +1,26 @@
 # BeeTown – digitale Stockkarte (selbst gehostet)
 
-Kleine Web-App (PWA) zur Imkereiverwaltung: Standorte, Völker, Stockkarten-Einträge
-mit Fotos. Beide Handys greifen über das VPN auf **denselben** Server zu.
+Kleine Web-App (PWA) zur Imkereiverwaltung: Standorte, Völker, Stockkarten-Einträge mit Fotos. Beide Handys greifen über das VPN auf **denselben** Server zu.
 
 - **Backend:** ein Python-Skript (`server.py`), nur Standardbibliothek, SQLite. Kein pip, kein Framework.
+
 - **Frontend:** statische PWA im Ordner `static/`.
+
 - **Daten:** zentral auf dem Server unter `data/` (`app.db` + `photos/`).
 
----
+
+## Bereitstellung auf einem Raspberry Pi
+
+Alternativ zum Debian-LXC-Container (oben) lässt sich die App auch direkt auf einem Raspberry Pi betreiben – inklusive WLAN-Ersteinrichtung per Netzwerkkabel (Kabel anschließen, Formular im Browser ausfüllen, Kabel wieder entfernen) und automatischen täglichen Backups.
+
+- **Alles-in-einem-Paket:** [setup/](setup/README.md) – kompletten Ordner per FTP auf den Pi kopieren, `sudo bash install.sh` ausführen, fertig.
+
+
+## Bereitstellung auf einem allgemeinen Linux Server
 
 ## 1. Debian-13-Container (LXC) in Proxmox
 
-In Proxmox einen unprivilegierten LXC mit Debian 13 erstellen, starten, hineinverbinden.
-Python 3 ist auf Debian 13 vorinstalliert – nichts weiter nötig:
+In Proxmox einen unprivilegierten LXC mit Debian 13 erstellen, starten, hineinverbinden. Python 3 ist auf Debian 13 vorinstalliert – nichts weiter nötig:
 
 ```bash
 apt update && apt -y upgrade
@@ -61,127 +69,44 @@ http://<container-ip>:8080
 
 Fertig – Standorte/Völker/Einträge anlegen. Beide Handys sehen denselben Stand.
 
----
-
-## „Zum Startbildschirm hinzufügen" (echte App-Optik)
-
-Die App läuft über `http` ganz normal. Für das **installierbare** PWA-Verhalten
-(Vollbild, eigenes Icon, Offline-Hülle) verlangen Browser jedoch **HTTPS**
-(Ausnahme: `localhost`). Über eine VPN-IP ist das ein „unsicherer" Ursprung,
-d. h. der Service-Worker registriert sich nicht.
-
-Einfachste Wege zu HTTPS (eine Variante reicht):
-
-- **Reverse-Proxy mit eigener Domain + Let's Encrypt** (z. B. Caddy):
-  ```bash
-  apt -y install caddy
-  # /etc/caddy/Caddyfile:
-  #   imkerei.deine-domain.de {
-  #       reverse_proxy localhost:8080
-  #   }
-  systemctl restart caddy
-  ```
-  (DNS-Challenge nutzen, wenn nur intern erreichbar.)
-- **Interne CA / selbstsigniertes Zertifikat** vor dem Proxy – funktioniert,
-  bringt aber Browser-Warnungen, solange die CA nicht auf den Handys vertraut ist.
-
-Ohne HTTPS bleibt die App voll nutzbar, nur eben als normale Website statt als
-installierte PWA.
-
----
-
-## Anmeldung / Zugriffsschutz
-
-v1 hat **keine** Anmeldung – im privaten VPN unter euch beiden in Ordnung.
-Wenn du es absichern willst, am einfachsten im Reverse-Proxy:
-
-- **Caddy:** `basic_auth` Direktive
-- **nginx:** `auth_basic` + `.htpasswd`
-
-## Datensicherung
-
-Alles Wichtige liegt in **einem** Ordner:
-
-```bash
-tar czf imkerei-backup-$(date +%F).tar.gz -C /opt/imkerei data
-```
-
-Zusätzlich kannst du in der App unter **Einstellungen → Backup exportieren**
-eine JSON-Sicherung der Datensätze ziehen (Fotos sind im `data/photos`-Ordner).
 
 ## Aktualisieren
 
-`server.py` bzw. `static/` ersetzen und `systemctl restart imkerei`.
-Der Ordner `data/` bleibt unangetastet.
+`server.py` bzw. `static/` ersetzen und `systemctl restart imkerei`. Der Ordner `data/` bleibt unangetastet.
 
----
 
 ## Funktionsumfang
 
 - Logo „Imkerei Frerichs" auf der Hauptseite
+
 - **Hell-/Dunkel-Modus** (System/Hell/Dunkel, umschaltbar unter Einstellungen)
+
 - Standorte anlegen/bearbeiten/löschen (Anlegen unter **Einstellungen**)
-- Völker je Standort; Königin-Jahr als Auswahl der **letzten 4 Jahre inkl. Farbe**,
-  Anzeige als Zahl mit **farbigem Hintergrund** (weiß/gelb/rot/grün/blau)
+
+- Völker je Standort; Königin-Jahr als Auswahl der **letzten 4 Jahre inkl. Farbe**, Anzeige als Zahl mit **farbigem Hintergrund** (weiß/gelb/rot/grün/blau)
+
 - Stockkarten-Einträge je Volk (Art, Datum, Notizen)
-- **Beobachtungs-Buttons** im Eintrag: Königin · Stifte · Larven/Maden ·
-  offene Schwarmzelle · verdeckelte Schwarmzelle · Löchriges Brutnest. Zusätzlich
-  drei Auswahl-Buttons, die beim Antippen ein Auswahlfenster mit festen Stufen
-  öffnen (Button-Text zeigt danach die gewählte Stufe): **Schwarmstimmung**
-  (Starke SS · Normale SS · Geringe SS · Keine SS), **Wildbau** (Gering · Mittel ·
-  Stark) und **Anzahl Waben** (1–12)
+
+- **Beobachtungs-Buttons** im Eintrag: Königin · Stifte · Larven/Maden · offene Schwarmzelle · verdeckelte Schwarmzelle · Löchriges Brutnest. Zusätzlich drei Auswahl-Buttons, die beim Antippen ein Auswahlfenster mit festen Stufen öffnen (Button-Text zeigt danach die gewählte Stufe): **Schwarmstimmung** (Starke SS · Normale SS · Geringe SS · Keine SS), **Wildbau** (Gering · Mittel · Stark) und **Anzahl Waben** (1–12)
+
 - **Sanftmut**: Skala 1–5, dabei 5 = sehr sanft und 1 = stechlustig
-- **Volksstärke**: Skala 1–5 (Zahl-Wort-Zuordnung unverändert, 1 = sehr schwach …
-  5 = sehr stark), in der Liste absteigend von 5 nach 1 sortiert
-- **Futter**: ebenfalls mit vorangestellter Zahl (5 – Zu viel · 4 – Gut · 3 – Mittel ·
-  2 – Gering · 1 – Nichts)
-- **+Wabe**: Wabentyp je Position (1–12) dokumentieren, dabei je Position per
-  Häkchen unterscheiden, ob eine vorhandene Wabe **ausgetauscht** oder eine
-  neue **hinzugefügt** wurde (in der Übersicht vorne statt „+" als farbiges,
-  vergrößertes ⇄ markiert)
+
+- **Volksstärke**: Skala 1–5 (Zahl-Wort-Zuordnung unverändert, 1 = sehr schwach … 5 = sehr stark), in der Liste absteigend von 5 nach 1 sortiert
+
+- **Futter**: ebenfalls mit vorangestellter Zahl (5 – Zu viel · 4 – Gut · 3 – Mittel · 2 – Gering · 1 – Nichts)
+
+- **+Wabe**: Wabentyp je Position (1–12) dokumentieren, dabei je Position per Häkchen unterscheiden, ob eine vorhandene Wabe **ausgetauscht** oder eine neue **hinzugefügt** wurde (in der Übersicht vorne statt „+" als farbiges, vergrößertes ⇄ markiert)
+
 - **Sammeleintrag**: ein Eintrag für mehrere ausgewählte Völker eines Stands
-- Fotos aus **Kamera oder Galerie**, je Foto eine **optionale Beschreibung**;
-  auf dem Handy verkleinert, zentral gespeichert. Beim Löschen eines Eintrags/Volks/
-  Standorts werden die zugehörigen Bilddateien auf dem Server mitgelöscht
-- **Archiv**: Völker archivieren und – mit Wahl des Ziel-Standorts –
-  wiederherstellen; im Archiv nach Jahr sortiert. Archivierte Völker bleiben
-  erhalten, auch wenn ihr ursprünglicher Standort gelöscht wird. Ein
-  archiviertes Volk lässt sich aus dem Archiv heraus öffnen und schreibgeschützt
-  einsehen (Stockkarte, alle Einträge inkl. Varroa-Zählungen und Fotos – keine
-  Bearbeitung möglich). Beim Verschieben ins Archiv wird der Volksname
-  automatisch mit „Archiv-" markiert (nur einmalig, kein doppeltes Präfix bei
-  erneutem Archivieren/Wiederherstellen); bei der Wiederherstellung bleiben
-  sämtliche Daten des Volks erhalten. Im Archiv kann ein Volk auch endgültig
-  gelöscht werden (inkl. aller Einträge und Fotos)
-- **Oxalsäure-Blockbehandlung**: je gespeicherter Stufe wird automatisch eine
-  Erinnerung für die nächste fällige Stufe angelegt (Tage zwischen den Stufen
-  einstellbar, Standard 4). Völker desselben Standorts mit gleichem Fälligkeitsdatum
-  landen dabei in **einer gemeinsamen Erinnerung** (je Volk eine Zeile) statt in
-  Dubletten; bei der letzten Stufe entfällt die Erinnerung wieder
-- **„BK"-Sonderbehandlung**: Völker/Standorte, deren Name mit einem einstellbaren
-  Präfix beginnt (Standard „BK"), werden in Übersichten (Alle Völker, Gewicht,
-  Varroa-Zählung, Varroa-Historie, Ziel-Gewicht setzen) gesondert behandelt bzw.
-  ausgeblendet. Präfix unter **Einstellungen** änderbar, leer lassen deaktiviert
-  die Sonderbehandlung
+
+- Fotos aus **Kamera oder Galerie**, je Foto eine **optionale Beschreibung**; auf dem Handy verkleinert, zentral gespeichert. Beim Löschen eines Eintrags/Volks/ Standorts werden die zugehörigen Bilddateien auf dem Server mitgelöscht
+
+- **Archiv**: Völker archivieren und – mit Wahl des Ziel-Standorts – wiederherstellen; im Archiv nach Jahr sortiert. Archivierte Völker bleiben erhalten, auch wenn ihr ursprünglicher Standort gelöscht wird. Ein archiviertes Volk lässt sich aus dem Archiv heraus öffnen und schreibgeschützt einsehen (Stockkarte, alle Einträge inkl. Varroa-Zählungen und Fotos – keine Bearbeitung möglich). Beim Verschieben ins Archiv wird der Volksname automatisch mit „Archiv-" markiert (nur einmalig, kein doppeltes Präfix bei erneutem Archivieren/Wiederherstellen); bei der Wiederherstellung bleiben sämtliche Daten des Volks erhalten. Im Archiv kann ein Volk auch endgültig gelöscht werden (inkl. aller Einträge und Fotos)
+
+- **Oxalsäure-Blockbehandlung**: je gespeicherter Stufe wird automatisch eine Erinnerung für die nächste fällige Stufe angelegt (Tage zwischen den Stufen einstellbar, Standard 4). Völker desselben Standorts mit gleichem Fälligkeitsdatum landen dabei in **einer gemeinsamen Erinnerung** (je Volk eine Zeile) statt in Dubletten; bei der letzten Stufe entfällt die Erinnerung wieder
+
+- **„BK"-Sonderbehandlung**: Völker/Standorte, deren Name mit einem einstellbaren Präfix beginnt (Standard „BK"), werden in Übersichten (Alle Völker, Gewicht, Varroa-Zählung, Varroa-Historie, Ziel-Gewicht setzen) gesondert behandelt bzw. ausgeblendet. Präfix unter **Einstellungen** änderbar, leer lassen deaktiviert die Sonderbehandlung
+
 - Backup/Restore (JSON)
-- Mobil-optimiert, „Zum Startbildschirm" (mit HTTPS)
 
-### Hinweis zum Update einer laufenden Installation
-`server.py` und `static/` ersetzen, dann `systemctl restart imkerei`.
-Eine bestehende Datenbank wird beim Start automatisch migriert. `data/` bleibt erhalten.
 
-### Naheliegende nächste Schritte
-QR-Codes je Volk · Aufgaben/Kalender · Behandlungsbuch mit PDF-Export ·
-Suche/Filter · einfache Anmeldung.
-
----
-
-## Bereitstellung auf einem Raspberry Pi
-
-Alternativ zum Debian-LXC-Container (oben) lässt sich die App auch direkt
-auf einem Raspberry Pi betreiben – inklusive WLAN-Ersteinrichtung per
-Netzwerkkabel (Kabel anschließen, Formular im Browser ausfüllen, Kabel
-wieder entfernen) und automatischen täglichen Backups.
-
-- **Alles-in-einem-Paket:** [setup/](setup/README.md) – kompletten Ordner
-  per FTP auf den Pi kopieren, `sudo bash install.sh` ausführen, fertig.
