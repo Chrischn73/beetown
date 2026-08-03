@@ -1,5 +1,15 @@
 # BeeTown – digitale Stockkarte (selbst gehostet)
 
+## Was benötige ich, um die App zu betreiben?
+
+Eine von zwei Optionen:
+
+1. einen **Raspberry Pi**
+2. einen **Linux-Server**
+
+Beide sollten nur im **lokalen Netz** betrieben werden, da die App keine
+Benutzer-/Passwort-Abfrage bietet.
+
 Kleine Web-App (PWA) zur Imkereiverwaltung: Standorte, Völker, Stockkarten-Einträge mit Fotos. Beide Handys greifen über das VPN auf **denselben** Server zu.
 
 - **Backend:** ein Python-Skript (`server.py`), nur Standardbibliothek, SQLite. Kein pip, kein Framework.
