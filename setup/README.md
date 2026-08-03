@@ -1,1 +1,1 @@
-../README.md
+../docs/raspberry-pi.md
