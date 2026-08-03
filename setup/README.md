@@ -7,8 +7,20 @@ Ordnern nötig.
 
 ## Nutzung
 
-1. Diesen kompletten `setup`-Ordner per FTP/SFTP/FileZilla auf den frisch
-   installierten Pi kopieren, z. B. nach `/opt/setup`.
+**Option A: direkt per SSH-Konsole von GitHub laden** (kein FTP-Programm
+nötig, nur eine bestehende SSH-Verbindung z. B. per Netzwerkkabel):
+
+```bash
+curl -L https://github.com/Chrischn73/beetown/archive/refs/heads/main.tar.gz -o beetown.tar.gz
+tar xzf beetown.tar.gz
+cd beetown-main/setup
+sudo bash install.sh
+```
+
+**Option B: per FTP/SFTP/FileZilla**
+
+1. Diesen kompletten `setup`-Ordner auf den frisch installierten Pi
+   kopieren, z. B. nach `/opt/setup`.
 2. Per SSH verbinden und ausführen:
 
    ```bash
@@ -17,8 +29,12 @@ Ordnern nötig.
 
 Der Hostname wird dabei fest auf **`beetown`** gesetzt, am Ende startet
 der Pi automatisch neu (dafür nötig). Das Skript ist mehrfach ausführbar –
-nach einem Update der Dateien in diesem Ordner einfach erneut laufen
-lassen, um die Installation zu aktualisieren.
+nach einem Update der Dateien in diesem Ordner (Option B) bzw. einem
+erneuten Download (Option A) einfach erneut laufen lassen, um die
+Installation zu aktualisieren. Für spätere Updates reicht ohnehin der
+„🔄 Update“-Button auf der Startseite (siehe unten) – `install.sh` muss
+danach nur noch laufen, wenn sich an den systemd-Units selbst etwas
+ändert.
 
 ## Was das Skript macht
 
