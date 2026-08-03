@@ -36,6 +36,10 @@ lassen, um die Installation zu aktualisieren.
   ob WLAN verbunden ist oder nicht
 - `/opt/backup-scripts` einrichten: tägliches Backup nach `/opt/backup`
   (03:30 Uhr, max. 20 Archive)
+- Update-Check einrichten: prüft täglich (04:00 Uhr) im Hintergrund gegen
+  das öffentliche GitHub-Repo, ob eine neuere Version vorliegt – Ergebnis
+  erscheint als Badge auf der Startseite, der eigentliche Update-Vorgang
+  läuft über den „🔄 Update“-Button dort (siehe unten)
 - `/etc/issue` mit einem Boot-Bildschirm beschreiben: zeigt beim Anschluss
   eines Monitors direkt die Adressen von Setup-Seite, BeeTown und
   WLAN-Einstellungen sowie die aktuellen IP-Adressen (Kabel/WLAN) an
@@ -60,7 +64,30 @@ lassen, um die Installation zu aktualisieren.
 | `imkerei.service` | systemd-Unit für die App |
 | `imkerei_wifi_portal.py`, `imkerei-wifi-setup.sh`, `imkerei-wifi-setup.service` | Setup-Seite (80) + WLAN-Einstellungen (8081) |
 | `imkerei-backup.sh`, `imkerei-backup.service`, `imkerei-backup.timer` | Tägliches Backup |
+| `imkerei-update-check.service`, `imkerei-update-check.timer` | Täglicher Update-Check gegen GitHub (Badge auf der Startseite) |
 | `data/logo.jpg` | Standard-Betriebslogo, wird bei der Ersteinrichtung nach `/opt/imkerei/data/logo.jpg` übernommen (nur falls dort noch keins existiert – ein später über die App-Einstellungen hochgeladenes Logo bleibt bei erneuten Läufen erhalten) |
+
+## Update-Funktion
+
+Auf der Startseite (Port 80) gibt es einen **🔄 Update**-Button (Seite
+`/update`). Dort wird die installierte Version mit dem neuesten
+GitHub-Release verglichen. Ist eine neuere Version vorhanden, erscheint
+ein Button „Auf vX.Y.Z aktualisieren“. Beim Klick passiert automatisch:
+
+1. Backup erstellen (Datenbank + Fotos, wie beim manuellen Backup)
+2. Neueste Version von GitHub herunterladen
+3. `server.py` und `static/` ersetzen (`data/` bleibt unangetastet)
+4. App-Dienst neu starten
+
+Damit das funktioniert, muss im GitHub-Repo (`Chrischn73/beetown`) für
+jede neue Version:
+
+- `APP_VERSION` in `static/app.js` erhöht werden (z. B. `'v2.8.0'`)
+- ein passendes **GitHub-Release** mit demselben Tag-Namen (`v2.8.0`)
+  veröffentlicht werden
+
+Ohne veröffentlichtes Release erkennt der Pi keine neue Version, auch wenn
+im Repo schon neuer Code liegt (reine Commits auf `main` reichen nicht).
 
 ## Diesen Ordner aktuell halten
 

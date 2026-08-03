@@ -1,0 +1,8 @@
+[Unit]
+Description=BeeTown – prueft regelmaessig auf eine neue Version (GitHub)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/imkerei-wifi-setup/imkerei_wifi_portal.py --check-update

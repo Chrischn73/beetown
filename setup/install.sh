@@ -33,7 +33,8 @@ log() { echo; echo "==> $*"; }
 log "Pruefe benoetigte Dateien in $SCRIPT_DIR"
 for f in server.py static imkerei.service \
          imkerei_wifi_portal.py imkerei-wifi-setup.sh imkerei-wifi-setup.service \
-         imkerei-backup.sh imkerei-backup.service imkerei-backup.timer; do
+         imkerei-backup.sh imkerei-backup.service imkerei-backup.timer \
+         imkerei-update-check.service imkerei-update-check.timer; do
     if [ ! -e "$SCRIPT_DIR/$f" ]; then
         echo "FEHLER: $SCRIPT_DIR/$f fehlt. Wurde der komplette setup-Ordner uebertragen?"
         exit 1
@@ -153,6 +154,11 @@ cp "$SCRIPT_DIR/imkerei-backup.service" /etc/systemd/system/imkerei-backup.servi
 cp "$SCRIPT_DIR/imkerei-backup.timer" /etc/systemd/system/imkerei-backup.timer
 
 # ---------------------------------------------------------------------------
+log "Update-Check einrichten (/opt/imkerei-wifi-setup, taeglich)"
+cp "$SCRIPT_DIR/imkerei-update-check.service" /etc/systemd/system/imkerei-update-check.service
+cp "$SCRIPT_DIR/imkerei-update-check.timer" /etc/systemd/system/imkerei-update-check.timer
+
+# ---------------------------------------------------------------------------
 log "systemd-Dienste aktivieren"
 systemctl daemon-reload
 systemctl enable --now imkerei.service
@@ -161,6 +167,10 @@ systemctl enable --now imkerei.service
 # jederzeit spaeter noch einrichten oder wechseln laesst.
 systemctl enable --now imkerei-wifi-setup.service
 systemctl enable --now imkerei-backup.timer
+systemctl enable --now imkerei-update-check.timer
+# Einmaligen ersten Check gleich jetzt anstossen, damit die Startseite nicht
+# bis zum ersten Timer-Lauf ohne Update-Information dasteht.
+systemctl start imkerei-update-check.service || true
 
 is_wifi_connected() {
     nmcli -t -f DEVICE,STATE device status 2>/dev/null \

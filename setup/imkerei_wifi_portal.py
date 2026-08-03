@@ -28,10 +28,15 @@ Verhalten:
 - GET  /backup/usb/format-status (Port 80) -> JSON-Status waehrend des
   (asynchronen) Formatierens, per Polling von einem kleinen Overlay auf der
   Backup-Seite abgefragt (kein Seitenwechsel, per fetch() im Hintergrund)
+- GET  /update               (Port 80) -> zeigt installierte und neueste
+  Version (GitHub-Release), mit Update-Button falls eine neuere verfuegbar
+  ist. Legt vor jedem Update automatisch ein Backup an
+- GET  /update/status        (Port 80) -> JSON-Status waehrend des
+  (asynchronen) Aktualisierens, per Polling von einem Overlay abgefragt
 - GET  /logo.png            (beide Ports) -> App-Icon aus /opt/imkerei/static
 - POST /backup/create, /backup/restore, /backup/restore-upload,
   /backup/settings, /backup/usb/format, /backup/usb/mount,
-  /backup/usb/eject (Port 80)
+  /backup/usb/eject, /update/run (Port 80)
 - GET  /                    (Port 8081) -> WLAN-Formular (Status, Verbinden, Trennen)
 - POST /connect             (Port 8081) -> verbindet per nmcli mit dem gewaehlten
   WLAN. Faellt bei Fehlschlag automatisch auf die vorher aktive Verbindung
@@ -56,6 +61,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote
 
@@ -68,6 +74,11 @@ CONN_STATE = {"done": False, "ok": None, "detail": None}
 # und von GET /backup/usb/format-status abgefragt (Polling von der
 # "Formatiere..."-Seite aus).
 FORMAT_STATE = {"done": True, "ok": None, "detail": None}
+
+# Wird waehrend des (langwierigen) App-Updates aktualisiert und von
+# GET /update/status abgefragt (Polling von einem Overlay auf der
+# Update-Seite aus).
+UPDATE_STATE = {"done": True, "ok": None, "detail": None}
 
 HOST = "0.0.0.0"
 PORT_LANDING = 80
@@ -87,6 +98,15 @@ BACKUP_SCHEDULES = {
 DEFAULT_MAX_BACKUPS = 20
 
 USB_MOUNT = "/mnt/backup-usb"
+
+# Oeffentliches GitHub-Repo als Update-Quelle. Ein GitHub-Release-Tag "vX.Y.Z"
+# muss mit APP_VERSION in static/app.js uebereinstimmen, damit der
+# Versionsvergleich funktioniert. Der von GitHub automatisch erzeugte
+# Source-Tarball eines Release enthaelt server.py und static/ 1:1 wie im
+# Repo - keine separaten Release-Assets noetig.
+GITHUB_REPO = "Chrischn73/beetown"
+GITHUB_LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+UPDATE_CHECK_STATE_PATH = "/opt/imkerei-wifi-setup/update_check.json"
 
 STYLE = """
   :root {{
@@ -172,9 +192,11 @@ PAGE_LANDING = """<!doctype html>
 {header}
 <h1>🐝 BeeTown-Pi</h1>
 {status}
+{update_banner}
 <a class="btn" href="{app_url}" target="_blank" rel="noopener">🐝 BeeTown öffnen</a>
 <a class="btn" href="{wifi_url}">📶 WLAN-Einstellungen</a>
 <a class="btn" href="/backup">📦 Backups</a>
+<a class="btn" href="/update">🔄 Update</a>
 <a class="btn" href="/tipps" style="padding:.5rem; font-size:.85rem;">📱 Handy-Tipps</a>
 <div class="msg" style="font-size:.9rem;">
 <strong>IP-Adressen:</strong><br>
@@ -420,6 +442,57 @@ herunter.</p>
   <button type="submit">⬇ Backup herunterladen</button>
 </form>
 <a class="btn" href="/backup">← Zurück zu den Backups</a>
+</body></html>
+"""
+
+PAGE_UPDATE = """<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Update</title>
+<style>""" + STYLE + """</style>
+</head><body>
+{header}
+<h1>🔄 Update</h1>
+<p>Prüft auf GitHub, ob eine neuere BeeTown-Version verfügbar ist. Vor jedem
+Update wird automatisch ein Backup erstellt (Datenbank + Fotos) – der
+Programm-Code selbst kommt ohnehin direkt von GitHub.</p>
+{message}
+<div class="msg {status_class}">
+<strong>Installierte Version:</strong> {current}<br>
+<strong>Neueste Version:</strong> {latest}
+</div>
+{notes_block}
+{action_block}
+<a class="btn" href="/">← Zurück zur Übersicht</a>
+
+<div id="update-modal" class="modal-backdrop">
+  <div class="modal-box" id="update-modal-content"></div>
+</div>
+<script>
+function startUpdate(tag) {{
+  if (!confirm('Auf Version ' + tag + ' aktualisieren? Vorher wird automatisch ein Backup erstellt.')) {{
+    return false;
+  }}
+  var modal = document.getElementById('update-modal');
+  var content = document.getElementById('update-modal-content');
+  content.innerHTML = '<h1><span class="spinner"></span>Aktualisiere…</h1>' +
+    '<p class="muted">Backup wird erstellt, neue Version heruntergeladen und installiert. ' +
+    'Das kann einige Minuten dauern – bitte die Seite nicht schließen.</p>';
+  modal.classList.add('show');
+  fetch('/update/run', {{method: 'POST'}});
+  (function poll() {{
+    fetch('/update/status').then(r => r.json()).then(function(d) {{
+      if (!d.done) {{ setTimeout(poll, 2000); return; }}
+      content.innerHTML = d.ok
+        ? '<div class="msg ok">✅ ' + d.detail + '</div>'
+        : '<div class="msg err">❌ ' + d.detail + '</div>';
+      setTimeout(function() {{ window.location.reload(); }}, 2500);
+    }}).catch(function() {{ setTimeout(poll, 2000); }});
+  }})();
+  return false;
+}}
+</script>
 </body></html>
 """
 
@@ -923,10 +996,157 @@ def render_download_select_page():
     )
 
 
+def parse_version(v):
+    """'v2.7.4' -> (2, 7, 4), fuer korrekten numerischen Vergleich (nicht
+    alphabetisch - sonst waere z. B. 'v2.10' < 'v2.9')."""
+    parts = []
+    for p in (v or "").lstrip("vV").split("."):
+        m = re.match(r"\d+", p)
+        parts.append(int(m.group()) if m else 0)
+    return tuple(parts) or (0,)
+
+
+def fetch_latest_release():
+    """Fragt die GitHub-Releases-API ab. Gibt dict mit tag, name, notes,
+    tarball_url zurueck, oder None bei Fehler (kein Internet, keine
+    Releases, GitHub nicht erreichbar)."""
+    try:
+        req = urllib.request.Request(
+            GITHUB_LATEST_RELEASE_URL,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "BeeTown-Update-Check"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        tag = data.get("tag_name") or ""
+        if not tag:
+            return None
+        return {
+            "tag": tag,
+            "notes": (data.get("body") or "").strip(),
+            "tarball_url": data.get("tarball_url") or "",
+        }
+    except Exception:
+        return None
+
+
+def run_update_check_once():
+    """Einmaliger Versions-Check, Ergebnis wird zwischengespeichert (per
+    Timer regelmaessig aufgerufen) - so muss die Startseite nicht bei jedem
+    Aufruf selbst GitHub kontaktieren, sondern zeigt nur den zwischengespeicherten
+    Stand als Badge an."""
+    current = app_version()
+    release = fetch_latest_release()
+    state = {
+        "current": current,
+        "latest": release["tag"] if release else None,
+        "update_available": bool(release) and parse_version(release["tag"]) > parse_version(current),
+        "checked_at": time.strftime("%Y-%m-%d %H:%M"),
+    }
+    try:
+        os.makedirs(os.path.dirname(UPDATE_CHECK_STATE_PATH), exist_ok=True)
+        with open(UPDATE_CHECK_STATE_PATH, "w") as f:
+            json.dump(state, f)
+    except Exception:
+        pass
+
+
+def read_update_check_state():
+    try:
+        with open(UPDATE_CHECK_STATE_PATH) as f:
+            return json.load(f)
+    except Exception:
+        return {"current": app_version(), "latest": None, "update_available": False, "checked_at": None}
+
+
+def perform_update(tarball_url, target_tag):
+    """Legt zuerst ein Backup an, laedt dann den Source-Tarball des GitHub-
+    Release herunter und ersetzt server.py + static/ (data/ bleibt
+    unangetastet). Gibt (True, Meldung) oder (False, Fehlertext) zurueck."""
+    ok, detail = create_backup_now()
+    if not ok:
+        return False, f"Backup vor dem Update fehlgeschlagen - Update abgebrochen: {detail}"
+    try:
+        req = urllib.request.Request(tarball_url, headers={"User-Agent": "BeeTown-Update"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            archive_data = resp.read()
+    except Exception as e:
+        return False, f"Herunterladen fehlgeschlagen: {e}"
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:gz") as tar:
+                tar.extractall(path=tmpdir)
+            entries = os.listdir(tmpdir)
+            if len(entries) != 1:
+                return False, "Unerwarteter Archivinhalt (GitHub-Tarball-Struktur hat sich geaendert)."
+            src_root = os.path.join(tmpdir, entries[0])
+            new_server = os.path.join(src_root, "server.py")
+            new_static = os.path.join(src_root, "static")
+            if not os.path.isfile(new_server) or not os.path.isdir(new_static):
+                return False, "server.py oder static/ nicht im heruntergeladenen Archiv gefunden."
+
+            subprocess.run(["systemctl", "stop", "imkerei.service"], capture_output=True, text=True)
+            shutil.copy(new_server, "/opt/imkerei/server.py")
+            if os.path.isdir("/opt/imkerei/static"):
+                shutil.rmtree("/opt/imkerei/static")
+            shutil.copytree(new_static, "/opt/imkerei/static")
+            subprocess.run(["chown", "-R", "imkerei:imkerei", "/opt/imkerei/server.py", "/opt/imkerei/static"],
+                           capture_output=True, text=True)
+    except Exception as e:
+        subprocess.run(["systemctl", "start", "imkerei.service"], capture_output=True, text=True)
+        return False, f"Fehler beim Aktualisieren: {e}"
+
+    subprocess.run(["systemctl", "start", "imkerei.service"], capture_output=True, text=True)
+    return True, f"Auf Version {target_tag} aktualisiert - BeeTown läuft wieder."
+
+
+def _run_update_in_background():
+    release = fetch_latest_release()
+    if not release or not release.get("tarball_url"):
+        UPDATE_STATE.update(done=True, ok=False, detail="Neueste Version konnte nicht ermittelt werden.")
+        return
+    ok, detail = perform_update(release["tarball_url"], release["tag"])
+    UPDATE_STATE.update(done=True, ok=ok, detail=detail)
+    run_update_check_once()  # Zwischenspeicher aktualisieren - Badge auf der Startseite verschwindet
+
+
+def render_update_page(message=""):
+    current = app_version()
+    release = fetch_latest_release()
+    if release is None:
+        latest = "konnte nicht abgerufen werden"
+        status_class = "err"
+        notes_block = ""
+        action_block = '<p class="muted">Prüfe, ob der Pi Internetzugang hat, und lade die Seite neu.</p>'
+    else:
+        latest = release["tag"]
+        update_available = parse_version(latest) > parse_version(current)
+        status_class = "err" if update_available else "ok"
+        notes_block = (f'<div class="msg" style="white-space:pre-wrap;">{release["notes"]}</div>'
+                       if update_available and release["notes"] else "")
+        if update_available:
+            action_block = (
+                f'<form onsubmit="return startUpdate(\'{latest}\')">'
+                f'<button type="submit" class="btn-danger">⬇ Auf {latest} aktualisieren</button>'
+                f'</form>'
+            )
+        else:
+            action_block = '<p class="muted">Du hast bereits die neueste Version.</p>'
+    return PAGE_UPDATE.format(
+        header=render_header(), message=message, current=current, latest=latest,
+        status_class=status_class, notes_block=notes_block, action_block=action_block,
+    )
+
+
 def render_landing():
+    update_state = read_update_check_state()
+    update_banner = ""
+    if update_state.get("update_available"):
+        update_banner = f'<div class="msg ok">🔄 Update verfügbar: Version {update_state["latest"]}</div>'
     return PAGE_LANDING.format(
         header=render_header(),
         status=status_banner(),
+        update_banner=update_banner,
         app_url=app_url(),
         wifi_url=wifi_url(),
         eth0_ip=get_ip("eth0") or "nicht verbunden",
@@ -1123,6 +1343,12 @@ class LandingHandler(BaseHandler):
         if self.path == "/backup/usb/format-status":
             self._send_json(FORMAT_STATE)
             return
+        if self.path == "/update":
+            self._send_html(render_update_page())
+            return
+        if self.path == "/update/status":
+            self._send_json(UPDATE_STATE)
+            return
         if self.path.startswith("/backup/download/"):
             rest = unquote(self.path[len("/backup/download/"):])
             location, _, filename = rest.partition("/")
@@ -1218,6 +1444,11 @@ class LandingHandler(BaseHandler):
                    else f'<div class="msg err">Aushängen fehlgeschlagen: {detail}</div>')
             self._send_html(render_backup_page(msg, skip_remount=ok))
             return
+        if self.path == "/update/run":
+            UPDATE_STATE.update(done=False, ok=None, detail=None)
+            threading.Thread(target=_run_update_in_background, daemon=True).start()
+            self._send_json({"started": True})
+            return
         self.send_response(404)
         self.end_headers()
 
@@ -1273,4 +1504,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--check-update" in sys.argv:
+        # Wird per systemd-Timer regelmaessig (nicht dauerhaft laufend)
+        # aufgerufen, um den Update-Zwischenspeicher fuer die Startseite
+        # aktuell zu halten, ohne bei jedem Seitenaufruf GitHub kontaktieren
+        # zu muessen.
+        run_update_check_once()
+    else:
+        main()
