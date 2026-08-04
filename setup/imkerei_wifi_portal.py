@@ -1387,7 +1387,7 @@ def render_update_page(message=""):
     )
 
 
-def render_landing():
+def render_landing(request_host=None):
     update_state = read_update_check_state()
     update_banner = ""
     if update_state.get("update_available"):
@@ -1398,7 +1398,7 @@ def render_landing():
         header=render_header(),
         status=status_banner() if IS_PI else "",
         update_banner=update_banner,
-        app_url=app_url(),
+        app_url=app_url(request_host),
         wifi_link='<a class="btn" href="/wifi">📶 WLAN-Einstellungen</a>\n' if IS_PI else "",
         eth0_ip=get_ip("eth0") or "nicht verbunden",
         wlan_ip_line=f'<br>WLAN (wlan0): {get_ip("wlan0") or "nicht verbunden"}' if IS_PI else "",
@@ -1406,7 +1406,7 @@ def render_landing():
     )
 
 
-def render_form(message=""):
+def render_form(request_host=None, message=""):
     # Der eigentliche WLAN-Scan (scan_networks(), bis zu 15s wegen
     # --rescan yes) laeuft NICHT mehr hier synchron - das wuerde die
     # gesamte Seite blockieren, bevor ueberhaupt etwas (inkl. der
@@ -1417,15 +1417,27 @@ def render_form(message=""):
     return PAGE_FORM.format(
         header=render_header(),
         status=status_banner(),
-        app_url=app_url(),
+        app_url=app_url(request_host),
         message=message,
         disconnect_form=DISCONNECT_FORM if connected else "",
     )
 
 
-def app_url():
-    host = f"http://{socket.gethostname()}.local"
-    return host if APP_PORT == 80 else f"{host}:{APP_PORT}"
+def _host_without_port(host):
+    if host.startswith("["):  # IPv6-Literal, z.B. [::1]:8080
+        idx = host.rfind("]")
+        return host[:idx + 1] if idx != -1 else host
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
+def app_url(request_host=None):
+    # Wir verwenden den Host, mit dem der Browser die Setup-Seite selbst
+    # aufgerufen hat (IP oder Hostname) - der ist garantiert erreichbar,
+    # unabhaengig davon, ob Avahi/mDNS (".local") auf diesem Geraet
+    # ueberhaupt laeuft. socket.gethostname()+".local" diente nur als
+    # Notloesung, falls der Host-Header mal fehlen sollte.
+    host = _host_without_port(request_host) if request_host else f"{socket.gethostname()}.local"
+    return f"http://{host}" if APP_PORT == 80 else f"http://{host}:{APP_PORT}"
 
 
 def previously_active_connection():
@@ -1601,7 +1613,7 @@ class LandingHandler(BaseHandler):
             self.end_headers()
             return
         if self.path == "/wifi":
-            self._send_html(render_form())
+            self._send_html(render_form(self.headers.get("Host")))
             return
         if self.path == "/wifi/status":
             self._send_json(CONN_STATE)
@@ -1614,7 +1626,7 @@ class LandingHandler(BaseHandler):
             location, _, filename = rest.partition("/")
             self._serve_backup_download(location, filename)
             return
-        self._send_html(render_landing())
+        self._send_html(render_landing(self.headers.get("Host")))
 
     def _serve_backup_download(self, location, filename):
         if location not in ("local", "usb") or not BACKUP_NAME_RE.match(filename):
@@ -1735,9 +1747,9 @@ class LandingHandler(BaseHandler):
         if self.path == "/wifi/disconnect":
             ok, detail = disconnect_wifi()
             if ok:
-                self._send_html(render_form('<div class="msg ok">🔌 WLAN getrennt.</div>'))
+                self._send_html(render_form(self.headers.get("Host"), '<div class="msg ok">🔌 WLAN getrennt.</div>'))
             else:
-                self._send_html(render_form(f'<div class="msg err">Trennen fehlgeschlagen: {detail}</div>'))
+                self._send_html(render_form(self.headers.get("Host"), f'<div class="msg err">Trennen fehlgeschlagen: {detail}</div>'))
             return
         if self.path == "/wifi/connect":
             length = int(self.headers.get("Content-Length", 0))
@@ -1745,10 +1757,10 @@ class LandingHandler(BaseHandler):
             ssid = (fields.get("ssid_manual", [""])[0] or fields.get("ssid", [""])[0]).strip()
             password = fields.get("password", [""])[0]
             if not ssid:
-                self._send_html(render_form('<div class="msg err">Bitte eine SSID auswaehlen oder eingeben.</div>'))
+                self._send_html(render_form(self.headers.get("Host"), '<div class="msg err">Bitte eine SSID auswaehlen oder eingeben.</div>'))
                 return
             CONN_STATE.update(done=False, ok=None, detail=None)
-            self._send_html(PAGE_CONNECTING.format(ssid=ssid, app_url=app_url()))
+            self._send_html(PAGE_CONNECTING.format(ssid=ssid, app_url=app_url(self.headers.get("Host"))))
             ok, detail = connect_wifi(ssid, password)
             CONN_STATE.update(done=True, ok=ok, detail=None if ok else detail)
             if ok:
