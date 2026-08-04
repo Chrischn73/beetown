@@ -32,6 +32,24 @@ BACKUP_DIR = "/opt/backup"
 BACKUP_NAME_RE = re.compile(r"^imkerei-backup-[0-9-]+\.tar\.gz$")
 BACKUP_GRACE_DAYS = 3
 USB_MOUNT = "/mnt/backup-usb"
+# install.sh legt diese Datei nur an, wenn Port 80 beim Einrichten schon
+# belegt war und das Setup-Portal stattdessen auf einem Ausweich-Port laeuft
+# (siehe imkerei-wifi-setup.service). Wird hier mitgelesen, damit das
+# Frontend Links zur Setup-/Backup-Seite mit dem richtigen Port bauen kann -
+# ohne Port 80 fest anzunehmen, laeuft dort sonst ins Leere.
+LANDING_PORT_ENV_PATH = "/etc/default/imkerei-wifi-setup"
+
+
+def landing_port():
+    try:
+        with open(LANDING_PORT_ENV_PATH) as f:
+            content = f.read()
+        m = re.search(r"^IMKEREI_LANDING_PORT=(\d+)", content, re.MULTILINE)
+        if m:
+            return int(m.group(1))
+    except Exception:
+        pass
+    return 80
 
 os.makedirs(PHOTO_DIR, exist_ok=True)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
@@ -274,18 +292,20 @@ class Handler(BaseHTTPRequestHandler):
     def api_get(self, path):
         if path=="/api/platform":
             is_pi=os.path.isdir(PI_MARKER_DIR)
+            # Update-Check und USB-Backup laufen auf Pi UND Linux-Server
+            # gleichermassen (setup/install.sh richtet beides fuer beide
+            # ein) - hier nicht auf is_pi einschraenken, sonst wuerden
+            # Update-Badge/USB-Warnung auf einem Linux-Server nie erscheinen.
             update_available=False
             latest_version=None
-            usb_backup_missing=False
-            if is_pi:
-                try:
-                    with open(UPDATE_CHECK_STATE_PATH) as f:
-                        state=json.load(f)
-                    update_available=bool(state.get("update_available"))
-                    latest_version=state.get("latest")
-                except Exception:
-                    pass
-                usb_backup_missing=not os.path.ismount(USB_MOUNT)
+            try:
+                with open(UPDATE_CHECK_STATE_PATH) as f:
+                    state=json.load(f)
+                update_available=bool(state.get("update_available"))
+                latest_version=state.get("latest")
+            except Exception:
+                pass
+            usb_backup_missing=not os.path.ismount(USB_MOUNT)
             con=db()
             try:
                 recent_backup=has_recent_backup(con)
@@ -299,6 +319,7 @@ class Handler(BaseHTTPRequestHandler):
                 "usbBackupMissing": usb_backup_missing,
                 "recentBackup": recent_backup,
                 "lastBackupAt": last_backup.isoformat() if last_backup else None,
+                "landingPort": landing_port(),
             })
         if path=="/api/logo":
             if not os.path.isfile(LOGO_PATH): return self._err(404,"Kein Logo")

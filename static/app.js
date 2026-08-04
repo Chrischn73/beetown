@@ -3,8 +3,17 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.7';
+const APP_VERSION = 'v2.8.8';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
+
+/* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
+   wegen eines belegten Port 80 auf einem Ausweich-Port (landingPort aus
+   /api/platform), muss dieser mit angegeben werden - sonst landet der Link
+   auf Port 80, wo nichts (Passendes) antwortet. */
+function setupPortalUrl(landingPort, path){
+  const port=landingPort||80;
+  return location.protocol+'//'+location.hostname+(port!==80?':'+port:'')+path;
+}
 
 const KAEFIG_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block"><line x1="3" y1="0" x2="3" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="7" y1="0" x2="7" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="11" y1="0" x2="11" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="0" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.6"/><line x1="0" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="1.6"/></svg>`;
 const OXAL_BLOCK_ICON = `<img class="oxblock-icon" src="./icons/varroa_block.png" alt="Blockbehandlung">`;
@@ -814,6 +823,7 @@ backBtn.addEventListener('click',()=>{
    80) nicht extra ansteuern muessen, um von einem verfuegbaren Update zu
    erfahren. */
 let piUpdateAvailable=false;
+let setupLandingPort=80;
 function updatePiUpdateBadge(){
   const el=document.getElementById('update-badge-tag');
   if(el) el.style.display=piUpdateAvailable?'':'none';
@@ -823,6 +833,7 @@ function updatePiUpdateBadge(){
     const r=await fetch('./api/platform');
     const d=await r.json();
     piUpdateAvailable=!!(d && d.pi && d.updateAvailable);
+    setupLandingPort=d.landingPort||80;
     updatePiUpdateBadge();
   }catch(_){}
 })();
@@ -847,7 +858,7 @@ function setHeader(title,showBack){
     updEl.textContent='🔄 Update';
     updEl.title='Update verfügbar – antippen für Details';
     updEl.style.display='none';
-    updEl.onclick=()=>{ window.location.href=location.protocol+'//'+location.hostname+'/update'; };
+    updEl.onclick=()=>{ window.location.href=setupPortalUrl(setupLandingPort,'/update'); };
     vEl.parentNode.insertBefore(updEl,vEl.nextSibling);
   }
   updatePiUpdateBadge();
@@ -904,7 +915,7 @@ async function renderApiaries() {
       usbWarningHTML=`<div class="banner-error" style="margin-bottom:1rem">
         ⚠️ Kein USB-Stick als Backup-Ziel eingerichtet – Backups liegen nur auf der SD-Karte.
         Bei einem Ausfall der SD-Karte sind dann <strong>alle</strong> Daten unwiderruflich verloren.
-        <a class="btn btn-ghost block" href="${location.protocol+'//'+location.hostname+'/backup'}" style="margin-top:.5rem">Jetzt einrichten</a>
+        <a class="btn btn-ghost block" href="${setupPortalUrl(pd.landingPort,'/backup')}" style="margin-top:.5rem">Jetzt einrichten</a>
       </div>`;
     }
   }catch(_){}
@@ -3559,7 +3570,7 @@ async function renderSettings() {
         const link=document.getElementById('backup-pi-link');
         if(j) j.style.display='none';
         if(p) p.style.display='';
-        if(link) link.href=location.protocol+'//'+location.hostname+'/backup';
+        if(link) link.href=setupPortalUrl(d.landingPort,'/backup');
       }
       // "Daten bereinigen" nur mit einem ausreichend aktuellen Backup erlauben
       // (serverseitig ohnehin erzwungen - hier nur fuer klares Feedback vorab).
@@ -3572,7 +3583,7 @@ async function renderSettings() {
         if(bl){
           bl.onclick=(ev)=>{
             ev.preventDefault();
-            if(d.pi) window.location.href=location.protocol+'//'+location.hostname+'/backup';
+            if(d.pi) window.location.href=setupPortalUrl(d.landingPort,'/backup');
             else window.location.href='./api/backup';
           };
         }
