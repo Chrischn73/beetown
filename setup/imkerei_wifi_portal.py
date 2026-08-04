@@ -278,7 +278,7 @@ Kabel (eth0): {eth0_ip}{wlan_ip_line}
 <div class="donate-box">
   <p>Schön, dass BeeTown dir nützt! Die App bleibt kostenlos und werbefrei –
   über eine kleine Spende für Kaffee &amp; Weiterentwicklung freue ich mich sehr.</p>
-  <a class="btn" href="https://www.paypal.com/cgi-bin/webscr?cmd=_send-money&recipient=imker%40cfrerichs.de&currency_code=EUR" target="_blank" rel="noopener">☕ BeeTown unterstützen</a>
+  <a class="btn" href="https://www.paypal.com/donate/?hosted_button_id=F7WE7N68TBAKE" target="_blank" rel="noopener">☕ BeeTown unterstützen</a>
 </div>
 </body></html>
 """
