@@ -203,7 +203,7 @@ log "Pruefe Port 80 fuer das Setup-Portal"
 # Belegungsinhaber das eigene Setup-Portal selbst, zaehlt das nicht als
 # Konflikt.
 BEETOWN_PID="$(systemctl show -p MainPID --value imkerei-wifi-setup.service 2>/dev/null || echo 0)"
-PORT80_PID="$(ss -H -ltnp "sport = :80" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
+PORT80_PID="$(ss -H -ltnp "sport = :80" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)"
 
 if [ -z "$PORT80_PID" ] || { [ "$PORT80_PID" = "$BEETOWN_PID" ] && [ "$BEETOWN_PID" != "0" ]; }; then
     LANDING_PORT=80
