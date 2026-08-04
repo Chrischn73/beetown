@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.17';
+const APP_VERSION = 'v2.8.18';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -1021,6 +1021,10 @@ async function renderApiaries() {
       App im Imker-Alltag hilft, freue ich mich über eine kleine Spende für
       Kaffee &amp; Weiterentwicklung. 🐝☕</p>
       <a class="btn btn-ghost" href="https://www.paypal.com/donate/?hosted_button_id=F7WE7N68TBAKE" target="_blank" rel="noopener">☕ BeeTown unterstützen</a>
+    </div>
+    <div class="donate-box">
+      <p>Idee, Wunsch oder einen Fehler gefunden? Ich freue mich über Feedback.</p>
+      <a class="btn btn-ghost" href="mailto:beetown@cfrerichs.de?subject=BeeTown%20Verbesserungsvorschlag">✉️ Verbesserungsvorschlag senden</a>
     </div>`;
 
   /* Globale Suche (nur verdrahten, wenn das Suchfeld überhaupt angezeigt wird) */
