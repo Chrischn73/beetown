@@ -186,6 +186,9 @@ STYLE = """
   .donate-box {{ margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--input-border);
                   text-align: center; }}
   .donate-box p {{ color: var(--muted); font-size: .85rem; margin: 0 0 .6rem; }}
+  .donate-box .btn {{ display: inline-flex; width: auto; margin-top: 0; padding: .35rem .9rem;
+                       font-size: .78rem; font-weight: 500; border-radius: 999px;
+                       background: transparent; color: var(--muted); border: 1px solid var(--input-border); }}
   .modal-backdrop {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
                       align-items: center; justify-content: center; z-index: 1000; }}
   .modal-backdrop.show {{ display: flex; }}
@@ -256,7 +259,7 @@ Kabel (eth0): {eth0_ip}{wlan_ip_line}
 <div class="donate-box">
   <p>Schön, dass BeeTown dir nützt! Die App bleibt kostenlos und werbefrei –
   über eine kleine Spende für Kaffee &amp; Weiterentwicklung freue ich mich sehr.</p>
-  <a class="btn" href="https://www.paypal.com/donate/?business=imker%40cfrerichs.de&currency_code=EUR" target="_blank" rel="noopener">☕ BeeTown unterstützen</a>
+  <a class="btn" href="https://www.paypal.com/cgi-bin/webscr?cmd=_send-money&recipient=imker%40cfrerichs.de&currency_code=EUR" target="_blank" rel="noopener">☕ BeeTown unterstützen</a>
 </div>
 </body></html>
 """

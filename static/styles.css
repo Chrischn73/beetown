@@ -445,6 +445,9 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 .donate-box{margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--line);
   text-align:center}
 .donate-box p{color:var(--ink-soft);font-size:.85rem;margin:0 0 .6rem}
+.donate-box .btn{display:inline-flex;min-height:auto;padding:.35rem .9rem;
+  font-size:.78rem;font-weight:500;border-radius:999px;
+  background:transparent;color:var(--ink-soft);border-color:var(--line)}
 
 /* Punkt 7: Erinnerungen */
 .reminders-section{margin-top:1.5rem;border-top:2px solid var(--honey,#f5a623);padding-top:1rem}

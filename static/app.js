@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.12';
+const APP_VERSION = 'v2.8.13';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -1020,7 +1020,7 @@ async function renderApiaries() {
       <p>BeeTown ist kostenlos, werbefrei und ganz ohne Tracking. Wenn dir die
       App im Imker-Alltag hilft, freue ich mich über eine kleine Spende für
       Kaffee &amp; Weiterentwicklung. 🐝☕</p>
-      <a class="btn btn-ghost" href="https://www.paypal.com/donate/?business=imker%40cfrerichs.de&currency_code=EUR" target="_blank" rel="noopener">☕ BeeTown unterstützen</a>
+      <a class="btn btn-ghost" href="https://www.paypal.com/cgi-bin/webscr?cmd=_send-money&recipient=imker%40cfrerichs.de&currency_code=EUR" target="_blank" rel="noopener">☕ BeeTown unterstützen</a>
     </div>`;
 
   /* Globale Suche (nur verdrahten, wenn das Suchfeld überhaupt angezeigt wird) */
