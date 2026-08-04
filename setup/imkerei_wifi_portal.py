@@ -1068,12 +1068,19 @@ def render_backup_page(message="", skip_remount=False):
     <button type="submit" class="btn-danger">⚙ Formatieren &amp; als Backup-Ziel einrichten</button>
   </form>
 </div>""")
-    else:
+    elif IS_PI:
+        # Die Warnung ist nur auf dem Pi relevant (SD-Karte als Single Point
+        # of Failure) - auf einem Linux-Server ist ein USB-Stick optional
+        # und nicht der erwartete Backup-Weg, daher dort keine Warnung.
         usb_section_parts.append(
             '<div class="msg err">⚠️ <strong>Kein USB-Stick angeschlossen.</strong> '
             'Backups liegen nur auf der SD-Karte – bei einem Ausfall der SD-Karte sind dann '
             '<strong>alle</strong> Daten unwiderruflich verloren. Einen Stick anschließen und '
             'diese Seite neu laden, um ihn einzurichten.</div>'
+        )
+    else:
+        usb_section_parts.append(
+            '<p class="muted">Kein USB-Stick angeschlossen – optional, nicht erforderlich.</p>'
         )
 
     return PAGE_BACKUP.format(

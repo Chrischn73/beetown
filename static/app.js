@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.20';
+const APP_VERSION = 'v2.8.21';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -818,10 +818,10 @@ backBtn.addEventListener('click',()=>{
   if(['colonies','settings','archive','all','honey','fuetterung','gewicht','lastentries','varroacount','varroahistory','sirupcalc','fuetterungsvorschlag'].includes(nav.view)) go('apiaries');
 });
 
-/* Update-Hinweis im Header (nur Pi-Betrieb + wenn eine neuere Version
-   vorliegt) - klein gehalten, damit normale Nutzer die Update-Seite (Port
-   80) nicht extra ansteuern muessen, um von einem verfuegbaren Update zu
-   erfahren. */
+/* Update-Hinweis im Header (Setup-Portal installiert - Pi ODER
+   Linux-Server - + wenn eine neuere Version vorliegt) - klein gehalten,
+   damit normale Nutzer die Update-Seite nicht extra ansteuern muessen,
+   um von einem verfuegbaren Update zu erfahren. */
 let piUpdateAvailable=false;
 let setupLandingPort=80;
 function updatePiUpdateBadge(){
@@ -832,7 +832,7 @@ function updatePiUpdateBadge(){
   try{
     const r=await fetch('./api/platform');
     const d=await r.json();
-    piUpdateAvailable=!!(d && d.pi && d.updateAvailable);
+    piUpdateAvailable=!!(d && d.setupPortal && d.updateAvailable);
     setupLandingPort=d.landingPort||80;
     updatePiUpdateBadge();
   }catch(_){}
@@ -1016,6 +1016,7 @@ async function renderApiaries() {
           })()}
     </div>
     </div>
+    <hr class="reminders-divider">
     <div class="donate-box">
       <p>BeeTown ist kostenlos, werbefrei und ganz ohne Tracking. Wenn dir die
       App im Imker-Alltag hilft, freue ich mich über eine kleine Spende für
@@ -3546,8 +3547,16 @@ async function renderSettings() {
         <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>
       </div>
       <div id="backup-pi" style="display:none">
-        <p class="muted">Vollständige Sicherung (Datenbank + Fotos, Zeitplan, USB-Stick) läuft über die Setup-Seite des Pi.</p>
+        <p class="muted">Vollständige Sicherung (Datenbank + Fotos, Zeitplan, USB-Stick) läuft über die Setup-Seite.</p>
         <a class="btn btn-ghost block" id="backup-pi-link" target="_blank" rel="noopener">📦 Zur Backup-Seite</a>
+      </div>`)}
+    ${settingsSection('appupdate','Update',`
+      <div id="update-link-box" style="display:none">
+        <p class="muted">Version prüfen, aktualisieren oder automatische Updates ein-/ausschalten läuft über die Setup-Seite.</p>
+        <a class="btn btn-ghost block" id="update-link" target="_blank" rel="noopener">🔄 Zur Update-Seite</a>
+      </div>
+      <div id="update-link-none">
+        <p class="muted">Keine Setup-Seite gefunden – Update-Verwaltung ist nur bei einer Installation über <code>install.sh</code> verfügbar.</p>
       </div>`)}
     ${settingsSection('bereinigen','Daten bereinigen',`
       <div id="bereinigen-warning" class="banner-error" style="display:none;margin-bottom:.75rem">
@@ -3567,20 +3576,29 @@ async function renderSettings() {
     if(localStorage.getItem(key)==='1') sec.open=true;
     sec.addEventListener('toggle', ()=>{ localStorage.setItem(key, sec.open?'1':'0'); });
   });
-  // Backup-Bereich: auf einem Raspberry Pi die vollstaendige Sicherung
-  // (Datenbank+Fotos, Zeitplan, USB-Stick) auf der Setup-Seite bewerben,
-  // sonst bleibt die einfache JSON-Sicherung (einzige Option ohne Pi).
+  // Backup-/Update-Bereich: ist ein Setup-Portal installiert (Pi ODER
+  // Linux-Server per install.sh), die vollstaendige Sicherung + die
+  // Update-Seite dort bewerben statt der einfachen JSON-Sicherung (die
+  // bleibt die einzige Option ohne Setup-Portal, z. B. bei einer rein
+  // manuellen Installation).
   (async()=>{
     try{
       const r=await fetch('./api/platform');
       const d=await r.json();
-      if(d && d.pi){
+      if(d && d.setupPortal){
         const j=document.getElementById('backup-json');
         const p=document.getElementById('backup-pi');
         const link=document.getElementById('backup-pi-link');
         if(j) j.style.display='none';
         if(p) p.style.display='';
         if(link) link.href=setupPortalUrl(d.landingPort,'/backup');
+
+        const ub=document.getElementById('update-link-box');
+        const un=document.getElementById('update-link-none');
+        const ulink=document.getElementById('update-link');
+        if(ub) ub.style.display='';
+        if(un) un.style.display='none';
+        if(ulink) ulink.href=setupPortalUrl(d.landingPort,'/update');
       }
       // "Daten bereinigen" nur mit einem ausreichend aktuellen Backup erlauben
       // (serverseitig ohnehin erzwungen - hier nur fuer klares Feedback vorab).
@@ -3593,7 +3611,7 @@ async function renderSettings() {
         if(bl){
           bl.onclick=(ev)=>{
             ev.preventDefault();
-            if(d.pi) window.location.href=setupPortalUrl(d.landingPort,'/backup');
+            if(d.setupPortal) window.location.href=setupPortalUrl(d.landingPort,'/backup');
             else window.location.href='./api/backup';
           };
         }

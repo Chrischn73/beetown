@@ -15,11 +15,25 @@ STATIC_DIR = os.environ.get("IMKEREI_STATIC", os.path.join(BASE, "static"))
 PHOTO_DIR  = os.path.join(DATA_DIR, "photos")
 LOGO_PATH  = os.path.join(DATA_DIR, "logo.jpg")
 DB_PATH    = os.path.join(DATA_DIR, "app.db")
-# Nur bei einer Raspberry-Pi-Installation (setup/install.sh) angelegt - dient
-# als Erkennungsmerkmal fuer /api/platform, um im Frontend auf die dortige
-# vollstaendige Backup-Seite (Datenbank+Fotos) statt der einfachen
-# JSON-Sicherung zu verweisen.
+# Wird von setup/install.sh angelegt - sowohl auf einem Raspberry Pi als
+# auch auf einem generischen Linux-Server (beide bekommen das Setup-Portal
+# seit der Linux-Server-Unterstuetzung gleichermassen). Dient als
+# Erkennungsmerkmal fuer /api/platform, ob es ueberhaupt eine Setup-Seite
+# gibt, auf die verwiesen werden kann (Backup/Update) - NICHT ob es
+# speziell ein Raspberry Pi ist, dafuer siehe _is_raspberry_pi().
 PI_MARKER_DIR = "/opt/imkerei-wifi-setup"
+
+
+def _is_raspberry_pi():
+    """Echte Hardware-Erkennung (wie in imkerei_wifi_portal.py) - im
+    Unterschied zu PI_MARKER_DIR (der nur "Setup-Portal installiert"
+    bedeutet, auch auf einem Linux-Server). Fuer Pi-spezifische Dinge wie
+    die USB-Backup-Warnung (SD-Karten-Ausfallrisiko betrifft nur den Pi)."""
+    try:
+        with open("/proc/device-tree/model") as f:
+            return "raspberry pi" in f.read().lower()
+    except Exception:
+        return False
 # Wird vom taeglichen Update-Check-Timer (imkerei-wifi-setup) geschrieben -
 # hier nur best-effort mitgelesen, um im Frontend einen kleinen Hinweis
 # anzuzeigen, ohne selbst GitHub kontaktieren zu muessen.
@@ -291,21 +305,25 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_get(self, path):
         if path=="/api/platform":
-            is_pi=os.path.isdir(PI_MARKER_DIR)
-            # Update-Check und USB-Backup laufen auf Pi UND Linux-Server
-            # gleichermassen (setup/install.sh richtet beides fuer beide
-            # ein) - hier nicht auf is_pi einschraenken, sonst wuerden
-            # Update-Badge/USB-Warnung auf einem Linux-Server nie erscheinen.
+            is_pi=_is_raspberry_pi()
+            has_setup_portal=os.path.isdir(PI_MARKER_DIR)
+            # Update-Check laeuft auf Pi UND Linux-Server gleichermassen
+            # (setup/install.sh richtet das Setup-Portal fuer beide ein) -
+            # daher an has_setup_portal haengen, nicht an is_pi, sonst wuerde
+            # das Update-Badge auf einem Linux-Server nie erscheinen.
             update_available=False
             latest_version=None
-            try:
-                with open(UPDATE_CHECK_STATE_PATH) as f:
-                    state=json.load(f)
-                update_available=bool(state.get("update_available"))
-                latest_version=state.get("latest")
-            except Exception:
-                pass
-            usb_backup_missing=not os.path.ismount(USB_MOUNT)
+            if has_setup_portal:
+                try:
+                    with open(UPDATE_CHECK_STATE_PATH) as f:
+                        state=json.load(f)
+                    update_available=bool(state.get("update_available"))
+                    latest_version=state.get("latest")
+                except Exception:
+                    pass
+            # USB-Backup-Sorge ist Pi-spezifisch (SD-Karte als Single Point
+            # of Failure) - auf einem Linux-Server kein Thema.
+            usb_backup_missing=is_pi and not os.path.ismount(USB_MOUNT)
             con=db()
             try:
                 recent_backup=has_recent_backup(con)
@@ -314,6 +332,7 @@ class Handler(BaseHTTPRequestHandler):
                 con.close()
             return self._json({
                 "pi": is_pi,
+                "setupPortal": has_setup_portal,
                 "updateAvailable": update_available,
                 "latestVersion": latest_version,
                 "usbBackupMissing": usb_backup_missing,

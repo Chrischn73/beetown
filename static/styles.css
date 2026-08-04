@@ -441,6 +441,10 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 /* Punkt 6: HR-Nummern in Klammern klein */
 .hr-nrs{font-size:.75rem;opacity:.65;font-weight:400}
 
+/* Trennstrich zwischen Erinnerungen und Spenden-/Feedback-Bereich */
+.reminders-divider{border:none;border-top:2px solid var(--honey,#f5a623);
+  margin:1.5rem 0 0}
+
 /* Spenden-Hinweis auf der Startseite */
 .donate-box{margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--line);
   text-align:center}
