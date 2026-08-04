@@ -1,62 +1,67 @@
 #!/usr/bin/env python3
 """
-Dauerhaft laufender Webserver mit zwei Seiten fuer BeeTown:
+Dauerhaft laufender Webserver fuer die BeeTown-Setup-Seite (ein einziger
+Port, http://<hostname>.local), faellt auf einen Ausweich-Port aus
+(IMKEREI_LANDING_PORT), falls 80 beim Einrichten schon belegt war (z. B.
+auf einem Linux-Server mit vorhandenem Webserver). Enthaelt:
 
-- Setup-/Startseite auf Port 80 (http://<hostname>.local), faellt auf einen
-  Ausweich-Port aus (IMKEREI_LANDING_PORT), falls 80 beim Einrichten schon
-  belegt war (z. B. auf einem Linux-Server mit vorhandenem Webserver):
-  Links zu BeeTown, Backups, Update. Auf einem echten Raspberry Pi
-  zusaetzlich WLAN-Einstellungen und Neustart/Herunterfahren (auf einem
-  normalen Linux-Server ausgeblendet, siehe IS_PI).
-- WLAN-Einstellungen auf Port 8081 (http://<hostname>.local:8081, nur
-  Raspberry Pi relevant): WLAN einrichten/wechseln/trennen, mit
-  Zurueck-Link zur Setup-Seite.
+- Startseite: Links zu BeeTown, Backups, Update, WLAN-Einstellungen
+  (Letzteres + Neustart/Herunterfahren nur auf einem echten Raspberry Pi
+  sichtbar bzw. erreichbar, siehe IS_PI - auf einem normalen Linux-Server
+  ausgeblendet UND serverseitig blockiert)
+- /wifi: WLAN einrichten/wechseln/trennen, als Unterseite derselben
+  Setup-Seite (frueher ein eigener Port 8081 - seit Kurzem zusammengelegt,
+  da kein technischer Grund fuer einen separaten Port bestand)
+- /backup: Backups erstellen/wiederherstellen/herunterladen, USB-Stick
+  einrichten
+- /update: Version pruefen/aktualisieren/zurueckwechseln, automatische
+  Updates
 
 BeeTown selbst laeuft auf Port 8080 (ebenfalls mit Ausweich-Port-Fallback,
-siehe APP_PORT). Beide Seiten laufen
-permanent (nicht nur beim Ersteinrichten) im selben Prozess, unabhaengig
-davon, ob gerade WLAN verbunden ist oder nicht - Kabel oder WLAN, beides
-geht. Nur Python-Standardbibliothek.
+siehe APP_PORT) - das ist die eigentliche App, ein separater Prozess.
+Dieser Server hier laeuft permanent (nicht nur beim Ersteinrichten),
+unabhaengig davon, ob gerade WLAN verbunden ist oder nicht - Kabel oder
+WLAN, beides geht. Nur Python-Standardbibliothek.
 
 Verhalten:
-- GET  /                    (Port 80)   -> Startseite mit Links, IPs, System-Buttons
-- GET  /tipps               (Port 80)   -> Handy-Tipps ("Zum Home-Bildschirm")
-- GET  /backup              (Port 80)   -> Backup-Liste (SD-Karte + ggf.
+- GET  /                    -> Startseite mit Links, IPs, System-Buttons
+- GET  /tipps               -> Handy-Tipps ("Zum Home-Bildschirm")
+- GET  /wifi                -> WLAN-Formular (Status, Verbinden, Trennen) -
+  nur auf einem echten Raspberry Pi (404 sonst)
+- POST /wifi/connect        -> verbindet per nmcli mit dem gewaehlten WLAN.
+  Faellt bei Fehlschlag automatisch auf die vorher aktive Verbindung
+  zurueck, damit der Pi nicht unerreichbar wird. Nach Erfolg automatische
+  Weiterleitung zur Startseite
+- POST /wifi/disconnect     -> trennt die aktuelle WLAN-Verbindung
+  (autoconnect wird dabei deaktiviert)
+- GET  /wifi/status         -> JSON-Status des laufenden Verbindungsversuchs
+  (Polling von der "Verbinde..."-Seite)
+- GET  /wifi/networks       -> JSON-Liste gefundener WLAN-Netze (per fetch()
+  im Hintergrund von der WLAN-Formular-Seite geladen, damit die Seite
+  sofort erscheint statt bis zu 15s auf den nmcli-Scan zu warten)
+- GET  /backup              -> Backup-Liste (SD-Karte + ggf.
   USB-Stick) zum Herunterladen, erstellen, Aufbewahrungsanzahl (taeglich,
   Vater-Sohn-Rotation), USB-Stick formatieren/aushaengen
-- GET  /backup/restore      (Port 80)   -> eigene Seite: Datenbank + Fotos
+- GET  /backup/restore      -> eigene Seite: Datenbank + Fotos
   per Dropdown-Auswahl ODER direkt von einer PC-Datei wiederherstellen
   (App-Code bleibt unangetastet)
-- GET  /backup/downloads    (Port 80)   -> eigene Seite: Backup per Dropdown
+- GET  /backup/downloads    -> eigene Seite: Backup per Dropdown
   auswaehlen und herunterladen
-- GET  /backup/download/<local|usb>/<f> (Port 80) -> laedt ein Backup-Archiv
-  herunter
-- GET  /backup/usb/format-status (Port 80) -> JSON-Status waehrend des
+- GET  /backup/download/<local|usb>/<f> -> laedt ein Backup-Archiv herunter
+- GET  /backup/usb/format-status -> JSON-Status waehrend des
   (asynchronen) Formatierens, per Polling von einem kleinen Overlay auf der
   Backup-Seite abgefragt (kein Seitenwechsel, per fetch() im Hintergrund)
-- GET  /update               (Port 80) -> zeigt installierte und neueste
+- GET  /update               -> zeigt installierte und neueste
   Version (GitHub-Release), mit Update-Button falls eine neuere verfuegbar
   ist, sowie Schalter fuer automatische Updates. Legt vor jedem Update
   automatisch ein Backup an
-- GET  /update/status        (Port 80) -> JSON-Status waehrend des
+- GET  /update/status        -> JSON-Status waehrend des
   (asynchronen) Aktualisierens, per Polling von einem Overlay abgefragt
-- GET  /logo.png            (beide Ports) -> App-Icon aus /opt/imkerei/static
+- GET  /logo.png            -> App-Icon aus /opt/imkerei/static
 - POST /backup/create, /backup/restore, /backup/restore-upload,
   /backup/settings, /backup/usb/format, /backup/usb/mount,
-  /backup/usb/eject, /update/run, /update/switch, /update/settings (Port 80)
-- GET  /                    (Port 8081) -> WLAN-Formular (Status, Verbinden, Trennen)
-- POST /connect             (Port 8081) -> verbindet per nmcli mit dem gewaehlten
-  WLAN. Faellt bei Fehlschlag automatisch auf die vorher aktive Verbindung
-  zurueck, damit der Pi nicht unerreichbar wird. Nach Erfolg automatische
-  Weiterleitung zur Setup-Seite (Port 80).
-- POST /disconnect          (Port 8081) -> trennt die aktuelle WLAN-Verbindung
-  (autoconnect wird dabei deaktiviert)
-- GET  /status              (Port 8081) -> JSON-Status des laufenden
-  Verbindungsversuchs (Polling von der "Verbinde..."-Seite)
-- GET  /networks            (Port 8081) -> JSON-Liste gefundener WLAN-Netze
-  (per fetch() im Hintergrund von der WLAN-Formular-Seite geladen, damit
-  die Seite sofort erscheint statt bis zu 15s auf den nmcli-Scan zu warten)
-- POST /system/reboot, /system/shutdown (Port 80) -> Neustart/Shutdown
+  /backup/usb/eject, /update/run, /update/switch, /update/settings
+- POST /system/reboot, /system/shutdown -> Neustart/Shutdown (nur Pi)
 """
 
 import io
@@ -110,7 +115,6 @@ HOST = "0.0.0.0"
 # belegt war (z. B. auf einem Linux-Server mit vorhandenem Webserver) -
 # dieselbe Portal-Seite laeuft dann auf einem Ausweich-Port.
 PORT_LANDING = int(os.environ.get("IMKEREI_LANDING_PORT", "80"))
-PORT_WIFI = 8081
 # install.sh schreibt /etc/default/imkerei mit IMKEREI_PORT, falls Port 8080
 # fuer BeeTown selbst schon belegt war - hier mitgelesen (eigener Prozess,
 # daher nicht einfach ueber os.environ verfuegbar), um Links korrekt zu bauen.
@@ -321,7 +325,7 @@ PAGE_FORM = """<!doctype html>
 {status}
 <a class="btn" href="{app_url}" target="_blank" rel="noopener">🐝 BeeTown öffnen</a>
 {message}
-<form method="post" action="/connect">
+<form method="post" action="/wifi/connect">
   <label for="ssid">WLAN-Name (SSID)</label>
   <div id="ssid-loading" class="msg">""" + BEE_SPINNER_SVG + """Suche nach WLAN-Netzen…</div>
   <select id="ssid" name="ssid" style="display:none"></select>
@@ -331,9 +335,9 @@ PAGE_FORM = """<!doctype html>
   <button type="submit">Verbinden</button>
 </form>
 {disconnect_form}
-<a class="btn" href="{landing_url}">← Zurück zur Übersicht</a>
+<a class="btn" href="/">← Zurück zur Übersicht</a>
 <script>
-fetch('/networks').then(r => r.json()).then(function(nets) {{
+fetch('/wifi/networks').then(r => r.json()).then(function(nets) {{
   var loading = document.getElementById('ssid-loading');
   var sel = document.getElementById('ssid');
   var manual = document.getElementById('ssid_manual');
@@ -362,7 +366,7 @@ fetch('/networks').then(r => r.json()).then(function(nets) {{
 """
 
 DISCONNECT_FORM = """
-<form method="post" action="/disconnect" onsubmit="return confirmDisconnect()">
+<form method="post" action="/wifi/disconnect" onsubmit="return confirmDisconnect()">
   <button type="submit" class="btn-danger">🔌 WLAN trennen</button>
 </form>
 <script>
@@ -398,7 +402,7 @@ Falls sich die Seite nicht öffnen lässt: kurz warten, das Handy neu mit dem
 richtigen WLAN verbinden und den Link erneut versuchen.</p>
 <script>
 (function poll() {{
-  fetch('/status').then(r => r.json()).then(data => {{
+  fetch('/wifi/status').then(r => r.json()).then(data => {{
     if (!data.done) {{ setTimeout(poll, 1500); return; }}
     var el = document.getElementById('status');
     if (data.ok) {{
@@ -410,7 +414,7 @@ richtigen WLAN verbinden und den Link erneut versuchen.</p>
     }} else {{
       el.innerHTML = '<div class="msg err">❌ Verbindung fehlgeschlagen'
         + (data.detail ? ': ' + data.detail : '') + '</div>'
-        + '<a class="btn" href="/">Zurück zu den WLAN-Einstellungen</a>';
+        + '<a class="btn" href="/wifi">Zurück zu den WLAN-Einstellungen</a>';
     }}
   }}).catch(() => setTimeout(poll, 1500));
 }})();
@@ -1388,7 +1392,7 @@ def render_landing():
         status=status_banner() if IS_PI else "",
         update_banner=update_banner,
         app_url=app_url(),
-        wifi_link=f'<a class="btn" href="{wifi_url()}">📶 WLAN-Einstellungen</a>\n' if IS_PI else "",
+        wifi_link='<a class="btn" href="/wifi">📶 WLAN-Einstellungen</a>\n' if IS_PI else "",
         eth0_ip=get_ip("eth0") or "nicht verbunden",
         wlan_ip_line=f'<br>WLAN (wlan0): {get_ip("wlan0") or "nicht verbunden"}' if IS_PI else "",
         system_buttons=SYSTEM_BUTTONS if IS_PI else "",
@@ -1407,7 +1411,6 @@ def render_form(message=""):
         header=render_header(),
         status=status_banner(),
         app_url=app_url(),
-        landing_url=landing_url(),
         message=message,
         disconnect_form=DISCONNECT_FORM if connected else "",
     )
@@ -1416,16 +1419,6 @@ def render_form(message=""):
 def app_url():
     host = f"http://{socket.gethostname()}.local"
     return host if APP_PORT == 80 else f"{host}:{APP_PORT}"
-
-
-def wifi_url():
-    host = f"http://{socket.gethostname()}.local"
-    return host if PORT_WIFI == 80 else f"{host}:{PORT_WIFI}"
-
-
-def landing_url():
-    host = f"http://{socket.gethostname()}.local"
-    return host if PORT_LANDING == 80 else f"{host}:{PORT_LANDING}"
 
 
 def previously_active_connection():
@@ -1594,6 +1587,21 @@ class LandingHandler(BaseHandler):
         if self.path == "/update/status":
             self._send_json(UPDATE_STATE)
             return
+        if self.path in ("/wifi", "/wifi/status", "/wifi/networks") and not IS_PI:
+            # Auf einem normalen Linux-Server gibt es keine WLAN-Hardware
+            # und keinen Link dorthin - Unterseite dann auch nicht anbieten.
+            self.send_response(404)
+            self.end_headers()
+            return
+        if self.path == "/wifi":
+            self._send_html(render_form())
+            return
+        if self.path == "/wifi/status":
+            self._send_json(CONN_STATE)
+            return
+        if self.path == "/wifi/networks":
+            self._send_json([{"ssid": s, "signal": signal} for s, signal in scan_networks()])
+            return
         if self.path.startswith("/backup/download/"):
             rest = unquote(self.path[len("/backup/download/"):])
             location, _, filename = rest.partition("/")
@@ -1713,59 +1721,43 @@ class LandingHandler(BaseHandler):
                    else f'<div class="msg err">{detail}</div>')
             self._send_html(render_update_page(msg))
             return
-        self.send_response(404)
-        self.end_headers()
-
-
-class WifiHandler(BaseHandler):
-    def do_GET(self):
-        if self.path == "/logo.png":
-            self.serve_logo()
+        if self.path in ("/wifi/connect", "/wifi/disconnect") and not IS_PI:
+            self.send_response(404)
+            self.end_headers()
             return
-        if self.path == "/status":
-            self._send_json(CONN_STATE)
-            return
-        if self.path == "/networks":
-            self._send_json([{"ssid": s, "signal": signal} for s, signal in scan_networks()])
-            return
-        self._send_html(render_form())
-
-    def do_POST(self):
-        if self.path == "/disconnect":
+        if self.path == "/wifi/disconnect":
             ok, detail = disconnect_wifi()
             if ok:
                 self._send_html(render_form('<div class="msg ok">🔌 WLAN getrennt.</div>'))
             else:
                 self._send_html(render_form(f'<div class="msg err">Trennen fehlgeschlagen: {detail}</div>'))
             return
-        if self.path != "/connect":
-            self.send_response(404)
-            self.end_headers()
+        if self.path == "/wifi/connect":
+            length = int(self.headers.get("Content-Length", 0))
+            fields = parse_qs(self.rfile.read(length).decode("utf-8"))
+            ssid = (fields.get("ssid_manual", [""])[0] or fields.get("ssid", [""])[0]).strip()
+            password = fields.get("password", [""])[0]
+            if not ssid:
+                self._send_html(render_form('<div class="msg err">Bitte eine SSID auswaehlen oder eingeben.</div>'))
+                return
+            CONN_STATE.update(done=False, ok=None, detail=None)
+            self._send_html(PAGE_CONNECTING.format(ssid=ssid, app_url=app_url()))
+            ok, detail = connect_wifi(ssid, password)
+            CONN_STATE.update(done=True, ok=ok, detail=None if ok else detail)
+            if ok:
+                print(f"WLAN-Verbindung zu '{ssid}' erfolgreich.", file=sys.stderr)
+            else:
+                print(f"WLAN-Verbindung zu '{ssid}' fehlgeschlagen: {detail}", file=sys.stderr)
             return
-        length = int(self.headers.get("Content-Length", 0))
-        fields = parse_qs(self.rfile.read(length).decode("utf-8"))
-        ssid = (fields.get("ssid_manual", [""])[0] or fields.get("ssid", [""])[0]).strip()
-        password = fields.get("password", [""])[0]
-        if not ssid:
-            self._send_html(render_form('<div class="msg err">Bitte eine SSID auswaehlen oder eingeben.</div>'))
-            return
-        CONN_STATE.update(done=False, ok=None, detail=None)
-        self._send_html(PAGE_CONNECTING.format(ssid=ssid, app_url=app_url()))
-        ok, detail = connect_wifi(ssid, password)
-        CONN_STATE.update(done=True, ok=ok, detail=None if ok else detail)
-        if ok:
-            print(f"WLAN-Verbindung zu '{ssid}' erfolgreich.", file=sys.stderr)
-        else:
-            print(f"WLAN-Verbindung zu '{ssid}' fehlgeschlagen: {detail}", file=sys.stderr)
-        # Server laeuft in jedem Fall weiter - dauerhaftes Einstellungen-Portal,
-        # nicht nur fuer die Ersteinrichtung.
+        self.send_response(404)
+        self.end_headers()
 
 
 def main():
-    wifi_server = ThreadingHTTPServer((HOST, PORT_WIFI), WifiHandler)
+    # WLAN-Einstellungen laufen seit Kurzem als Unterseite (/wifi) im
+    # selben Server wie die Setup-Seite, statt auf einem eigenen Port -
+    # es gibt also nur noch einen einzigen Server/Port zu verwalten.
     landing_server = ThreadingHTTPServer((HOST, PORT_LANDING), LandingHandler)
-    threading.Thread(target=wifi_server.serve_forever, daemon=True).start()
-    print(f"WLAN-Einstellungen laufen dauerhaft auf {HOST}:{PORT_WIFI}", file=sys.stderr)
     print(f"Setup-Seite laeuft dauerhaft auf {HOST}:{PORT_LANDING}", file=sys.stderr)
     landing_server.serve_forever()
 

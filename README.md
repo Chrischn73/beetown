@@ -21,7 +21,7 @@ Kleine Web-App (PWA) zur Imkereiverwaltung: Standorte, Völker, Stockkarten-Eint
 
 ## Bereitstellung auf einem Raspberry Pi
 
-Alternativ zum Debian-LXC-Container (unten) lässt sich die App auch direkt
+Alternativ zu einem Linux-Server (unten) lässt sich die App auch direkt
 auf einem Raspberry Pi betreiben – inklusive WLAN-Ersteinrichtung per
 Netzwerkkabel, automatischen täglichen Backups und einer eingebauten
 Update-Funktion. Alle dafür nötigen Dateien liegen im Ordner `setup/`.
@@ -32,56 +32,15 @@ und Hintergründe: **[docs/raspberry-pi.md](docs/raspberry-pi.md)**.
 
 ## Bereitstellung auf einem allgemeinen Linux Server
 
-## 1. Debian-13-Container (LXC) in Proxmox
+`install.sh` richtet BeeTown seit Kurzem auch auf einem normalen
+Debian-/Linux-Server ein – mit denselben Funktionen wie auf dem
+Raspberry Pi (automatische tägliche Backups, Update-Funktion,
+Setup-Seite), nur ohne WLAN-Einrichtung, Hostname-Änderung und
+automatischen Neustart, die auf einem Server nicht gebraucht werden.
 
-In Proxmox einen unprivilegierten LXC mit Debian 13 erstellen, starten, hineinverbinden. Python 3 ist auf Debian 13 vorinstalliert – nichts weiter nötig:
-
-```bash
-apt update && apt -y upgrade
-python3 --version        # sollte 3.x zeigen
-```
-
-## 2. App ablegen
-
-Inhalt dieses Archivs nach `/opt/imkerei` kopieren (z. B. per `scp` oder Proxmox-Push):
-
-```bash
-mkdir -p /opt/imkerei
-# server.py, static/, data/ nach /opt/imkerei kopieren
-```
-
-Dienst-Benutzer anlegen und Rechte setzen:
-
-```bash
-useradd --system --home /opt/imkerei --shell /usr/sbin/nologin imkerei
-chown -R imkerei:imkerei /opt/imkerei
-chmod -R u+rwX /opt/imkerei/data
-```
-
-## 3. Als Dienst starten (systemd)
-
-```bash
-cp /opt/imkerei/imkerei.service /etc/systemd/system/imkerei.service
-systemctl daemon-reload
-systemctl enable --now imkerei
-systemctl status imkerei        # aktiv?
-```
-
-Der Server lauscht jetzt auf Port **8080**. Test vom Container aus:
-
-```bash
-curl -s localhost:8080/api/apiaries     # -> []
-```
-
-## 4. Aufrufen
-
-Über das VPN im Browser des Handys öffnen:
-
-```
-http://<container-ip>:8080
-```
-
-Fertig – Standorte/Völker/Einträge anlegen. Beide Handys sehen denselben Stand.
+Nutzung identisch zum Raspberry Pi (siehe oben) – derselbe `setup/`-
+Ordner, dieselben Download-Optionen A/B. Details:
+**[docs/raspberry-pi.md](docs/raspberry-pi.md)**.
 
 
 ## Aktualisieren

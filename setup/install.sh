@@ -286,8 +286,8 @@ if [ "$IS_PI" -eq 1 ]; then
  🐝 BeeTown-Pi ($NEW_HOSTNAME)
  ======================================================
    Setup / Übersicht:    $SETUP_URL
+   (WLAN-Einstellungen dort unter "WLAN-Einstellungen")
    BeeTown:              http://$NEW_HOSTNAME.local:$APP_PORT
-   WLAN-Einstellungen:    http://$NEW_HOSTNAME.local:8081
 
    IP-Adressen:  Kabel \4{eth0}   WLAN \4{wlan0}
  ======================================================
@@ -313,7 +313,7 @@ EOF
     echo "======================================================================"
     echo " Setup / Übersicht:   $SETUP_URL"
     echo " BeeTown:            http://$EFFECTIVE_HOSTNAME.local:$APP_PORT"
-    echo " WLAN-Einstellungen:  http://$EFFECTIVE_HOSTNAME.local:8081 (immer erreichbar)"
+    echo " WLAN-Einstellungen:  $SETUP_URL/wifi (immer erreichbar)"
     echo "======================================================================"
     if ! is_wifi_connected; then
         echo
@@ -324,7 +324,7 @@ EOF
         else
             echo " 2. Im Browser aufrufen:"
         fi
-        echo "        $SETUP_URL  (oder Port 8081)"
+        echo "        $SETUP_URL  (dort auf 'WLAN-Einstellungen' tippen)"
         echo " 3. WLAN auswaehlen bzw. SSID eingeben, Passwort eintragen,"
         echo "    auf 'Verbinden' tippen"
         echo " 4. Sobald die Verbindung steht: Netzwerkkabel entfernen"

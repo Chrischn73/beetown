@@ -1,5 +1,5 @@
 [Unit]
-Description=BeeTown – Setup-Seite (Port 80) + WLAN-Einstellungen (Port 8081)
+Description=BeeTown – Setup-Seite inkl. WLAN-Einstellungen unter /wifi (Port 80)
 After=NetworkManager.service
 Wants=NetworkManager.service
 # Bewusst KEIN Before=imkerei.service: Die App soll unabhaengig davon
