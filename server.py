@@ -4,7 +4,7 @@ BeeTown – kleiner Server (nur Python-Standardbibliothek). v1.9.37
 """
 
 import os, re, json, sqlite3, secrets, mimetypes
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE       = os.path.dirname(os.path.abspath(__file__))
@@ -24,12 +24,44 @@ PI_MARKER_DIR = "/opt/imkerei-wifi-setup"
 # hier nur best-effort mitgelesen, um im Frontend einen kleinen Hinweis
 # anzuzeigen, ohne selbst GitHub kontaktieren zu muessen.
 UPDATE_CHECK_STATE_PATH = os.path.join(PI_MARKER_DIR, "update_check.json")
+# Gleicher Pfad wie BACKUP_DIR im Setup-Portal (imkerei_wifi_portal.py) - der
+# taegliche Backup-Timer legt dort Archive ab, ohne ueber /api/backup zu
+# laufen. Wird hier nur mitgelesen, um "gibt es ein aktuelles Backup?" auch
+# fuer die naechtlichen Pi-Backups zu erkennen (nicht nur JSON-Exports).
+BACKUP_DIR = "/opt/backup"
+BACKUP_NAME_RE = re.compile(r"^imkerei-backup-[0-9-]+\.tar\.gz$")
+BACKUP_GRACE_DAYS = 3
+USB_MOUNT = "/mnt/backup-usb"
 
 os.makedirs(PHOTO_DIR, exist_ok=True)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 
 def now_iso(): return datetime.now(timezone.utc).isoformat()
 def new_id():  return secrets.token_hex(8)
+
+def last_backup_at(con):
+    """Zeitpunkt des juengsten bekannten Backups (JSON-Export ueber die App
+    ODER - falls Pi-Installation - das juengste automatische Archiv unter
+    BACKUP_DIR), oder None falls keins bekannt ist."""
+    latest=None
+    row=con.execute("SELECT value FROM settings WHERE key='_lastBackupAt'").fetchone()
+    if row and row["value"]:
+        try: latest=datetime.fromisoformat(row["value"])
+        except Exception: pass
+    if os.path.isdir(PI_MARKER_DIR):
+        try:
+            for name in os.listdir(BACKUP_DIR):
+                if not BACKUP_NAME_RE.match(name): continue
+                mtime=datetime.fromtimestamp(os.path.getmtime(os.path.join(BACKUP_DIR,name)),tz=timezone.utc)
+                if latest is None or mtime>latest: latest=mtime
+        except Exception: pass
+    return latest
+
+def has_recent_backup(con):
+    dt=last_backup_at(con)
+    if dt is None: return False
+    if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc)-dt)<=timedelta(days=BACKUP_GRACE_DAYS)
 def db():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
@@ -244,6 +276,7 @@ class Handler(BaseHTTPRequestHandler):
             is_pi=os.path.isdir(PI_MARKER_DIR)
             update_available=False
             latest_version=None
+            usb_backup_missing=False
             if is_pi:
                 try:
                     with open(UPDATE_CHECK_STATE_PATH) as f:
@@ -252,7 +285,21 @@ class Handler(BaseHTTPRequestHandler):
                     latest_version=state.get("latest")
                 except Exception:
                     pass
-            return self._json({"pi": is_pi, "updateAvailable": update_available, "latestVersion": latest_version})
+                usb_backup_missing=not os.path.ismount(USB_MOUNT)
+            con=db()
+            try:
+                recent_backup=has_recent_backup(con)
+                last_backup=last_backup_at(con)
+            finally:
+                con.close()
+            return self._json({
+                "pi": is_pi,
+                "updateAvailable": update_available,
+                "latestVersion": latest_version,
+                "usbBackupMissing": usb_backup_missing,
+                "recentBackup": recent_backup,
+                "lastBackupAt": last_backup.isoformat() if last_backup else None,
+            })
         if path=="/api/logo":
             if not os.path.isfile(LOGO_PATH): return self._err(404,"Kein Logo")
             with open(LOGO_PATH,"rb") as f: data=f.read()
@@ -478,6 +525,11 @@ class Handler(BaseHTTPRequestHandler):
                     con.commit()
                 return self._json({"ok":True})
 
+            if path in ("/api/entries/clear-fuetterung","/api/colonies/clear-honigraeume",
+                        "/api/colonies/clear-demaree","/api/colonies/clear-oxalblock",
+                        "/api/colonies/clear-umlarv") and not has_recent_backup(con):
+                return self._err(403,f"Diese Aktion benötigt ein Backup, das höchstens {BACKUP_GRACE_DAYS} Tage alt ist. Bitte zuerst ein Backup erstellen.")
+
             if path=="/api/entries/clear-fuetterung":
                 rows_=con.execute("SELECT id,obs_extra,photos,photoIds FROM entries").fetchall()
                 deleted=0
@@ -610,6 +662,8 @@ class Handler(BaseHTTPRequestHandler):
         finally: con.close()
 
     def api_backup(self, con):
+        con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('_lastBackupAt',?)",(now_iso(),))
+        con.commit()
         out={"app":"imkerei","version":7,
              "apiaries":rows(con,"SELECT * FROM apiaries"),
              "colonies":rows(con,"SELECT * FROM colonies"),

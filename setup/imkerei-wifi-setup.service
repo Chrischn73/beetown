@@ -7,6 +7,9 @@ Wants=NetworkManager.service
 
 [Service]
 Type=simple
+# Nur vorhanden, falls Port 80 beim Einrichten schon belegt war (siehe
+# install.sh) - setzt dann IMKEREI_LANDING_PORT auf einen Ausweich-Port.
+EnvironmentFile=-/etc/default/imkerei-wifi-setup
 ExecStart=/opt/imkerei-wifi-setup/imkerei-wifi-setup.sh
 Restart=on-failure
 RestartSec=3

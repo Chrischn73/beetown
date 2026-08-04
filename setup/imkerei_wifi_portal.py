@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-Dauerhaft laufender Webserver mit zwei Seiten fuer den BeeTown-Pi:
+Dauerhaft laufender Webserver mit zwei Seiten fuer BeeTown:
 
-- Setup-/Startseite auf Port 80 (http://<hostname>.local): Links zu BeeTown
-  und WLAN-Einstellungen, aktuelle IP-Adressen, Neustart/Herunterfahren.
-- WLAN-Einstellungen auf Port 8081 (http://<hostname>.local:8081): WLAN
-  einrichten/wechseln/trennen, mit Zurueck-Link zur Setup-Seite.
+- Setup-/Startseite auf Port 80 (http://<hostname>.local), faellt auf einen
+  Ausweich-Port aus (IMKEREI_LANDING_PORT), falls 80 beim Einrichten schon
+  belegt war (z. B. auf einem Linux-Server mit vorhandenem Webserver):
+  Links zu BeeTown, Backups, Update. Auf einem echten Raspberry Pi
+  zusaetzlich WLAN-Einstellungen und Neustart/Herunterfahren (auf einem
+  normalen Linux-Server ausgeblendet, siehe IS_PI).
+- WLAN-Einstellungen auf Port 8081 (http://<hostname>.local:8081, nur
+  Raspberry Pi relevant): WLAN einrichten/wechseln/trennen, mit
+  Zurueck-Link zur Setup-Seite.
 
 BeeTown selbst laeuft unveraendert auf Port 8080. Beide Seiten laufen
 permanent (nicht nur beim Ersteinrichten) im selben Prozess, unabhaengig
@@ -30,13 +35,14 @@ Verhalten:
   Backup-Seite abgefragt (kein Seitenwechsel, per fetch() im Hintergrund)
 - GET  /update               (Port 80) -> zeigt installierte und neueste
   Version (GitHub-Release), mit Update-Button falls eine neuere verfuegbar
-  ist. Legt vor jedem Update automatisch ein Backup an
+  ist, sowie Schalter fuer automatische Updates. Legt vor jedem Update
+  automatisch ein Backup an
 - GET  /update/status        (Port 80) -> JSON-Status waehrend des
   (asynchronen) Aktualisierens, per Polling von einem Overlay abgefragt
 - GET  /logo.png            (beide Ports) -> App-Icon aus /opt/imkerei/static
 - POST /backup/create, /backup/restore, /backup/restore-upload,
   /backup/settings, /backup/usb/format, /backup/usb/mount,
-  /backup/usb/eject, /update/run (Port 80)
+  /backup/usb/eject, /update/run, /update/settings (Port 80)
 - GET  /                    (Port 8081) -> WLAN-Formular (Status, Verbinden, Trennen)
 - POST /connect             (Port 8081) -> verbindet per nmcli mit dem gewaehlten
   WLAN. Faellt bei Fehlschlag automatisch auf die vorher aktive Verbindung
@@ -81,9 +87,27 @@ FORMAT_STATE = {"done": True, "ok": None, "detail": None}
 UPDATE_STATE = {"done": True, "ok": None, "detail": None}
 
 HOST = "0.0.0.0"
-PORT_LANDING = 80
+# install.sh setzt IMKEREI_LANDING_PORT, falls Port 80 beim Einrichten schon
+# belegt war (z. B. auf einem Linux-Server mit vorhandenem Webserver) -
+# dieselbe Portal-Seite laeuft dann auf einem Ausweich-Port.
+PORT_LANDING = int(os.environ.get("IMKEREI_LANDING_PORT", "80"))
 PORT_WIFI = 8081
 APP_PORT = 8080
+
+
+def _detect_is_pi():
+    """True nur auf einem echten Raspberry Pi (per Device-Tree-Modellname) -
+    steuert, ob WLAN-Einstellungen und Neustart/Herunterfahren in der
+    Setup-Seite ueberhaupt angeboten werden. Auf einem normalen Linux-Server
+    bleiben Backup und Update trotzdem voll nutzbar."""
+    try:
+        with open("/proc/device-tree/model") as f:
+            return "raspberry pi" in f.read().lower()
+    except Exception:
+        return False
+
+
+IS_PI = _detect_is_pi()
 
 BACKUP_DIR = "/opt/backup"
 BACKUP_SCRIPT = "/opt/backup-scripts/imkerei-backup.sh"
@@ -107,6 +131,7 @@ USB_MOUNT = "/mnt/backup-usb"
 GITHUB_REPO = "Chrischn73/beetown"
 GITHUB_LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 UPDATE_CHECK_STATE_PATH = "/opt/imkerei-wifi-setup/update_check.json"
+AUTO_UPDATE_CONFIG_PATH = "/opt/imkerei-wifi-setup/update.conf"
 
 STYLE = """
   :root {{
@@ -141,10 +166,10 @@ STYLE = """
   .msg {{ padding: .8rem; border-radius: 6px; margin-bottom: 1rem; background: var(--box-bg); }}
   .err {{ background: var(--msg-err-bg); }}
   .ok  {{ background: var(--msg-ok-bg); }}
-  .spinner {{ display: inline-block; width: 1.1em; height: 1.1em; border: 3px solid var(--btn-bg);
-              border-top-color: transparent; border-radius: 50%; vertical-align: -0.2em;
-              margin-right: .4em; animation: spin 0.8s linear infinite; }}
-  @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+  .loading-bee {{ width: 28px; height: 28px; display: inline-block; vertical-align: -0.5em;
+              margin-right: .4em; animation: bee-fly 0.5s ease-in-out infinite alternate; }}
+  @keyframes bee-fly {{ from {{ transform: translateY(0px) rotate(-4deg); }}
+                        to   {{ transform: translateY(-4px) rotate(4deg); }} }}
   .header {{ display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; }}
   .header img {{ width: 40px; height: 40px; border-radius: 8px; }}
   .header .name {{ font-weight: bold; font-size: 1.1rem; }}
@@ -160,6 +185,24 @@ STYLE = """
                 max-width: 320px; width: 85%; text-align: center; }}
   .modal-box h1 {{ font-size: 1.1rem; }}
 """
+
+# Gleiche Wackel-Biene wie in der BeeTown-App selbst (static/index.html /
+# styles.css) - erscheint ueberall dort, wo diese Seite gerade etwas
+# Laengeres tut (Verbinden, Formatieren, Backup/Update, Neustart/Herunterfahren).
+BEE_SPINNER_SVG = (
+    '<svg class="loading-bee" viewBox="0 0 40 40" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">'
+    '<ellipse cx="20" cy="24" rx="9" ry="12" fill="#f5c518"/>'
+    '<rect x="11" y="21" width="18" height="4" rx="2" fill="#241f17" opacity=".7"/>'
+    '<rect x="11" y="27" width="18" height="4" rx="2" fill="#241f17" opacity=".7"/>'
+    '<circle cx="20" cy="12" r="6" fill="#241f17"/>'
+    '<line x1="17" y1="7" x2="14" y2="3" stroke="#241f17" stroke-width="1.5" stroke-linecap="round"/>'
+    '<line x1="23" y1="7" x2="26" y2="3" stroke="#241f17" stroke-width="1.5" stroke-linecap="round"/>'
+    '<circle cx="14" cy="3" r="1.5" fill="#f5c518"/>'
+    '<circle cx="26" cy="3" r="1.5" fill="#f5c518"/>'
+    '<ellipse cx="10" cy="18" rx="7" ry="4" fill="rgba(200,230,255,0.75)" transform="rotate(-20 10 18)"/>'
+    '<ellipse cx="30" cy="18" rx="7" ry="4" fill="rgba(200,230,255,0.75)" transform="rotate(20 30 18)"/>'
+    '</svg>'
+)
 
 SYSTEM_BUTTONS = """
 <div class="btn-row">
@@ -186,23 +229,22 @@ PAGE_LANDING = """<!doctype html>
 <html lang="de"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BeeTown-Pi</title>
+<title>{title}</title>
 <style>""" + STYLE + """</style>
 </head><body>
 {header}
-<h1>🐝 BeeTown-Pi</h1>
+<h1>{heading}</h1>
 {status}
 {update_banner}
 <a class="btn" href="{app_url}" target="_blank" rel="noopener">🐝 BeeTown öffnen</a>
-<a class="btn" href="{wifi_url}">📶 WLAN-Einstellungen</a>
-<a class="btn" href="/backup">📦 Backups</a>
+{wifi_link}<a class="btn" href="/backup">📦 Backups</a>
 <a class="btn" href="/update">🔄 Update</a>
 <a class="btn" href="/tipps" style="padding:.5rem; font-size:.85rem;">📱 Handy-Tipps</a>
 <div class="msg" style="font-size:.9rem;">
 <strong>IP-Adressen:</strong><br>
-Kabel (eth0): {eth0_ip}<br>
-WLAN (wlan0): {wlan0_ip}
-</div>""" + SYSTEM_BUTTONS + """
+Kabel (eth0): {eth0_ip}{wlan_ip_line}
+</div>
+{system_buttons}
 </body></html>
 """
 
@@ -281,7 +323,7 @@ PAGE_CONNECTING = """<!doctype html>
 <style>""" + STYLE + """</style>
 </head><body>
 <div id="status">
-  <h1><span class="spinner"></span>Verbinde mit „{ssid}“…</h1>
+  <h1>""" + BEE_SPINNER_SVG + """Verbinde mit „{ssid}“…</h1>
   <p>Der Pi verbindet sich jetzt mit dem WLAN. Falls gerade eine andere
   WLAN-Verbindung aktiv war, bleibt sie bestehen, falls die neue nicht
   klappt.</p>
@@ -361,7 +403,7 @@ function startFormat(form, warning) {{
   if (!confirmFormat(warning)) return false;
   var modal = document.getElementById('format-modal');
   var content = document.getElementById('format-modal-content');
-  content.innerHTML = '<h1><span class="spinner"></span>Formatiere…</h1>' +
+  content.innerHTML = '<h1>""" + BEE_SPINNER_SVG + """Formatiere…</h1>' +
     '<p class="muted">Bitte warten – das kann je nach Stick-Größe einige Minuten dauern.</p>';
   modal.classList.add('show');
   fetch('/backup/usb/format', {{method: 'POST', body: new URLSearchParams(new FormData(form))}});
@@ -464,6 +506,16 @@ Programm-Code selbst kommt ohnehin direkt von GitHub.</p>
 </div>
 {notes_block}
 {action_block}
+
+<h2 style="font-size:1.05rem; margin-top:2rem;">Automatische Updates</h2>
+<form method="post" action="/update/settings">
+  <label style="display:flex; align-items:center; gap:.5rem; font-weight:normal;">
+    <input type="checkbox" name="auto_update" value="1" {auto_update_checked} style="width:auto; margin:0;">
+    Automatisch aktualisieren, sobald eine neue Version verfügbar ist
+  </label>
+  <button type="submit">Einstellung speichern</button>
+</form>
+
 <a class="btn" href="/">← Zurück zur Übersicht</a>
 
 <div id="update-modal" class="modal-backdrop">
@@ -476,7 +528,7 @@ function startUpdate(tag) {{
   }}
   var modal = document.getElementById('update-modal');
   var content = document.getElementById('update-modal-content');
-  content.innerHTML = '<h1><span class="spinner"></span>Aktualisiere…</h1>' +
+  content.innerHTML = '<h1>""" + BEE_SPINNER_SVG + """Aktualisiere…</h1>' +
     '<p class="muted">Backup wird erstellt, neue Version heruntergeladen und installiert. ' +
     'Das kann einige Minuten dauern – bitte die Seite nicht schließen.</p>';
   modal.classList.add('show');
@@ -502,7 +554,7 @@ PAGE_SYSTEM_ACTION = """<!doctype html>
 <title>{action}…</title>
 <style>""" + STYLE + """</style>
 </head><body>
-<h1><span class="spinner"></span>Pi {verb}…</h1>
+<h1>""" + BEE_SPINNER_SVG + """Pi {verb}…</h1>
 <p>{hint}</p>
 {retry_script}
 </body></html>
@@ -521,8 +573,8 @@ setTimeout(function poll() {
 STOP_SPINNER_SCRIPT = """
 <script>
 setTimeout(function() {
-  var el = document.querySelector('.spinner');
-  if (el) { el.style.animation = 'none'; el.style.borderColor = '#999'; el.style.borderTopColor = '#999'; }
+  var el = document.querySelector('.loading-bee');
+  if (el) { el.style.animation = 'none'; el.style.opacity = '.4'; }
 }, 20000);
 </script>
 """
@@ -939,7 +991,12 @@ def render_backup_page(message="", skip_remount=False):
   </form>
 </div>""")
     else:
-        usb_section_parts.append('<p>Kein USB-Stick angeschlossen.</p>')
+        usb_section_parts.append(
+            '<div class="msg err">⚠️ <strong>Kein USB-Stick angeschlossen.</strong> '
+            'Backups liegen nur auf der SD-Karte – bei einem Ausfall der SD-Karte sind dann '
+            '<strong>alle</strong> Daten unwiderruflich verloren. Einen Stick anschließen und '
+            'diese Seite neu laden, um ihn einzurichten.</div>'
+        )
 
     schedule = get_backup_schedule()
     return PAGE_BACKUP.format(
@@ -1029,17 +1086,54 @@ def fetch_latest_release():
         return None
 
 
+def get_auto_update():
+    """Standard AN, falls die Konfigurationsdatei fehlt oder unlesbar ist -
+    install.sh legt sie mit AUTO_UPDATE=1 an; fehlt sie trotzdem (z. B. sehr
+    alte Installation vor diesem Feature), ist AN der sicherere Default im
+    Sinne von 'bleibt aktuell', nicht 'bleibt verwundbar'."""
+    try:
+        with open(AUTO_UPDATE_CONFIG_PATH) as f:
+            content = f.read()
+        m = re.search(r"^AUTO_UPDATE=(\d)", content, re.MULTILINE)
+        if m:
+            return m.group(1) == "1"
+    except Exception:
+        pass
+    return True
+
+
+def set_auto_update(enabled):
+    try:
+        os.makedirs(os.path.dirname(AUTO_UPDATE_CONFIG_PATH), exist_ok=True)
+        with open(AUTO_UPDATE_CONFIG_PATH, "w") as f:
+            f.write(f"AUTO_UPDATE={1 if enabled else 0}\n")
+        return True, "Einstellung gespeichert."
+    except Exception as e:
+        return False, str(e)
+
+
 def run_update_check_once():
     """Einmaliger Versions-Check, Ergebnis wird zwischengespeichert (per
     Timer regelmaessig aufgerufen) - so muss die Startseite nicht bei jedem
     Aufruf selbst GitHub kontaktieren, sondern zeigt nur den zwischengespeicherten
-    Stand als Badge an."""
+    Stand als Badge an. Ist die automatische Aktualisierung eingeschaltet,
+    wird ein verfuegbares Update gleich hier angewendet (inkl. automatischem
+    Backup vorher, wie beim manuellen Update)."""
     current = app_version()
     release = fetch_latest_release()
+    update_available = bool(release) and parse_version(release["tag"]) > parse_version(current)
+    if update_available and get_auto_update() and release.get("tarball_url"):
+        ok, detail = perform_update(release["tarball_url"], release["tag"])
+        UPDATE_STATE.update(done=True, ok=ok, detail=detail)
+        if ok:
+            current = app_version()  # nach erfolgreichem Update neu einlesen
+            update_available = False
+        # bei Fehlschlag bleibt update_available=True, damit die Update-Seite
+        # weiterhin einen manuellen Versuch anbietet
     state = {
         "current": current,
         "latest": release["tag"] if release else None,
-        "update_available": bool(release) and parse_version(release["tag"]) > parse_version(current),
+        "update_available": update_available,
         "checked_at": time.strftime("%Y-%m-%d %H:%M"),
     }
     try:
@@ -1135,6 +1229,7 @@ def render_update_page(message=""):
     return PAGE_UPDATE.format(
         header=render_header(), message=message, current=current, latest=latest,
         status_class=status_class, notes_block=notes_block, action_block=action_block,
+        auto_update_checked="checked" if get_auto_update() else "",
     )
 
 
@@ -1144,13 +1239,16 @@ def render_landing():
     if update_state.get("update_available"):
         update_banner = f'<div class="msg ok">🔄 Update verfügbar: Version {update_state["latest"]}</div>'
     return PAGE_LANDING.format(
+        title="BeeTown-Pi" if IS_PI else "BeeTown-Setup",
+        heading="🐝 BeeTown-Pi" if IS_PI else "🐝 BeeTown-Setup",
         header=render_header(),
-        status=status_banner(),
+        status=status_banner() if IS_PI else "",
         update_banner=update_banner,
         app_url=app_url(),
-        wifi_url=wifi_url(),
+        wifi_link=f'<a class="btn" href="{wifi_url()}">📶 WLAN-Einstellungen</a>\n' if IS_PI else "",
         eth0_ip=get_ip("eth0") or "nicht verbunden",
-        wlan0_ip=get_ip("wlan0") or "nicht verbunden",
+        wlan_ip_line=f'<br>WLAN (wlan0): {get_ip("wlan0") or "nicht verbunden"}' if IS_PI else "",
+        system_buttons=SYSTEM_BUTTONS if IS_PI else "",
     )
 
 
@@ -1301,7 +1399,17 @@ class BaseHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def handle_system_action(self):
-        """True, wenn der Pfad eine System-Aktion war (Reboot/Shutdown)."""
+        """True, wenn der Pfad eine System-Aktion war (Reboot/Shutdown).
+        Nur auf einem echten Pi erreichbar - auf einem Linux-Server koennte
+        das ein produktiv genutzter, geteilter Rechner sein, den niemand per
+        Web-Button versehentlich neu starten koennen soll (Buttons sind dort
+        ohnehin ausgeblendet, das hier ist die serverseitige Absicherung)."""
+        if self.path not in ("/system/reboot", "/system/shutdown"):
+            return False
+        if not IS_PI:
+            self.send_response(404)
+            self.end_headers()
+            return True
         if self.path == "/system/reboot":
             self._send_html(PAGE_SYSTEM_ACTION.format(
                 action="Neustart", verb="startet neu",
@@ -1448,6 +1556,15 @@ class LandingHandler(BaseHandler):
             UPDATE_STATE.update(done=False, ok=None, detail=None)
             threading.Thread(target=_run_update_in_background, daemon=True).start()
             self._send_json({"started": True})
+            return
+        if self.path == "/update/settings":
+            length = int(self.headers.get("Content-Length", 0))
+            fields = parse_qs(self.rfile.read(length).decode("utf-8"))
+            enabled = fields.get("auto_update", [""])[0] == "1"
+            ok, detail = set_auto_update(enabled)
+            msg = (f'<div class="msg ok">✅ {detail}</div>' if ok
+                   else f'<div class="msg err">{detail}</div>')
+            self._send_html(render_update_page(msg))
             return
         self.send_response(404)
         self.end_headers()

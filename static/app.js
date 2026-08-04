@@ -3,7 +3,8 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.4';
+const APP_VERSION = 'v2.8.5';
+const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 const KAEFIG_SVG = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;display:inline-block"><line x1="3" y1="0" x2="3" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="7" y1="0" x2="7" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="11" y1="0" x2="11" y2="14" stroke="currentColor" stroke-width="1.6"/><line x1="0" y1="4" x2="14" y2="4" stroke="currentColor" stroke-width="1.6"/><line x1="0" y1="10" x2="14" y2="10" stroke="currentColor" stroke-width="1.6"/></svg>`;
 const OXAL_BLOCK_ICON = `<img class="oxblock-icon" src="./icons/varroa_block.png" alt="Blockbehandlung">`;
@@ -893,7 +894,23 @@ async function renderApiaries() {
 
   const apiaryName = getApiaryName();
 
+  /* USB-Backup-Warnung: nur Pi-Betrieb, wenn kein Stick als Backup-Ziel
+     eingerichtet ist - ohne ihn liegen Backups nur auf der SD-Karte. */
+  let usbWarningHTML='';
+  try{
+    const pr=await fetch('./api/platform');
+    const pd=await pr.json();
+    if(pd && pd.pi && pd.usbBackupMissing){
+      usbWarningHTML=`<div class="banner-error" style="margin-bottom:1rem">
+        ⚠️ Kein USB-Stick als Backup-Ziel eingerichtet – Backups liegen nur auf der SD-Karte.
+        Bei einem Ausfall der SD-Karte sind dann <strong>alle</strong> Daten unwiderruflich verloren.
+        <a class="btn btn-ghost block" href="${location.protocol+'//'+location.hostname+'/backup'}" style="margin-top:.5rem">Jetzt einrichten</a>
+      </div>`;
+    }
+  }catch(_){}
+
   app.innerHTML=`
+    ${usbWarningHTML}
     <div class="brand">
       <svg class="brand-bee" viewBox="0 0 120 120" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
         <polygon points="60,6 108,33 108,87 60,114 12,87 12,33" fill="var(--honey,#f5a623)" opacity="0.18"/>
@@ -3512,11 +3529,16 @@ async function renderSettings() {
         <a class="btn btn-ghost block" id="backup-pi-link" target="_blank" rel="noopener">📦 Zur Backup-Seite</a>
       </div>`)}
     ${settingsSection('bereinigen','Daten bereinigen',`
-      <button type="button" class="btn btn-danger block" id="btn-clear-fuetterung">Alle Fütterungs-Einträge entfernen</button>
-      <button type="button" class="btn btn-danger block" id="btn-clear-honigraeume" style="margin-top:.5rem">Alle Honigräume entfernen</button>
-      <button type="button" class="btn btn-danger block" id="btn-clear-demaree" style="margin-top:.5rem">Demaree-Status (Volkseinstellungen) zurücksetzen</button>
-      <button type="button" class="btn btn-danger block" id="btn-clear-oxalblock" style="margin-top:.5rem">Oxalsäure-Blockbehandlung (Volkseinstellungen) zurücksetzen</button>
-      <button type="button" class="btn btn-danger block" id="btn-clear-umlarv" style="margin-top:.5rem">Königinnenzucht-Datum (Volkseinstellungen) zurücksetzen</button>
+      <div id="bereinigen-warning" class="banner-error" style="display:none;margin-bottom:.75rem">
+        ⚠️ Diese Aktionen sind erst wieder möglich, sobald ein Backup existiert, das
+        höchstens ${BACKUP_GRACE_DAYS_FRONTEND} Tage alt ist.
+        <a class="btn btn-ghost block" href="#" id="bereinigen-backup-link" style="margin-top:.5rem">Jetzt Backup erstellen</a>
+      </div>
+      <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-fuetterung">Alle Fütterungs-Einträge entfernen</button>
+      <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-honigraeume" style="margin-top:.5rem">Alle Honigräume entfernen</button>
+      <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-demaree" style="margin-top:.5rem">Demaree-Status (Volkseinstellungen) zurücksetzen</button>
+      <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-oxalblock" style="margin-top:.5rem">Oxalsäure-Blockbehandlung (Volkseinstellungen) zurücksetzen</button>
+      <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-umlarv" style="margin-top:.5rem">Königinnenzucht-Datum (Volkseinstellungen) zurücksetzen</button>
       <p class="muted" style="margin-top:.5rem">Setzt nur die Felder am Volk zurück – vorhandene Einträge in der Stockkarte bleiben erhalten.</p>`)}
   </div>`;
   document.querySelectorAll('.settings-section').forEach(sec=>{
@@ -3538,6 +3560,22 @@ async function renderSettings() {
         if(j) j.style.display='none';
         if(p) p.style.display='';
         if(link) link.href=location.protocol+'//'+location.hostname+'/backup';
+      }
+      // "Daten bereinigen" nur mit einem ausreichend aktuellen Backup erlauben
+      // (serverseitig ohnehin erzwungen - hier nur fuer klares Feedback vorab).
+      const warn=document.getElementById('bereinigen-warning');
+      const btns=document.querySelectorAll('.bereinigen-btn');
+      if(d && !d.recentBackup){
+        if(warn) warn.style.display='';
+        btns.forEach(b=>{ b.disabled=true; b.style.opacity='.5'; });
+        const bl=document.getElementById('bereinigen-backup-link');
+        if(bl){
+          bl.onclick=(ev)=>{
+            ev.preventDefault();
+            if(d.pi) window.location.href=location.protocol+'//'+location.hostname+'/backup';
+            else window.location.href='./api/backup';
+          };
+        }
       }
     }catch(_){}
   })();
