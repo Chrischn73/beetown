@@ -21,8 +21,8 @@ Verhalten:
 - GET  /                    (Port 80)   -> Startseite mit Links, IPs, System-Buttons
 - GET  /tipps               (Port 80)   -> Handy-Tipps ("Zum Home-Bildschirm")
 - GET  /backup              (Port 80)   -> Backup-Liste (SD-Karte + ggf.
-  USB-Stick) zum Herunterladen, erstellen, Zeitplan + Aufbewahrungsanzahl,
-  USB-Stick formatieren/aushaengen
+  USB-Stick) zum Herunterladen, erstellen, Aufbewahrungsanzahl (taeglich,
+  Vater-Sohn-Rotation), USB-Stick formatieren/aushaengen
 - GET  /backup/restore      (Port 80)   -> eigene Seite: Datenbank + Fotos
   per Dropdown-Auswahl ODER direkt von einer PC-Datei wiederherstellen
   (App-Code bleibt unangetastet)
@@ -52,6 +52,9 @@ Verhalten:
   (autoconnect wird dabei deaktiviert)
 - GET  /status              (Port 8081) -> JSON-Status des laufenden
   Verbindungsversuchs (Polling von der "Verbinde..."-Seite)
+- GET  /networks            (Port 8081) -> JSON-Liste gefundener WLAN-Netze
+  (per fetch() im Hintergrund von der WLAN-Formular-Seite geladen, damit
+  die Seite sofort erscheint statt bis zu 15s auf den nmcli-Scan zu warten)
 - POST /system/reboot, /system/shutdown (Port 80) -> Neustart/Shutdown
 """
 
@@ -113,12 +116,14 @@ BACKUP_DIR = "/opt/backup"
 BACKUP_SCRIPT = "/opt/backup-scripts/imkerei-backup.sh"
 BACKUP_DATA_PREFIX = "imkerei/data"
 BACKUP_NAME_RE = re.compile(r"^imkerei-backup-[0-9-]+\.tar\.gz$")
-BACKUP_TIMER_PATH = "/etc/systemd/system/imkerei-backup.timer"
 BACKUP_CONFIG_PATH = "/opt/backup-scripts/backup.conf"
-BACKUP_SCHEDULES = {
-    "daily": "*-*-* 03:30:00",
-    "weekly": "Mon *-*-* 03:30:00",
-}
+# Backups laufen immer taeglich (fester Zeitplan, kein Nutzer-Schalter mehr) -
+# die Aufbewahrung uebernimmt stattdessen die Vater-Sohn-Rotation
+# (imkerei-backup-rotate.py), die aeltere Archive automatisch auf
+# woechentliche/monatliche/jaehrliche Stichproben ausduennt. Einzige
+# Einstellung ist die Gesamtanzahl (Minimum 12, damit die Rotation genug
+# Spielraum fuer alle Stufen hat).
+MIN_MAX_BACKUPS = 12
 DEFAULT_MAX_BACKUPS = 20
 
 USB_MOUNT = "/mnt/backup-usb"
@@ -178,6 +183,9 @@ STYLE = """
   .btn-row form {{ flex: 1; margin: 0; }}
   .btn-small {{ margin-top: 0; padding: .5rem; font-size: .85rem; }}
   .muted {{ color: var(--muted); }}
+  .donate-box {{ margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--input-border);
+                  text-align: center; }}
+  .donate-box p {{ color: var(--muted); font-size: .85rem; margin: 0 0 .6rem; }}
   .modal-backdrop {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
                       align-items: center; justify-content: center; z-index: 1000; }}
   .modal-backdrop.show {{ display: flex; }}
@@ -245,6 +253,11 @@ PAGE_LANDING = """<!doctype html>
 Kabel (eth0): {eth0_ip}{wlan_ip_line}
 </div>
 {system_buttons}
+<div class="donate-box">
+  <p>Schön, dass BeeTown dir nützt! Die App bleibt kostenlos und werbefrei –
+  über eine kleine Spende für Kaffee &amp; Weiterentwicklung freue ich mich sehr.</p>
+  <a class="btn" href="https://www.paypal.com/donate/?business=imker%40cfrerichs.de&currency_code=EUR" target="_blank" rel="noopener">☕ BeeTown unterstützen</a>
+</div>
 </body></html>
 """
 
@@ -288,13 +301,41 @@ PAGE_FORM = """<!doctype html>
 {message}
 <form method="post" action="/connect">
   <label for="ssid">WLAN-Name (SSID)</label>
-  {ssid_field}
+  <div id="ssid-loading" class="msg">""" + BEE_SPINNER_SVG + """Suche nach WLAN-Netzen…</div>
+  <select id="ssid" name="ssid" style="display:none"></select>
+  <input id="ssid_manual" name="ssid_manual" placeholder="SSID manuell" style="display:none; margin-top:.5rem">
   <label for="password">WLAN-Passwort</label>
   <input type="password" id="password" name="password" autocomplete="off">
   <button type="submit">Verbinden</button>
 </form>
 {disconnect_form}
 <a class="btn" href="{landing_url}">← Zurück zur Übersicht</a>
+<script>
+fetch('/networks').then(r => r.json()).then(function(nets) {{
+  var loading = document.getElementById('ssid-loading');
+  var sel = document.getElementById('ssid');
+  var manual = document.getElementById('ssid_manual');
+  if (nets && nets.length) {{
+    nets.forEach(function(n) {{
+      var opt = document.createElement('option');
+      opt.value = n.ssid; opt.textContent = n.ssid;
+      sel.appendChild(opt);
+    }});
+    var manualOpt = document.createElement('option');
+    manualOpt.value = ''; manualOpt.textContent = '– manuell eingeben –';
+    sel.appendChild(manualOpt);
+    sel.style.display = '';
+  }} else {{
+    manual.placeholder = 'SSID (kein Netz gefunden)';
+  }}
+  manual.style.display = '';
+  loading.style.display = 'none';
+}}).catch(function() {{
+  var loading = document.getElementById('ssid-loading');
+  loading.textContent = '❌ Fehler beim Suchen nach WLAN-Netzen.';
+  document.getElementById('ssid_manual').style.display = '';
+}});
+</script>
 </body></html>
 """
 
@@ -375,15 +416,15 @@ eingerichteten USB-Stick, falls vorhanden.</p>
 <a class="btn" href="/backup/downloads">⬇ Backup herunterladen</a>
 
 <h2 style="font-size:1.05rem; margin-top:2rem;">Einstellungen</h2>
+<p class="muted">Backups laufen automatisch jede Nacht (03:30 Uhr). Aufbewahrung
+nach dem Vater-Sohn-Prinzip: die letzten 7 Tage einzeln, danach automatisch
+ausgedünnt auf eine Sicherung pro Woche, Monat und Jahr – so bleibt auch
+ältere Historie sinnvoll erhalten, ohne dass du Zeitpläne oder Stufen selbst
+verwalten musst. Einzige Einstellung ist die Gesamtanzahl.</p>
 <form method="post" action="/backup/settings">
-  <label for="schedule">Automatisches Backup</label>
-  <select id="schedule" name="schedule">
-    <option value="daily" {daily_selected}>Täglich (nachts 03:30 Uhr)</option>
-    <option value="weekly" {weekly_selected}>Wöchentlich (Montag 03:30 Uhr)</option>
-  </select>
-  <label for="max_backups">Max. Anzahl Backups (je Ort)</label>
-  <input type="number" id="max_backups" name="max_backups" min="1" max="100" value="{max_backups}">
-  <button type="submit">Einstellungen speichern</button>
+  <label for="max_backups">Max. Anzahl Backups insgesamt (je Ort)</label>
+  <input type="number" id="max_backups" name="max_backups" min="12" max="200" value="{max_backups}">
+  <button type="submit">Einstellung speichern</button>
 </form>
 
 <h2 style="font-size:1.05rem; margin-top:2rem;">USB-Stick</h2>
@@ -773,22 +814,6 @@ def parse_multipart_file(body, content_type):
     return None, None
 
 
-def get_backup_schedule():
-    try:
-        with open(BACKUP_TIMER_PATH) as f:
-            content = f.read()
-    except Exception:
-        return "daily"
-    m = re.search(r"^OnCalendar=(.+)$", content, re.MULTILINE)
-    if not m:
-        return "daily"
-    value = m.group(1).strip()
-    for key, calendar in BACKUP_SCHEDULES.items():
-        if value == calendar:
-            return key
-    return "daily"
-
-
 def get_max_backups():
     try:
         with open(BACKUP_CONFIG_PATH) as f:
@@ -801,30 +826,20 @@ def get_max_backups():
     return DEFAULT_MAX_BACKUPS
 
 
-def set_backup_settings(schedule, max_backups_raw):
-    if schedule not in BACKUP_SCHEDULES:
-        return False, "Ungültiger Zeitplan."
+def set_backup_settings(max_backups_raw):
     try:
         max_backups = int(max_backups_raw)
     except (TypeError, ValueError):
         return False, "Ungültige Anzahl."
-    if not (1 <= max_backups <= 100):
-        return False, "Anzahl muss zwischen 1 und 100 liegen."
+    if not (MIN_MAX_BACKUPS <= max_backups <= 200):
+        return False, f"Anzahl muss zwischen {MIN_MAX_BACKUPS} und 200 liegen."
     try:
-        with open(BACKUP_TIMER_PATH) as f:
-            content = f.read()
-        new_content = re.sub(r"^OnCalendar=.*$", f"OnCalendar={BACKUP_SCHEDULES[schedule]}",
-                             content, flags=re.MULTILINE)
-        with open(BACKUP_TIMER_PATH, "w") as f:
-            f.write(new_content)
         os.makedirs(os.path.dirname(BACKUP_CONFIG_PATH), exist_ok=True)
         with open(BACKUP_CONFIG_PATH, "w") as f:
             f.write(f"MAX_BACKUPS={max_backups}\n")
-        subprocess.run(["systemctl", "daemon-reload"], capture_output=True, text=True)
-        subprocess.run(["systemctl", "restart", "imkerei-backup.timer"], capture_output=True, text=True)
     except Exception as e:
         return False, str(e)
-    return True, f"Zeitplan und Aufbewahrung (max. {max_backups} Backups je Ort) gespeichert."
+    return True, f"Aufbewahrung gespeichert (max. {max_backups} Backups je Ort, Vater-Sohn-Rotation)."
 
 
 def get_root_disk():
@@ -1034,13 +1049,10 @@ def render_backup_page(message="", skip_remount=False):
             'diese Seite neu laden, um ihn einzurichten.</div>'
         )
 
-    schedule = get_backup_schedule()
     return PAGE_BACKUP.format(
         header=render_header(),
         message=message,
         usb_section="".join(usb_section_parts),
-        daily_selected="selected" if schedule == "daily" else "",
-        weekly_selected="selected" if schedule == "weekly" else "",
         max_backups=get_max_backups(),
     )
 
@@ -1361,17 +1373,12 @@ def render_landing():
 
 
 def render_form(message=""):
-    nets = scan_networks()
-    if nets:
-        options = "".join(f'<option value="{s}">{s}</option>' for s, _ in nets)
-        ssid_field = (
-            f'<select id="ssid" name="ssid">{options}'
-            f'<option value="">– manuell eingeben –</option></select>'
-            f'<input id="ssid_manual" name="ssid_manual" placeholder="SSID manuell" style="margin-top:.5rem">'
-        )
-    else:
-        ssid_field = '<input id="ssid" name="ssid" placeholder="SSID">' \
-                     '<input id="ssid_manual" name="ssid_manual" style="display:none">'
+    # Der eigentliche WLAN-Scan (scan_networks(), bis zu 15s wegen
+    # --rescan yes) laeuft NICHT mehr hier synchron - das wuerde die
+    # gesamte Seite blockieren, bevor ueberhaupt etwas (inkl. der
+    # Lade-Biene) beim Browser ankommt. Stattdessen liefert die Seite
+    # sofort ein Geruest, das den Scan per fetch('/networks') im
+    # Hintergrund nachlaedt (siehe PAGE_FORM).
     _, connected = current_wifi_connection()
     return PAGE_FORM.format(
         header=render_header(),
@@ -1379,7 +1386,6 @@ def render_form(message=""):
         app_url=app_url(),
         landing_url=landing_url(),
         message=message,
-        ssid_field=ssid_field,
         disconnect_form=DISCONNECT_FORM if connected else "",
     )
 
@@ -1630,9 +1636,8 @@ class LandingHandler(BaseHandler):
         if self.path == "/backup/settings":
             length = int(self.headers.get("Content-Length", 0))
             fields = parse_qs(self.rfile.read(length).decode("utf-8"))
-            schedule = fields.get("schedule", [""])[0]
             max_backups = fields.get("max_backups", [""])[0]
-            ok, detail = set_backup_settings(schedule, max_backups)
+            ok, detail = set_backup_settings(max_backups)
             msg = (f'<div class="msg ok">✅ {detail}</div>' if ok
                    else f'<div class="msg err">{detail}</div>')
             self._send_html(render_backup_page(msg))
@@ -1696,6 +1701,9 @@ class WifiHandler(BaseHandler):
             return
         if self.path == "/status":
             self._send_json(CONN_STATE)
+            return
+        if self.path == "/networks":
+            self._send_json([{"ssid": s, "signal": signal} for s, signal in scan_networks()])
             return
         self._send_html(render_form())
 
