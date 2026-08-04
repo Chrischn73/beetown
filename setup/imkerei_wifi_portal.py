@@ -134,6 +134,10 @@ def _detect_is_pi():
 
 
 IS_PI = _detect_is_pi()
+# Auf einem Linux-Server ist der lokale Backup-Ort keine SD-Karte, sondern
+# die normale Server-Platte - "SD-Karte" waere dort irrefuehrend.
+LOCAL_BACKUP_LABEL = "SD-Karte" if IS_PI else "Lokal"
+LOCAL_BACKUP_PHRASE = "auf der SD-Karte" if IS_PI else "lokal"
 
 BACKUP_DIR = "/opt/backup"
 BACKUP_SCRIPT = "/opt/backup-scripts/imkerei-backup.sh"
@@ -432,7 +436,7 @@ PAGE_BACKUP = """<!doctype html>
 {header}
 <h1>📦 Backups</h1>
 <p>Sichert den kompletten Ordner <code>/opt/imkerei</code> (App-Code,
-Datenbank und Fotos) – immer auf der SD-Karte, zusätzlich auf einem
+Datenbank und Fotos) – immer {local_phrase}, zusätzlich auf einem
 eingerichteten USB-Stick, falls vorhanden.</p>
 {message}
 <form method="post" action="/backup/create">
@@ -1036,7 +1040,7 @@ def render_backup_page(message="", skip_remount=False):
     if usb_mounted:
         usb_section_parts.append(
             f'<div class="msg ok">📦 USB-Stick eingerichtet ({disk_usage(USB_MOUNT)}) – '
-            f'Backups werden zusätzlich zur SD-Karte dort abgelegt.</div>'
+            f'Backups werden {LOCAL_BACKUP_PHRASE} und zusätzlich hier abgelegt.</div>'
         )
         usb_section_parts.append(
             '<form method="post" action="/backup/usb/eject" '
@@ -1088,6 +1092,7 @@ def render_backup_page(message="", skip_remount=False):
         message=message,
         usb_section="".join(usb_section_parts),
         max_backups=get_max_backups(),
+        local_phrase=LOCAL_BACKUP_PHRASE,
     )
 
 
@@ -1109,7 +1114,7 @@ def render_header():
 
 def backup_options_html():
     try_remount_usb()
-    entries = [(b, "local", "SD-Karte") for b in list_backups(BACKUP_DIR)]
+    entries = [(b, "local", LOCAL_BACKUP_LABEL) for b in list_backups(BACKUP_DIR)]
     if os.path.ismount(USB_MOUNT):
         entries += [(b, "usb", "USB-Stick") for b in list_backups(USB_MOUNT)]
     entries.sort(key=lambda e: e[0]["name"], reverse=True)
