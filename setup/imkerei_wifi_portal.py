@@ -588,6 +588,7 @@ würde der Pi gleich wieder darüber hinweg aktualisieren.</p>
     <input type="checkbox" name="auto_update" value="1" {auto_update_checked} style="width:auto; margin:0;">
     Automatisch aktualisieren, sobald eine neue Version verfügbar ist
   </label>
+  <p class="muted" style="margin-top:.3rem; font-size:.85rem;">Der tägliche Update-Check läuft nachts um 04:00 Uhr – ist diese Option aktiviert, wird ein gefundenes Update direkt dabei installiert.</p>
   <button type="submit">Einstellung speichern</button>
 </form>
 
