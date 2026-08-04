@@ -194,16 +194,26 @@ cp "$SCRIPT_DIR/imkerei-update-check.timer" /etc/systemd/system/imkerei-update-c
 log "Pruefe Port 80 fuer das Setup-Portal"
 # Auf einem Linux-Server koennte Port 80 bereits von einem vorhandenen
 # Webserver belegt sein - dann auf einen Ausweich-Port wechseln, statt den
-# Dienststart einfach fehlschlagen zu lassen.
-LANDING_PORT=80
-if (exec 3<>"/dev/tcp/127.0.0.1/80") 2>/dev/null; then
-    exec 3>&- 3<&-
-    LANDING_PORT=8082
-    echo "Port 80 ist bereits belegt - Setup-Portal laeuft stattdessen auf Port $LANDING_PORT."
-    echo "IMKEREI_LANDING_PORT=$LANDING_PORT" > /etc/default/imkerei-wifi-setup
+# Dienststart einfach fehlschlagen zu lassen. War der Dienst schon vorher
+# durch einen frueheren install.sh-Lauf aktiviert, belegt er Port 80 (oder
+# einen zuvor gewaehlten Ausweich-Port) ja bereits selbst - das ist kein
+# echter Konflikt und der bestehende Port wird einfach beibehalten, statt
+# faelschlich erneut auszuweichen.
+if systemctl is-enabled --quiet imkerei-wifi-setup.service 2>/dev/null; then
+    LANDING_PORT="$(sed -n 's/^IMKEREI_LANDING_PORT=\([0-9]*\)/\1/p' /etc/default/imkerei-wifi-setup 2>/dev/null)"
+    [ -z "$LANDING_PORT" ] && LANDING_PORT=80
+    echo "Setup-Portal war schon eingerichtet - bestehender Port $LANDING_PORT wird beibehalten."
 else
-    echo "Port 80 ist frei - Setup-Portal laeuft dort wie gewohnt."
-    rm -f /etc/default/imkerei-wifi-setup
+    LANDING_PORT=80
+    if (exec 3<>"/dev/tcp/127.0.0.1/80") 2>/dev/null; then
+        exec 3>&- 3<&-
+        LANDING_PORT=8082
+        echo "Port 80 ist bereits belegt - Setup-Portal laeuft stattdessen auf Port $LANDING_PORT."
+        echo "IMKEREI_LANDING_PORT=$LANDING_PORT" > /etc/default/imkerei-wifi-setup
+    else
+        echo "Port 80 ist frei - Setup-Portal laeuft dort wie gewohnt."
+        rm -f /etc/default/imkerei-wifi-setup
+    fi
 fi
 
 # ---------------------------------------------------------------------------
