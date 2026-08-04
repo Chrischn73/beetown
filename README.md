@@ -5,54 +5,45 @@
 Eine von zwei Optionen:
 
 1. einen **Raspberry Pi**
+
 2. einen **Linux-Server**
 
-Beide sollten nur im **lokalen Netz** betrieben werden, da die App keine
-Benutzer-/Passwort-Abfrage bietet.
+Beide sollten nur im **lokalen Netz** betrieben werden, da die App keine Benutzer-/Passwort-Abfrage bietet.
 
-Kleine Web-App (PWA) zur Imkereiverwaltung: Standorte, Völker, Stockkarten-Einträge mit Fotos. Beide Handys greifen über das VPN auf **denselben** Server zu.
-
-- **Backend:** ein Python-Skript (`server.py`), nur Standardbibliothek, SQLite. Kein pip, kein Framework.
-
-- **Frontend:** statische PWA im Ordner `static/`.
-
-- **Daten:** zentral auf dem Server unter `data/` (`app.db` + `photos/`).
-
+BeeTown ist eine Web-App zur Imkereiverwaltung: Standorte, Völker, Stockkarten-Einträge mit Fotos. Man kann dann über den Handy Browser auf die App zugeifen.
 
 ## Bereitstellung auf einem Raspberry Pi
 
-Alternativ zu einem Linux-Server (unten) lässt sich die App auch direkt
-auf einem Raspberry Pi betreiben – inklusive WLAN-Ersteinrichtung per
-Netzwerkkabel, automatischen täglichen Backups und einer eingebauten
-Update-Funktion. Alle dafür nötigen Dateien liegen im Ordner `setup/`.
+die App lässt sich direkt auf einem Raspberry Pi betreiben – inklusive WLAN-Ersteinrichtung per Netzwerkkabel, automatischen täglichen Backups und einer eingebauten Update-Funktion. Alle dafür nötigen Dateien liegen im Ordner `setup/`.
 
-⚠️ Nur für Raspberry Pi OS (Lite/Core) – Details, Installationsschritte
-und Hintergründe: **[docs/raspberry-pi.md](docs/raspberry-pi.md)**.
+Zur installation auf dem Raspberry einfach ./install.sh aufrufen
 
+Details: **[docs/raspberry-pi.md](docs/raspberry-pi.md)**.
 
 ## Bereitstellung auf einem allgemeinen Linux Server
 
-`install.sh` richtet BeeTown seit Kurzem auch auf einem normalen
-Debian-/Linux-Server ein – mit denselben Funktionen wie auf dem
-Raspberry Pi (automatische tägliche Backups, Update-Funktion,
-Setup-Seite), nur ohne WLAN-Einrichtung, Hostname-Änderung und
-automatischen Neustart, die auf einem Server nicht gebraucht werden.
+`install.sh` richtet BeeTown seit kurzem auch auf einem normalen Debian-/Linux-Server ein – mit denselben Funktionen wie auf dem Raspberry Pi (automatische tägliche Backups, Update-Funktion, Setup-Seite), nur ohne WLAN-Einrichtung
 
-Nutzung identisch zum Raspberry Pi (siehe oben) – derselbe `setup/`-
-Ordner, dieselben Download-Optionen A/B. Details:
-**[docs/raspberry-pi.md](docs/raspberry-pi.md)**.
+Zur installation ebenfalls einfach ./install.sh aufrufen
+
+## Updates  
 
 
-## Aktualisieren
+Updates können über die Update Funktion in der App durchgeführt werden
 
-`server.py` bzw. `static/` ersetzen und `systemctl restart imkerei`. Der Ordner `data/` bleibt unangetastet.
+## Manuelle Updates
 
+`server.py` bzw. `static/` ersetzen und
+
+`systemctl restart imkerei`
+
+Der Ordner `data/` bleibt unangetastet.
 
 ## Funktionsumfang
 
-- Logo „Imkerei Frerichs" auf der Hauptseite
+- Logo auf der Hauptseite
 
-- **Hell-/Dunkel-Modus** (System/Hell/Dunkel, umschaltbar unter Einstellungen)
+- **Dark-Modus** (System/Hell/Dunkel, umschaltbar unter Einstellungen)
 
 - Standorte anlegen/bearbeiten/löschen (Anlegen unter **Einstellungen**)
 
@@ -79,7 +70,4 @@ Ordner, dieselben Download-Optionen A/B. Details:
 - **Oxalsäure-Blockbehandlung**: je gespeicherter Stufe wird automatisch eine Erinnerung für die nächste fällige Stufe angelegt (Tage zwischen den Stufen einstellbar, Standard 4). Völker desselben Standorts mit gleichem Fälligkeitsdatum landen dabei in **einer gemeinsamen Erinnerung** (je Volk eine Zeile) statt in Dubletten; bei der letzten Stufe entfällt die Erinnerung wieder
 
 - **„BK"-Sonderbehandlung**: Völker/Standorte, deren Name mit einem einstellbaren Präfix beginnt (Standard „BK"), werden in Übersichten (Alle Völker, Gewicht, Varroa-Zählung, Varroa-Historie, Ziel-Gewicht setzen) gesondert behandelt bzw. ausgeblendet. Präfix unter **Einstellungen** änderbar, leer lassen deaktiviert die Sonderbehandlung
-
-- Backup/Restore (JSON)
-
 
