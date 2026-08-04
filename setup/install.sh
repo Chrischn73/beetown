@@ -194,26 +194,24 @@ cp "$SCRIPT_DIR/imkerei-update-check.timer" /etc/systemd/system/imkerei-update-c
 log "Pruefe Port 80 fuer das Setup-Portal"
 # Auf einem Linux-Server koennte Port 80 bereits von einem vorhandenen
 # Webserver belegt sein - dann auf einen Ausweich-Port wechseln, statt den
-# Dienststart einfach fehlschlagen zu lassen. War der Dienst schon vorher
-# durch einen frueheren install.sh-Lauf aktiviert, belegt er Port 80 (oder
-# einen zuvor gewaehlten Ausweich-Port) ja bereits selbst - das ist kein
-# echter Konflikt und der bestehende Port wird einfach beibehalten, statt
-# faelschlich erneut auszuweichen.
-if systemctl is-enabled --quiet imkerei-wifi-setup.service 2>/dev/null; then
-    LANDING_PORT="$(sed -n 's/^IMKEREI_LANDING_PORT=\([0-9]*\)/\1/p' /etc/default/imkerei-wifi-setup 2>/dev/null)"
-    [ -z "$LANDING_PORT" ] && LANDING_PORT=80
-    echo "Setup-Portal war schon eingerichtet - bestehender Port $LANDING_PORT wird beibehalten."
-else
+# Dienststart einfach fehlschlagen zu lassen. Bei jedem Lauf neu anhand der
+# tatsaechlich lauschenden PID pruefen (nicht nur einmalig anhand von
+# "war der Dienst schon aktiviert"), damit sich ein zwischenzeitlich
+# geloester Konflikt auch wieder von selbst korrigiert, statt einen einmal
+# gewaehlten Ausweich-Port fuer immer beizubehalten. Ist der aktuelle
+# Belegungsinhaber das eigene Setup-Portal selbst, zaehlt das nicht als
+# Konflikt.
+BEETOWN_PID="$(systemctl show -p MainPID --value imkerei-wifi-setup.service 2>/dev/null || echo 0)"
+PORT80_PID="$(ss -H -ltnp "sport = :80" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)"
+
+if [ -z "$PORT80_PID" ] || { [ "$PORT80_PID" = "$BEETOWN_PID" ] && [ "$BEETOWN_PID" != "0" ]; }; then
     LANDING_PORT=80
-    if (exec 3<>"/dev/tcp/127.0.0.1/80") 2>/dev/null; then
-        exec 3>&- 3<&-
-        LANDING_PORT=8082
-        echo "Port 80 ist bereits belegt - Setup-Portal laeuft stattdessen auf Port $LANDING_PORT."
-        echo "IMKEREI_LANDING_PORT=$LANDING_PORT" > /etc/default/imkerei-wifi-setup
-    else
-        echo "Port 80 ist frei - Setup-Portal laeuft dort wie gewohnt."
-        rm -f /etc/default/imkerei-wifi-setup
-    fi
+    echo "Port 80 ist frei (oder bereits durch das eigene Setup-Portal belegt) - Setup-Portal laeuft dort."
+    rm -f /etc/default/imkerei-wifi-setup
+else
+    LANDING_PORT=8082
+    echo "Port 80 ist von einem anderen Prozess belegt (PID $PORT80_PID) - Setup-Portal laeuft stattdessen auf Port $LANDING_PORT."
+    echo "IMKEREI_LANDING_PORT=$LANDING_PORT" > /etc/default/imkerei-wifi-setup
 fi
 
 # ---------------------------------------------------------------------------
@@ -224,6 +222,11 @@ systemctl enable --now imkerei.service
 # Laeuft dauerhaft (nicht nur bis WLAN eingerichtet ist), damit sich WLAN
 # jederzeit spaeter noch einrichten oder wechseln laesst.
 systemctl enable --now imkerei-wifi-setup.service
+# Explizit neu starten, damit ein aktualisiertes Skript und/oder ein neu
+# ermittelter Port (siehe oben) bei einem erneuten install.sh-Lauf auch
+# tatsaechlich uebernommen werden - "enable --now" allein wuerde einen
+# bereits laufenden Dienst unveraendert weiterlaufen lassen.
+systemctl restart imkerei-wifi-setup.service
 systemctl enable --now imkerei-backup.timer
 systemctl enable --now imkerei-update-check.timer
 # Einmaligen ersten Check gleich jetzt anstossen, damit die Startseite nicht
