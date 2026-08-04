@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.21';
+const APP_VERSION = 'v2.8.22';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -3460,7 +3460,10 @@ async function renderSettings() {
       <div class="settings-section-body">${body}</div>
     </details>`;
   app.innerHTML=`<div class="settings">
-    <div style="text-align:right;margin-bottom:.5rem"><button class="btn btn-save-settings" id="save-all-settings">💾 Speichern</button></div>
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+      <a class="btn btn-ghost btn-sm" id="setup-portal-link" target="_blank" rel="noopener" style="display:none">⚙️ Setup / Update / Backup</a>
+      <button class="btn btn-save-settings" id="save-all-settings">💾 Speichern</button>
+    </div>
     ${settingsSection('betrieb','Betrieb',`
       <label class="lbl">Betriebsname (wird oben angezeigt)</label>
       <input class="inp" id="apiary-name-input" type="text" placeholder="z. B. Imkerei Frerichs" value="">
@@ -3541,23 +3544,9 @@ async function renderSettings() {
           <input type="checkbox" class="obs-btn-chk" data-key="${k}" checked><span>${esc(l)}</span>
         </label>`).join('')}
       </div>`)}
-    ${settingsSection('datensicherung','Backup',`
-      <div id="backup-json">
-        <a class="btn btn-ghost block" href="./api/backup" download>Backup exportieren (.json)</a>
-        <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>
-      </div>
-      <div id="backup-pi" style="display:none">
-        <p class="muted">Vollständige Sicherung (Datenbank + Fotos, Zeitplan, USB-Stick) läuft über die Setup-Seite.</p>
-        <a class="btn btn-ghost block" id="backup-pi-link" target="_blank" rel="noopener">📦 Zur Backup-Seite</a>
-      </div>`)}
-    ${settingsSection('appupdate','Update',`
-      <div id="update-link-box" style="display:none">
-        <p class="muted">Version prüfen, aktualisieren oder automatische Updates ein-/ausschalten läuft über die Setup-Seite.</p>
-        <a class="btn btn-ghost block" id="update-link" target="_blank" rel="noopener">🔄 Zur Update-Seite</a>
-      </div>
-      <div id="update-link-none">
-        <p class="muted">Keine Setup-Seite gefunden – Update-Verwaltung ist nur bei einer Installation über <code>install.sh</code> verfügbar.</p>
-      </div>`)}
+    <div id="backup-section-wrap">${settingsSection('datensicherung','Backup',`
+      <a class="btn btn-ghost block" href="./api/backup" download>Backup exportieren (.json)</a>
+      <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>`)}</div>
     ${settingsSection('bereinigen','Daten bereinigen',`
       <div id="bereinigen-warning" class="banner-error" style="display:none;margin-bottom:.75rem">
         ⚠️ Diese Aktionen sind erst wieder möglich, sobald ein Backup existiert, das
@@ -3576,29 +3565,21 @@ async function renderSettings() {
     if(localStorage.getItem(key)==='1') sec.open=true;
     sec.addEventListener('toggle', ()=>{ localStorage.setItem(key, sec.open?'1':'0'); });
   });
-  // Backup-/Update-Bereich: ist ein Setup-Portal installiert (Pi ODER
-  // Linux-Server per install.sh), die vollstaendige Sicherung + die
-  // Update-Seite dort bewerben statt der einfachen JSON-Sicherung (die
-  // bleibt die einzige Option ohne Setup-Portal, z. B. bei einer rein
-  // manuellen Installation).
+  // Setup/Update/Backup: ist ein Setup-Portal installiert (Pi ODER
+  // Linux-Server per install.sh), einen einzigen Button oben neben
+  // "Speichern" dorthin anzeigen (deckt Backup, Update, WLAN etc. ab) und
+  // die separate Backup-Sektion (nur einfache JSON-Sicherung) ausblenden.
+  // Ohne Setup-Portal (z. B. rein manuelle Installation) bleibt die
+  // JSON-Sicherung die einzige Option, der Button bleibt versteckt.
   (async()=>{
     try{
       const r=await fetch('./api/platform');
       const d=await r.json();
       if(d && d.setupPortal){
-        const j=document.getElementById('backup-json');
-        const p=document.getElementById('backup-pi');
-        const link=document.getElementById('backup-pi-link');
-        if(j) j.style.display='none';
-        if(p) p.style.display='';
-        if(link) link.href=setupPortalUrl(d.landingPort,'/backup');
-
-        const ub=document.getElementById('update-link-box');
-        const un=document.getElementById('update-link-none');
-        const ulink=document.getElementById('update-link');
-        if(ub) ub.style.display='';
-        if(un) un.style.display='none';
-        if(ulink) ulink.href=setupPortalUrl(d.landingPort,'/update');
+        const setupLink=document.getElementById('setup-portal-link');
+        const backupWrap=document.getElementById('backup-section-wrap');
+        if(setupLink){ setupLink.href=setupPortalUrl(d.landingPort,'/'); setupLink.style.display=''; }
+        if(backupWrap) backupWrap.style.display='none';
       }
       // "Daten bereinigen" nur mit einem ausreichend aktuellen Backup erlauben
       // (serverseitig ohnehin erzwungen - hier nur fuer klares Feedback vorab).
