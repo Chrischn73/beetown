@@ -97,6 +97,17 @@ apt-get -y upgrade
 log "SSH aktivieren"
 systemctl enable --now ssh
 
+if [ "$IS_PI" -eq 0 ]; then
+    # -----------------------------------------------------------------------
+    log "Avahi (mDNS) installieren, damit .local-Adressen funktionieren"
+    # Raspberry Pi OS bringt avahi-daemon von Haus aus mit - ein normaler
+    # Linux-Server (insbesondere ein minimaler LXC-Container) in der Regel
+    # nicht. Ohne mDNS-Ankuendigung ist der Server trotz ueberall angezeigter
+    # ".local"-URLs nur per IP erreichbar.
+    apt-get install -y avahi-daemon avahi-utils
+    systemctl enable --now avahi-daemon
+fi
+
 if [ "$IS_PI" -eq 1 ]; then
     # -----------------------------------------------------------------------
     log "Zeitzone auf Europe/Berlin setzen und Zeit-Synchronisation aktivieren"
@@ -349,7 +360,7 @@ else
     echo
     echo "======================================================================"
     echo " Setup / Übersicht:   $SETUP_URL"
-    echo " BeeTown:            http://$(hostname):$APP_PORT"
+    echo " BeeTown:            http://$(hostname).local:$APP_PORT"
     echo "======================================================================"
     echo " Hostname und WLAN dieses Servers wurden nicht veraendert."
     echo " Fertig - kein Neustart erforderlich."
