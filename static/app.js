@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.27';
+const APP_VERSION = 'v2.8.28';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -3461,7 +3461,7 @@ async function renderSettings() {
     </details>`;
   app.innerHTML=`<div class="settings">
     <div style="display:flex;justify-content:flex-end;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
-      <a class="btn btn-ghost btn-sm" id="setup-portal-link" target="_blank" rel="noopener" style="display:none">⚙️ Setup / Update / Backup</a>
+      <a class="btn btn-ghost btn-sm" id="setup-portal-link" style="display:none">⚙️ Setup / Update / Backup</a>
       <button class="btn btn-save-settings" id="save-all-settings">💾 Speichern</button>
     </div>
     ${settingsSection('betrieb','Betrieb',`
