@@ -274,10 +274,12 @@ EOF
     # -----------------------------------------------------------------------
     CURRENT_HOSTNAME="$(hostname)"
     EFFECTIVE_HOSTNAME="$CURRENT_HOSTNAME"
+    HOSTNAME_CHANGED=0
     if [ "$CURRENT_HOSTNAME" = "$DEFAULT_PI_HOSTNAME" ]; then
         log "Hostname aendern zu '$NEW_HOSTNAME'"
         raspi-config nonint do_hostname "$NEW_HOSTNAME"
         EFFECTIVE_HOSTNAME="$NEW_HOSTNAME"
+        HOSTNAME_CHANGED=1
         SETUP_URL="http://$NEW_HOSTNAME.local"
         [ "$LANDING_PORT" -ne 80 ] && SETUP_URL="$SETUP_URL:$LANDING_PORT"
     else
@@ -294,7 +296,11 @@ EOF
         echo
         echo " Noch kein WLAN eingerichtet:"
         echo " 1. Pi per Netzwerkkabel am Router/Switch angeschlossen lassen"
-        echo " 2. Nach dem gleich folgenden Neustart im Browser aufrufen:"
+        if [ "$HOSTNAME_CHANGED" -eq 1 ]; then
+            echo " 2. Nach dem gleich folgenden Neustart im Browser aufrufen:"
+        else
+            echo " 2. Im Browser aufrufen:"
+        fi
         echo "        $SETUP_URL  (oder Port 8081)"
         echo " 3. WLAN auswaehlen bzw. SSID eingeben, Passwort eintragen,"
         echo "    auf 'Verbinden' tippen"
@@ -306,11 +312,16 @@ EOF
     echo " Wechsel nicht, faellt der Pi automatisch auf die vorher aktive"
     echo " Verbindung zurueck, damit er erreichbar bleibt."
     echo "======================================================================"
-    echo
-    echo "Neustart in 5 Sekunden, um alle Aenderungen sauber zu uebernehmen..."
-    echo "Danach per SSH neu verbinden: ssh <benutzer>@$EFFECTIVE_HOSTNAME.local"
-    sleep 5
-    reboot
+    if [ "$HOSTNAME_CHANGED" -eq 1 ]; then
+        echo
+        echo "Neustart in 5 Sekunden, um den neuen Hostnamen zu uebernehmen..."
+        echo "Danach per SSH neu verbinden: ssh <benutzer>@$EFFECTIVE_HOSTNAME.local"
+        sleep 5
+        reboot
+    else
+        echo
+        echo "Hostname war bereits angepasst - kein Neustart erforderlich. Fertig."
+    fi
 else
     echo
     echo "======================================================================"
