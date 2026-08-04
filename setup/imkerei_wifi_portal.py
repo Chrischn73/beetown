@@ -12,7 +12,8 @@ Dauerhaft laufender Webserver mit zwei Seiten fuer BeeTown:
   Raspberry Pi relevant): WLAN einrichten/wechseln/trennen, mit
   Zurueck-Link zur Setup-Seite.
 
-BeeTown selbst laeuft unveraendert auf Port 8080. Beide Seiten laufen
+BeeTown selbst laeuft auf Port 8080 (ebenfalls mit Ausweich-Port-Fallback,
+siehe APP_PORT). Beide Seiten laufen
 permanent (nicht nur beim Ersteinrichten) im selben Prozess, unabhaengig
 davon, ob gerade WLAN verbunden ist oder nicht - Kabel oder WLAN, beides
 geht. Nur Python-Standardbibliothek.
@@ -89,13 +90,31 @@ FORMAT_STATE = {"done": True, "ok": None, "detail": None}
 # Update-Seite aus).
 UPDATE_STATE = {"done": True, "ok": None, "detail": None}
 
+def _read_env_port(path, var_name, default):
+    """Liest einen Port aus einer systemd-EnvironmentFile-artigen Datei
+    (KEY=VALUE je Zeile) - fuer Ports, die ein ANDERER Dienst (mit eigenem
+    Prozess/Environment) gewaehlt hat, z. B. BeeTown selbst auf Port 8080."""
+    try:
+        with open(path) as f:
+            content = f.read()
+        m = re.search(rf"^{var_name}=(\d+)", content, re.MULTILINE)
+        if m:
+            return int(m.group(1))
+    except Exception:
+        pass
+    return default
+
+
 HOST = "0.0.0.0"
 # install.sh setzt IMKEREI_LANDING_PORT, falls Port 80 beim Einrichten schon
 # belegt war (z. B. auf einem Linux-Server mit vorhandenem Webserver) -
 # dieselbe Portal-Seite laeuft dann auf einem Ausweich-Port.
 PORT_LANDING = int(os.environ.get("IMKEREI_LANDING_PORT", "80"))
 PORT_WIFI = 8081
-APP_PORT = 8080
+# install.sh schreibt /etc/default/imkerei mit IMKEREI_PORT, falls Port 8080
+# fuer BeeTown selbst schon belegt war - hier mitgelesen (eigener Prozess,
+# daher nicht einfach ueber os.environ verfuegbar), um Links korrekt zu bauen.
+APP_PORT = _read_env_port("/etc/default/imkerei", "IMKEREI_PORT", 8080)
 
 
 def _detect_is_pi():

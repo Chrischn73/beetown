@@ -12,6 +12,10 @@ Environment=IMKEREI_HOST=0.0.0.0
 Environment=IMKEREI_PORT=8080
 Environment=IMKEREI_DATA=/opt/imkerei/data
 Environment=IMKEREI_STATIC=/opt/imkerei/static
+# Nur vorhanden, falls Port 8080 beim Einrichten schon belegt war (siehe
+# install.sh) - ueberschreibt IMKEREI_PORT mit einem Ausweich-Port. Muss
+# NACH den Environment=-Zeilen stehen, damit ein gesetzter Wert gewinnt.
+EnvironmentFile=-/etc/default/imkerei
 Restart=on-failure
 RestartSec=3
 # Härtung

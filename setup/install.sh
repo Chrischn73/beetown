@@ -11,9 +11,10 @@
 #   Servers bleiben unangetastet.
 #
 # In beiden Faellen werden eingerichtet: die BeeTown-App selbst
-# (/opt/imkerei, Port 8080), das Setup-Portal mit Backup- und
-# Update-Funktion (Port 80, faellt auf einen Ausweich-Port aus, falls 80
-# schon belegt ist) sowie die taeglichen Backup-/Update-Check-Timer.
+# (/opt/imkerei, Port 8080, faellt auf einen Ausweich-Port aus, falls 8080
+# schon belegt ist), das Setup-Portal mit Backup- und Update-Funktion
+# (Port 80, faellt auf einen Ausweich-Port aus, falls 80 schon belegt ist)
+# sowie die taeglichen Backup-/Update-Check-Timer.
 #
 # Nutzung:
 #   1. Diesen kompletten "setup"-Ordner auf die Zielmaschine kopieren
@@ -216,9 +217,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+log "Pruefe Port 8080 fuer BeeTown"
+# Gleiche Logik wie bei Port 80 oben: auf einem Linux-Server koennte 8080
+# schon von einer anderen Anwendung belegt sein.
+APP_PID="$(systemctl show -p MainPID --value imkerei.service 2>/dev/null || echo 0)"
+PORT8080_PID="$(ss -H -ltnp "sport = :8080" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)"
+
+if [ -z "$PORT8080_PID" ] || { [ "$PORT8080_PID" = "$APP_PID" ] && [ "$APP_PID" != "0" ]; }; then
+    APP_PORT=8080
+    echo "Port 8080 ist frei (oder bereits durch BeeTown selbst belegt) - BeeTown laeuft dort."
+    rm -f /etc/default/imkerei
+else
+    APP_PORT=8083
+    echo "Port 8080 ist von einem anderen Prozess belegt (PID $PORT8080_PID) - BeeTown laeuft stattdessen auf Port $APP_PORT."
+    echo "IMKEREI_PORT=$APP_PORT" > /etc/default/imkerei
+fi
+
+# ---------------------------------------------------------------------------
 log "systemd-Dienste aktivieren"
 systemctl daemon-reload
 systemctl enable --now imkerei.service
+# Explizit neu starten, damit ein aktualisiertes server.py und/oder ein neu
+# ermittelter Port (siehe oben) bei einem erneuten install.sh-Lauf auch
+# tatsaechlich uebernommen werden - "enable --now" allein wuerde einen
+# bereits laufenden Dienst unveraendert weiterlaufen lassen.
+systemctl restart imkerei.service
 # Type=simple - startet sofort im Hintergrund, blockiert das Skript nicht.
 # Laeuft dauerhaft (nicht nur bis WLAN eingerichtet ist), damit sich WLAN
 # jederzeit spaeter noch einrichten oder wechseln laesst.
@@ -248,7 +271,7 @@ echo
 systemctl list-timers imkerei-backup.timer --no-pager
 echo
 echo "App-Test:"
-curl -s localhost:8080/api/apiaries && echo || echo "(App antwortet noch nicht - kurz warten und erneut versuchen)"
+curl -s "localhost:$APP_PORT/api/apiaries" && echo || echo "(App antwortet noch nicht - kurz warten und erneut versuchen)"
 
 SETUP_URL="http://$(hostname).local"
 [ "$LANDING_PORT" -ne 80 ] && SETUP_URL="$SETUP_URL:$LANDING_PORT"
@@ -263,7 +286,7 @@ if [ "$IS_PI" -eq 1 ]; then
  🐝 BeeTown-Pi ($NEW_HOSTNAME)
  ======================================================
    Setup / Übersicht:    $SETUP_URL
-   BeeTown:              http://$NEW_HOSTNAME.local:8080
+   BeeTown:              http://$NEW_HOSTNAME.local:$APP_PORT
    WLAN-Einstellungen:    http://$NEW_HOSTNAME.local:8081
 
    IP-Adressen:  Kabel \4{eth0}   WLAN \4{wlan0}
@@ -289,7 +312,7 @@ EOF
     echo
     echo "======================================================================"
     echo " Setup / Übersicht:   $SETUP_URL"
-    echo " BeeTown:            http://$EFFECTIVE_HOSTNAME.local:8080"
+    echo " BeeTown:            http://$EFFECTIVE_HOSTNAME.local:$APP_PORT"
     echo " WLAN-Einstellungen:  http://$EFFECTIVE_HOSTNAME.local:8081 (immer erreichbar)"
     echo "======================================================================"
     if ! is_wifi_connected; then
@@ -326,7 +349,7 @@ else
     echo
     echo "======================================================================"
     echo " Setup / Übersicht:   $SETUP_URL"
-    echo " BeeTown:            http://$(hostname):8080"
+    echo " BeeTown:            http://$(hostname):$APP_PORT"
     echo "======================================================================"
     echo " Hostname und WLAN dieses Servers wurden nicht veraendert."
     echo " Fertig - kein Neustart erforderlich."
