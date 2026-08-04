@@ -15,7 +15,9 @@ auf einem Linux-Server mit vorhandenem Webserver). Enthaelt:
 - /backup: Backups erstellen/wiederherstellen/herunterladen, USB-Stick
   einrichten
 - /update: Version pruefen/aktualisieren/zurueckwechseln, automatische
-  Updates
+  Updates. Aktualisiert nicht nur server.py/static/, sondern auch dieses
+  Setup-Portal selbst samt Backup-Skripten und systemd-Units (siehe
+  SETUP_PORTAL_FILE_MAP) und startet sich danach neu
 
 BeeTown selbst laeuft auf Port 8080 (ebenfalls mit Ausweich-Port-Fallback,
 siehe APP_PORT) - das ist die eigentliche App, ein separater Prozess.
@@ -164,6 +166,17 @@ GITHUB_REPO = "Chrischn73/beetown"
 GITHUB_LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 UPDATE_CHECK_STATE_PATH = "/opt/imkerei-wifi-setup/update_check.json"
 AUTO_UPDATE_CONFIG_PATH = "/opt/imkerei-wifi-setup/update.conf"
+
+# Ein Update aktualisiert seit Kurzem auch dieses Setup-Portal selbst
+# (siehe SETUP_PORTAL_FILE_MAP) und startet imkerei-wifi-setup.service
+# danach neu, damit die neue Version auch tatsaechlich laeuft. Laeuft der
+# Neustart im eigenen Prozess (manuelles Update/Versionswechsel ueber
+# diese Seite), wird der Python-Prozess dabei beendet, bevor der Browser
+# das Ergebnis noch abholen konnte. Deshalb wird das Ergebnis hier kurz
+# auf Platte zwischengespeichert und beim Start des neuen Prozesses
+# wieder eingelesen - das Polling im Browser (siehe PAGE_UPDATE) uebersteht
+# den kurzen Verbindungsabbruch waehrend des Neustarts ohnehin per Retry.
+UPDATE_RESULT_PERSIST_PATH = "/opt/imkerei-wifi-setup/last_update_result.json"
 
 STYLE = """
   :root {{
@@ -1257,6 +1270,9 @@ def run_update_check_once():
             update_available = False
         # bei Fehlschlag bleibt update_available=True, damit die Update-Seite
         # weiterhin einen manuellen Versuch anbietet
+        # Läuft hier (naechtlicher Timer, eigener oneshot-Prozess) - sicher,
+        # auch wenn imkerei-wifi-setup.service dabei neu gestartet wird.
+        _restart_setup_portal_after_update(ok, detail)
     state = {
         "current": current,
         "latest": release["tag"] if release else None,
@@ -1279,10 +1295,88 @@ def read_update_check_state():
         return {"current": app_version(), "latest": None, "update_available": False, "checked_at": None}
 
 
+# (Quellpfad relativ zum Tarball-Root, Zielpfad auf dem Geraet, Dateimodus).
+# Aeltere Release-Tags, die eine Datei noch nicht enthalten, werden dabei
+# einfach uebersprungen (siehe _update_setup_portal_files).
+SETUP_PORTAL_FILE_MAP = [
+    ("setup/imkerei_wifi_portal.py", "/opt/imkerei-wifi-setup/imkerei_wifi_portal.py", 0o644),
+    ("setup/imkerei-wifi-setup.sh", "/opt/imkerei-wifi-setup/imkerei-wifi-setup.sh", 0o755),
+    ("setup/imkerei-backup.sh", "/opt/backup-scripts/imkerei-backup.sh", 0o755),
+    ("setup/imkerei-backup-rotate.py", "/opt/backup-scripts/imkerei-backup-rotate.py", 0o644),
+    ("setup/imkerei-wifi-setup.service", "/etc/systemd/system/imkerei-wifi-setup.service", 0o644),
+    ("setup/imkerei-backup.service", "/etc/systemd/system/imkerei-backup.service", 0o644),
+    ("setup/imkerei-backup.timer", "/etc/systemd/system/imkerei-backup.timer", 0o644),
+    ("setup/imkerei-update-check.service", "/etc/systemd/system/imkerei-update-check.service", 0o644),
+    ("setup/imkerei-update-check.timer", "/etc/systemd/system/imkerei-update-check.timer", 0o644),
+]
+
+
+def _update_setup_portal_files(src_root):
+    """Kopiert - neben server.py/static/ - auch das Setup-Portal selbst
+    (dieses Skript), die Backup-Skripte und die systemd-Units aus dem
+    heruntergeladenen Release. Vorher lief nur die eigentliche App unter
+    dem Update-Button; Fehlerbehebungen/Features im Setup-Portal (z. B. die
+    Backup-Rotation) kamen dadurch nie automatisch an."""
+    any_unit_changed = False
+    for rel_path, dest, mode in SETUP_PORTAL_FILE_MAP:
+        src = os.path.join(src_root, rel_path)
+        if not os.path.isfile(src):
+            continue
+        shutil.copy(src, dest)
+        os.chmod(dest, mode)
+        if dest.startswith("/etc/systemd/system/"):
+            any_unit_changed = True
+    if any_unit_changed:
+        subprocess.run(["systemctl", "daemon-reload"], capture_output=True, text=True)
+    subprocess.run(["systemctl", "enable", "--now", "imkerei-backup.timer"], capture_output=True, text=True)
+    subprocess.run(["systemctl", "enable", "--now", "imkerei-update-check.timer"], capture_output=True, text=True)
+
+
+def _persist_update_result(ok, detail):
+    try:
+        with open(UPDATE_RESULT_PERSIST_PATH, "w") as f:
+            json.dump({"ok": ok, "detail": detail, "ts": time.time()}, f)
+    except Exception:
+        pass
+
+
+def _load_recent_update_result():
+    """Liest ein kurz zuvor (vor einem Neustart dieses Dienstes) persistiertes
+    Update-Ergebnis, falls es nicht aelter als ein paar Minuten ist - siehe
+    UPDATE_RESULT_PERSIST_PATH."""
+    try:
+        with open(UPDATE_RESULT_PERSIST_PATH) as f:
+            data = json.load(f)
+        if time.time() - data.get("ts", 0) < 180:
+            return {"done": True, "ok": data.get("ok"), "detail": data.get("detail")}
+    except Exception:
+        pass
+    return None
+
+
+_recent_update_result = _load_recent_update_result()
+if _recent_update_result:
+    UPDATE_STATE.update(_recent_update_result)
+
+
+def _restart_setup_portal_after_update(ok, detail):
+    """Letzter Schritt nach jedem (manuellen oder naechtlich-automatischen)
+    Update: Ergebnis fuer die Zeit nach dem Neustart zwischenspeichern, dann
+    imkerei-wifi-setup.service neu starten, damit ein mitgeliefertes neues
+    imkerei_wifi_portal.py auch tatsaechlich verwendet wird. Laeuft dieser
+    Aufruf im Portal-Prozess selbst, beendet der Neustart diesen Prozess -
+    das ist beabsichtigt, siehe UPDATE_RESULT_PERSIST_PATH."""
+    _persist_update_result(ok, detail)
+    if ok:
+        subprocess.Popen(["systemctl", "restart", "imkerei-wifi-setup.service"])
+
+
 def perform_update(tarball_url, target_tag):
     """Legt zuerst ein Backup an, laedt dann den Source-Tarball des GitHub-
     Release herunter und ersetzt server.py + static/ (data/ bleibt
-    unangetastet). Gibt (True, Meldung) oder (False, Fehlertext) zurueck."""
+    unangetastet) sowie das Setup-Portal samt Backup-Skripten und
+    systemd-Units (siehe SETUP_PORTAL_FILE_MAP). Gibt (True, Meldung) oder
+    (False, Fehlertext) zurueck."""
     ok, detail = create_backup_now()
     if not ok:
         return False, f"Backup vor dem Update fehlgeschlagen - Update abgebrochen: {detail}"
@@ -1313,6 +1407,8 @@ def perform_update(tarball_url, target_tag):
             shutil.copytree(new_static, "/opt/imkerei/static")
             subprocess.run(["chown", "-R", "imkerei:imkerei", "/opt/imkerei/server.py", "/opt/imkerei/static"],
                            capture_output=True, text=True)
+
+            _update_setup_portal_files(src_root)
     except Exception as e:
         subprocess.run(["systemctl", "start", "imkerei.service"], capture_output=True, text=True)
         return False, f"Fehler beim Aktualisieren: {e}"
@@ -1329,6 +1425,7 @@ def _run_update_in_background():
     ok, detail = perform_update(release["tarball_url"], release["tag"])
     UPDATE_STATE.update(done=True, ok=ok, detail=detail)
     run_update_check_once()  # Zwischenspeicher aktualisieren - Badge auf der Startseite verschwindet
+    _restart_setup_portal_after_update(ok, detail)
 
 
 def _run_version_switch_in_background(tag):
@@ -1349,6 +1446,7 @@ def _run_version_switch_in_background(tag):
                    "gleich wieder auf die neuere Version zurueckaktualisiert.")
     UPDATE_STATE.update(done=True, ok=ok, detail=detail)
     run_update_check_once()
+    _restart_setup_portal_after_update(ok, detail)
 
 
 def render_update_page(message=""):
