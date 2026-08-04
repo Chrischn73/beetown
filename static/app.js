@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.16';
+const APP_VERSION = 'v2.8.17';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -913,9 +913,9 @@ async function renderApiaries() {
     const pd=await pr.json();
     if(pd && pd.pi && pd.usbBackupMissing){
       usbWarningHTML=`<div class="banner-error" style="margin-bottom:1rem">
-        ⚠️ Kein USB-Stick als Backup-Ziel eingerichtet – Backups liegen nur auf der SD-Karte.
-        Bei einem Ausfall der SD-Karte sind dann <strong>alle</strong> Daten unwiderruflich verloren.
-        <a class="btn btn-ghost block" href="${setupPortalUrl(pd.landingPort,'/backup')}" style="margin-top:.5rem">Jetzt einrichten</a>
+        <p style="margin:0">⚠️ Kein USB-Stick als Backup-Ziel eingerichtet – Backups liegen nur auf der SD-Karte.
+        Bei einem Ausfall der SD-Karte sind dann <strong>alle</strong> Daten unwiderruflich verloren.</p>
+        <a class="btn btn-ghost block" href="${setupPortalUrl(pd.landingPort,'/backup')}">Jetzt einrichten</a>
       </div>`;
     }
   }catch(_){}
