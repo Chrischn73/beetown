@@ -42,7 +42,7 @@ Verhalten:
 - GET  /logo.png            (beide Ports) -> App-Icon aus /opt/imkerei/static
 - POST /backup/create, /backup/restore, /backup/restore-upload,
   /backup/settings, /backup/usb/format, /backup/usb/mount,
-  /backup/usb/eject, /update/run, /update/settings (Port 80)
+  /backup/usb/eject, /update/run, /update/switch, /update/settings (Port 80)
 - GET  /                    (Port 8081) -> WLAN-Formular (Status, Verbinden, Trennen)
 - POST /connect             (Port 8081) -> verbindet per nmcli mit dem gewaehlten
   WLAN. Faellt bei Fehlschlag automatisch auf die vorher aktive Verbindung
@@ -69,7 +69,7 @@ import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, quote, unquote
 
 # Wird von do_POST() waehrend des Verbindungsversuchs aktualisiert und von
 # GET /status abgefragt (Polling von der "Verbinde..."-Seite aus). Einfache
@@ -507,6 +507,18 @@ Programm-Code selbst kommt ohnehin direkt von GitHub.</p>
 {notes_block}
 {action_block}
 
+<h2 style="font-size:1.05rem; margin-top:2rem;">Andere Version installieren</h2>
+<p class="muted">Bei Problemen mit der aktuellen Version lässt sich auch gezielt
+eine andere (z. B. ältere) Version installieren. Automatische Updates werden
+dabei ausgeschaltet, wenn es sich um eine ältere Version handelt – sonst
+würde der Pi gleich wieder darüber hinweg aktualisieren.</p>
+<form onsubmit="return startVersionSwitch(this)">
+  <select name="tag">
+    {version_options}
+  </select>
+  <button type="submit" class="btn-danger">Version installieren</button>
+</form>
+
 <h2 style="font-size:1.05rem; margin-top:2rem;">Automatische Updates</h2>
 <form method="post" action="/update/settings">
   <label style="display:flex; align-items:center; gap:.5rem; font-weight:normal;">
@@ -533,6 +545,30 @@ function startUpdate(tag) {{
     'Das kann einige Minuten dauern – bitte die Seite nicht schließen.</p>';
   modal.classList.add('show');
   fetch('/update/run', {{method: 'POST'}});
+  (function poll() {{
+    fetch('/update/status').then(r => r.json()).then(function(d) {{
+      if (!d.done) {{ setTimeout(poll, 2000); return; }}
+      content.innerHTML = d.ok
+        ? '<div class="msg ok">✅ ' + d.detail + '</div>'
+        : '<div class="msg err">❌ ' + d.detail + '</div>';
+      setTimeout(function() {{ window.location.reload(); }}, 2500);
+    }}).catch(function() {{ setTimeout(poll, 2000); }});
+  }})();
+  return false;
+}}
+function startVersionSwitch(form) {{
+  var tag = form.querySelector('select').value;
+  if (!tag) return false;
+  if (!confirm('Wirklich auf Version ' + tag + ' wechseln? Vorher wird automatisch ein Backup erstellt.')) {{
+    return false;
+  }}
+  var modal = document.getElementById('update-modal');
+  var content = document.getElementById('update-modal-content');
+  content.innerHTML = '<h1>""" + BEE_SPINNER_SVG + """Wechsle Version…</h1>' +
+    '<p class="muted">Backup wird erstellt, gewählte Version heruntergeladen und installiert. ' +
+    'Das kann einige Minuten dauern – bitte die Seite nicht schließen.</p>';
+  modal.classList.add('show');
+  fetch('/update/switch', {{method: 'POST', body: new URLSearchParams(new FormData(form))}});
   (function poll() {{
     fetch('/update/status').then(r => r.json()).then(function(d) {{
       if (!d.done) {{ setTimeout(poll, 2000); return; }}
@@ -1086,6 +1122,46 @@ def fetch_latest_release():
         return None
 
 
+def fetch_all_releases(limit=10):
+    """Liste der letzten Releases (neueste zuerst) - fuer die Auswahl "Andere
+    Version installieren" (z. B. Rueckwechsel auf eine aeltere Version bei
+    Problemen mit der neuesten). Leere Liste bei Fehler."""
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page={limit}",
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "BeeTown-Update-Check"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return [{"tag": r["tag_name"], "tarball_url": r.get("tarball_url") or ""}
+                 for r in data if r.get("tag_name")]
+    except Exception:
+        return []
+
+
+def fetch_release_by_tag(tag):
+    """Wie fetch_latest_release(), aber fuer ein konkretes Tag - wird beim
+    tatsaechlichen Versionswechsel erneut serverseitig aufgeloest (nicht der
+    vom Client mitgeschickte tarball_url vertraut)."""
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{quote(tag, safe='')}",
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "BeeTown-Update-Check"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        tag_name = data.get("tag_name") or ""
+        if not tag_name:
+            return None
+        return {
+            "tag": tag_name,
+            "notes": (data.get("body") or "").strip(),
+            "tarball_url": data.get("tarball_url") or "",
+        }
+    except Exception:
+        return None
+
+
 def get_auto_update():
     """Standard AN, falls die Konfigurationsdatei fehlt oder unlesbar ist -
     install.sh legt sie mit AUTO_UPDATE=1 an; fehlt sie trotzdem (z. B. sehr
@@ -1204,6 +1280,26 @@ def _run_update_in_background():
     run_update_check_once()  # Zwischenspeicher aktualisieren - Badge auf der Startseite verschwindet
 
 
+def _run_version_switch_in_background(tag):
+    """Installiert gezielt eine bestimmte Version (z. B. Rueckwechsel auf
+    eine aeltere bei Problemen mit der neuesten). Schaltet automatische
+    Updates ab, falls es sich dabei um einen echten Rueckschritt handelt -
+    sonst wuerde der naechste Timer-Lauf sofort wieder auf die neuere
+    Version hochaktualisieren und die Absicht des Nutzers zunichtemachen."""
+    previous_version = app_version()
+    release = fetch_release_by_tag(tag)
+    if not release or not release.get("tarball_url"):
+        UPDATE_STATE.update(done=True, ok=False, detail=f"Version '{tag}' konnte nicht gefunden werden.")
+        return
+    ok, detail = perform_update(release["tarball_url"], release["tag"])
+    if ok and parse_version(release["tag"]) < parse_version(previous_version):
+        set_auto_update(False)
+        detail += (" Automatische Updates wurden dabei ausgeschaltet, damit der Pi nicht "
+                   "gleich wieder auf die neuere Version zurueckaktualisiert.")
+    UPDATE_STATE.update(done=True, ok=ok, detail=detail)
+    run_update_check_once()
+
+
 def render_update_page(message=""):
     current = app_version()
     release = fetch_latest_release()
@@ -1226,9 +1322,21 @@ def render_update_page(message=""):
             )
         else:
             action_block = '<p class="muted">Du hast bereits die neueste Version.</p>'
+
+    all_releases = fetch_all_releases()
+    if all_releases:
+        version_options = "".join(
+            f'<option value="{r["tag"]}" {"selected" if r["tag"] == current else ""}>'
+            f'{r["tag"]}{" (installiert)" if r["tag"] == current else ""}</option>'
+            for r in all_releases
+        )
+    else:
+        version_options = '<option value="">– keine Releases abrufbar –</option>'
+
     return PAGE_UPDATE.format(
         header=render_header(), message=message, current=current, latest=latest,
         status_class=status_class, notes_block=notes_block, action_block=action_block,
+        version_options=version_options,
         auto_update_checked="checked" if get_auto_update() else "",
     )
 
@@ -1555,6 +1663,17 @@ class LandingHandler(BaseHandler):
         if self.path == "/update/run":
             UPDATE_STATE.update(done=False, ok=None, detail=None)
             threading.Thread(target=_run_update_in_background, daemon=True).start()
+            self._send_json({"started": True})
+            return
+        if self.path == "/update/switch":
+            length = int(self.headers.get("Content-Length", 0))
+            fields = parse_qs(self.rfile.read(length).decode("utf-8"))
+            tag = fields.get("tag", [""])[0]
+            if not tag:
+                self._send_json({"started": False, "error": "Keine Version ausgewählt."})
+                return
+            UPDATE_STATE.update(done=False, ok=None, detail=None)
+            threading.Thread(target=_run_version_switch_in_background, args=(tag,), daemon=True).start()
             self._send_json({"started": True})
             return
         if self.path == "/update/settings":
