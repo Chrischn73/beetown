@@ -73,6 +73,7 @@ body{
 /* ---------- Layout ---------- */
 #app{max-width:680px; margin:0 auto; padding:1rem 1rem calc(2rem + var(--safe-bottom))}
 .toolbar{display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap}
+.toolbar .btn.hidden{display:none!important}
 .search-box{margin-bottom:1rem}
 .search-box .inp{width:100%}
 .search-box-wrap{position:relative}

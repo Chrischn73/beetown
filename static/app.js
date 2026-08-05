@@ -27,6 +27,7 @@ window._showHrNrs = true; // Default: anzeigen
 window._showSearch = true; // Default: anzeigen
 window._actionBtnVis = {}; // key -> bool, Default: alle an (siehe actionBtnHidden())
 window._obsBtnVis = {};    // key -> bool, Default: alle an (siehe obsBtnHidden())
+window._homeBtnVis = {};   // key -> bool, Default: alle an (siehe homeBtnHidden())
 async function loadSettings() {
   try {
     const s = await apiGet('./api/settings');
@@ -39,8 +40,26 @@ async function loadSettings() {
     OBS_OPTIONS.forEach(([k]) => { obsVis[k] = (s['obsBtn_'+k] !== 'false'); });
     OBS_SELECT_CONFIG.forEach((c) => { obsVis[c.key] = (s['obsBtn_'+c.key] !== 'false'); });
     window._obsBtnVis = obsVis;
+    const homeVis = {};
+    HOME_BTN_CONFIG.forEach(c => { homeVis[c.key] = (s['homeBtn_'+c.key] !== 'false'); });
+    window._homeBtnVis = homeVis;
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
   } catch(_) {}
+}
+/* Buttons auf der Startseite - einzeln in den Einstellungen ausblendbar.
+   "Einstellungen" selbst bleibt bewusst immer sichtbar (sonst kein Weg
+   zurück, um Buttons wieder einzublenden). */
+const HOME_BTN_CONFIG = [
+  {key:'all',         label:'Alle'},
+  {key:'honey',       label:'Ernte'},
+  {key:'honeystir',   label:'Rühren'},
+  {key:'fuetterung',  label:'Fütterung'},
+  {key:'lastentries', label:'Letzte Einträge'},
+  {key:'varroacount', label:'Varroazählung'},
+  {key:'archive',     label:'Archiv'},
+];
+function homeBtnHidden(key) {
+  return (window._homeBtnVis && window._homeBtnVis[key]===false) ? 'hidden' : '';
 }
 /* Sonderbehandlung von Völkern/Standorten, deren Name mit dem konfigurierbaren
    Präfix beginnt (Standard „BK“); leerer Präfix deaktiviert die Sonderbehandlung. */
@@ -99,6 +118,10 @@ function fmtDateTime(iso) {
 function todayInput() {
   const d = new Date();
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+function nowDateTimeInput() {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 const photoURL = (id) => `./api/photos/${id}`;
 /* Zahl parsen, egal ob mit Punkt oder Komma als Dezimaltrennzeichen eingegeben */
@@ -806,6 +829,8 @@ async function render() {
     if(nav.view==='varroahistory') return await renderVarroaHistory();
     if(nav.view==='sirupcalc') return await renderSirupCalc();
     if(nav.view==='fuetterungsvorschlag') return await renderFuetterungsvorschlag();
+    if(nav.view==='honeystir') return await renderHoneyStir();
+    if(nav.view==='honeystirbatch') return await renderHoneyStirBatch();
   } catch(e) {
     app.innerHTML=`<div class="banner-error">${esc(e.message)}
       <button class="btn btn-ghost btn-sm" onclick="location.reload()">Neu laden</button></div>`;
@@ -815,7 +840,8 @@ async function render() {
 backBtn.addEventListener('click',()=>{
   if(nav.from){ go(nav.from, nav.fromParams||{}); return; }
   if(nav.view==='colony'){ go('colonies',{apiaryId:nav.apiaryId,restoreScrollY:nav.backScrollY}); return; }
-  if(['colonies','settings','archive','all','honey','fuetterung','gewicht','lastentries','varroacount','varroahistory','sirupcalc','fuetterungsvorschlag'].includes(nav.view)) go('apiaries');
+  if(nav.view==='honeystirbatch'){ go('honeystir'); return; }
+  if(['colonies','settings','archive','all','honey','honeystir','fuetterung','gewicht','lastentries','varroacount','varroahistory','sirupcalc','fuetterungsvorschlag'].includes(nav.view)) go('apiaries');
 });
 
 /* Update-Hinweis im Header (Setup-Portal installiert - Pi ODER
@@ -969,12 +995,13 @@ async function renderApiaries() {
       ${logoHTML ? `<div class="brand-logo-wrap">${logoHTML}</div>` : ''}
     </div>
     <div class="toolbar">
-      <button class="btn btn-ghost" id="open-all">🐝 Alle</button>
-      <button class="btn btn-ghost" id="open-honey">🍯 Ernte</button>
-      <button class="btn btn-ghost" id="open-fuetterung">🍬 Fütterung</button>
-      <button class="btn btn-ghost" id="open-lastentries" title="Letzte Einträge">🕒 Letzte Einträge</button>
-      <button class="btn btn-ghost" id="open-varroacount" title="Varroa Zählung" style="padding:.4rem .6rem"><img src="./icons/varroa.png" alt="Varroa Zählung" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Varroazählung</button>
-      <button class="btn btn-ghost" id="open-archive">📦 Archiv</button>
+      <button class="btn btn-ghost ${homeBtnHidden('all')}" id="open-all">🐝 Alle</button>
+      <button class="btn btn-ghost ${homeBtnHidden('honey')}" id="open-honey">🍯 Ernte</button>
+      <button class="btn btn-ghost ${homeBtnHidden('honeystir')}" id="open-honeystir">🥄 Rühren</button>
+      <button class="btn btn-ghost ${homeBtnHidden('fuetterung')}" id="open-fuetterung">🍬 Fütterung</button>
+      <button class="btn btn-ghost ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge">🕒 Letzte Einträge</button>
+      <button class="btn btn-ghost ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="padding:.4rem .6rem"><img src="./icons/varroa.png" alt="Varroa Zählung" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Varroazählung</button>
+      <button class="btn btn-ghost ${homeBtnHidden('archive')}" id="open-archive">📦 Archiv</button>
       <button class="btn btn-ghost" id="open-settings" title="Einstellungen" style="font-size:1.4rem;line-height:1">⚙︎</button>
     </div>
     ${window._showSearch!==false?`
@@ -1092,6 +1119,7 @@ async function renderApiaries() {
 
   $('#open-all').onclick=()=>go('all');
   $('#open-honey').onclick=()=>go('honey');
+  $('#open-honeystir').onclick=()=>go('honeystir');
   $('#open-fuetterung').onclick=()=>go('fuetterung');
   $('#open-lastentries').onclick=()=>go('lastentries');
   $('#open-varroacount').onclick=()=>go('varroacount');
@@ -2486,6 +2514,160 @@ async function renderHoney() {
   });
 }
 
+/* ---------- Honig-Rühren (cremig rühren) ---------- */
+const STIR_APPEARANCE_OPTIONS = [
+  'Keine Änderung zum Vortag',
+  'Schlieren im Honig – beginnende Kristallisation',
+  'Masse wird homogener, aber noch Anteile vom dunklen Glukosehonig sichtbar',
+  'Masse ist homogen, keine Glukoseanteile mehr sichtbar (überrührt)',
+  'Masse ist fest geworden',
+];
+
+async function renderHoneyStir() {
+  setHeader('Rühren', true);
+  const batches = await apiGet('./api/honey_stir_batches');
+
+  const openBatchModal = () => {
+    openModal('Neue Charge (Impfung)', `
+      <label class="lbl">Honigsorte</label>
+      <input class="inp" name="honeyType" type="text" placeholder="z. B. Sommertracht">
+      <label class="lbl">Menge der Charge (kg)</label>
+      <input class="inp" name="amountKg" type="text" inputmode="decimal" placeholder="z. B. 9">
+      <label class="lbl">Datum + Uhrzeit der Impfung</label>
+      <input class="inp" name="seedDate" type="datetime-local" value="${nowDateTimeInput()}">
+      <label class="lbl">Temperatur des Honigs (°C)</label>
+      <input class="inp" name="seedTemp" type="text" inputmode="decimal" placeholder="z. B. 24">
+      <label class="lbl">Impfmenge (g)</label>
+      <input class="inp" name="seedAmountG" type="text" inputmode="decimal" placeholder="z. B. 500">
+      <label class="lbl">Sorte des Impfhonigs</label>
+      <input class="inp" name="seedHoneyType" type="text" placeholder="z. B. Frühtracht, feincremig">`,
+      async (data, close) => {
+        await api('POST', './api/honey_stir_batches', data);
+        close();
+        renderHoneyStir();
+      }, null);
+  };
+
+  app.innerHTML = `
+    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Hier den Rührvorgang beim cremig Rühren von Honig
+    dokumentieren – von der Impfung bis zur fertigen Charge.</p>
+    <div style="padding:.2rem 0 1rem">
+      <button class="btn btn-primary" id="btn-add-stirbatch">+ Neue Charge (Impfung)</button>
+    </div>
+    ${batches.length === 0 ? emptyState('Noch keine Chargen', 'Erfasse deine erste Impfung.') : `
+      <ul class="card-list">
+        ${batches.map(b => `
+          <li class="card" data-open="${esc(b.id)}">
+            <div class="card-main">
+              <div class="card-title">${esc(b.honeyType||'(ohne Sorte)')}${b.status==='done'?' <span class="muted" style="font-size:.75rem">· abgeschlossen</span>':''}</div>
+              <div class="card-sub">${esc(b.amountKg||'?')} kg · geimpft ${fmtDateTime(b.seedDate)}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" data-delete="${esc(b.id)}">🗑</button>
+          </li>`).join('')}
+      </ul>`}`;
+
+  document.getElementById('btn-add-stirbatch').onclick = openBatchModal;
+  app.querySelectorAll('[data-open]').forEach(el => {
+    el.onclick = () => go('honeystirbatch', {batchId: el.dataset.open});
+  });
+  app.querySelectorAll('[data-delete]').forEach(b => {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      if(!confirm('Diese Charge inkl. aller Rühr-Einträge und Fotos endgültig löschen?')) return;
+      await api('DELETE', './api/honey_stir_batches/' + b.dataset.delete);
+      renderHoneyStir();
+    };
+  });
+}
+
+async function renderHoneyStirBatch() {
+  const batchId = nav.batchId;
+  const batches = await apiGet('./api/honey_stir_batches');
+  const batch = batches.find(b => b.id === batchId);
+  setHeader(batch ? (batch.honeyType || 'Rühren') : 'Rühren', true);
+  if (!batch) {
+    app.innerHTML = emptyState('Nicht gefunden', 'Diese Charge existiert nicht mehr.');
+    return;
+  }
+  const entries = await apiGet('./api/honey_stir_entries?batchId=' + batchId);
+
+  const entryModal = (existing) => {
+    const photos = existing ? [...(existing.photos||[])] : [];
+    openModal(existing ? 'Rühr-Eintrag bearbeiten' : 'Rühr-Eintrag erfassen', `
+      <label class="lbl">Datum + Uhrzeit</label>
+      <input class="inp" name="date" type="datetime-local" value="${existing ? existing.date : nowDateTimeInput()}">
+      <label class="lbl">Temperatur (°C)</label>
+      <input class="inp" name="temp" type="text" inputmode="decimal" value="${existing?esc(existing.temp):''}" placeholder="z. B. 22">
+      ${selectField('Aussehen','appearance', existing?existing.appearance:STIR_APPEARANCE_OPTIONS[0], STIR_APPEARANCE_OPTIONS.map(o=>[o,o]))}
+      ${photoButtonsHTML('stir-thumbs')}`,
+      async (data, close) => {
+        data.photos = photos;
+        if (existing) await api('PUT', './api/honey_stir_entries/'+existing.id, data);
+        else await api('POST', './api/honey_stir_entries', {...data, batchId});
+        close();
+        renderHoneyStirBatch();
+      },
+      existing ? async (close) => {
+        await api('DELETE', './api/honey_stir_entries/'+existing.id);
+        close();
+        renderHoneyStirBatch();
+      } : null);
+    wirePhotos(photos, 'stir-thumbs');
+  };
+
+  const finishModal = () => {
+    openModal('Charge abschließen', `
+      <p class="muted" style="font-size:.8rem">Kurzes Schlussfazit zu dieser Charge.</p>
+      <label class="lbl">Schlussfazit</label>
+      <textarea class="inp" name="conclusion" rows="4">${esc(batch.conclusion||'')}</textarea>`,
+      async (data, close) => {
+        await api('PUT', './api/honey_stir_batches/'+batchId, {...batch, status:'done', conclusion:data.conclusion});
+        close();
+        renderHoneyStirBatch();
+      }, null);
+  };
+
+  app.innerHTML = `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-main" style="width:100%">
+        <div style="font-weight:600;margin-bottom:.3rem">${esc(batch.honeyType||'(ohne Sorte)')} – ${esc(batch.amountKg||'?')} kg</div>
+        <div class="muted" style="font-size:.85rem">Geimpft ${fmtDateTime(batch.seedDate)} bei ${esc(batch.seedTemp||'?')}°C
+        mit ${esc(batch.seedAmountG||'?')} g ${esc(batch.seedHoneyType||'Impfhonig')}</div>
+      </div>
+    </div>
+    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Nur so lange rühren, bis keine dunklen Glukose-Anteile
+    mehr sichtbar sind – ist die Masse schon homogen, ist der Honig überrührt und weniger lagerfähig.</p>
+    ${batch.status==='done' ? `
+      <div class="msg ok" style="margin-bottom:1rem">
+        <strong>Abgeschlossen.</strong>${batch.conclusion?`<div style="margin-top:.4rem;white-space:pre-wrap">${esc(batch.conclusion)}</div>`:''}
+      </div>` : ''}
+    <div style="padding:.2rem 0 1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn btn-primary" id="btn-add-stirentry">+ Rühr-Eintrag</button>
+      ${batch.status!=='done'?'<button class="btn btn-ghost btn-sm" id="btn-finish-batch">✅ Abschließen</button>':''}
+    </div>
+    ${entries.length === 0 ? emptyState('Noch keine Einträge', 'Noch nichts gerührt.') : `
+      <ul class="card-list">
+        ${entries.map(e => `
+          <li class="card" data-open="${esc(e.id)}">
+            <div class="card-main" style="width:100%">
+              <div class="card-title">${fmtDateTime(e.date)}${e.temp?` · ${esc(e.temp)}°C`:''}</div>
+              <div class="card-sub">${esc(e.appearance||'')}</div>
+              ${e.photos && e.photos.length ? `<div class="photo-grid" style="margin-top:.4rem">${e.photos.map(p=>`<img class="thumb" src="${photoURL(p.id)}">`).join('')}</div>` : ''}
+            </div>
+          </li>`).join('')}
+      </ul>`}`;
+
+  document.getElementById('btn-add-stirentry').onclick = () => entryModal(null);
+  const finishBtn = document.getElementById('btn-finish-batch');
+  if (finishBtn) finishBtn.onclick = finishModal;
+  app.querySelectorAll('[data-open]').forEach(el => {
+    el.onclick = () => {
+      const en = entries.find(x => x.id === el.dataset.open);
+      if (en) entryModal(en);
+    };
+  });
+}
+
 /* ---------- Fütterungs-Übersicht ---------- */
 /* Ungefährer Zuckeranteil je Liter fertiger Zuckerlösung.
    Verhältnis wird als Zucker:Wasser (Gewicht) verstanden; die Werte
@@ -3547,6 +3729,13 @@ async function renderSettings() {
           <input type="checkbox" class="all-col-chk" data-key="${c.key}" ${c.def?'checked':''}><span>${esc(c.label)}</span>
         </label>`).join('')}
       </div>`)}
+    ${settingsSection('homebtns','Startseite – Angezeigte Buttons',`
+      <p class="muted">Welche Buttons sollen auf der Startseite erscheinen?</p>
+      <div class="check-list" id="home-btns-cfg">
+        ${HOME_BTN_CONFIG.map(c=>`<label class="check-item">
+          <input type="checkbox" class="home-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
+        </label>`).join('')}
+      </div>`)}
     ${settingsSection('darstellung','Darstellung',`
       <label class="lbl">Design</label>
       <select class="inp" id="theme-select">
@@ -3745,6 +3934,11 @@ async function renderSettings() {
       const stored=s['allCol_'+k];
       if(stored!==undefined) chk.checked=(stored==='true');
     });
+    document.querySelectorAll('.home-btn-chk').forEach(chk=>{
+      const k=chk.dataset.key;
+      const stored=s['homeBtn_'+k];
+      chk.checked=(stored!=='false');
+    });
   }).catch(()=>{});
   document.getElementById('save-all-settings')?.addEventListener('click', async()=>{
     const payload={};
@@ -3765,6 +3959,10 @@ async function renderSettings() {
     // Alle-Spalten
     document.querySelectorAll('.all-col-chk').forEach(chk=>{
       payload['allCol_'+chk.dataset.key]=chk.checked?'true':'false';
+    });
+    // Startseite-Buttons
+    document.querySelectorAll('.home-btn-chk').forEach(chk=>{
+      payload['homeBtn_'+chk.dataset.key]=chk.checked?'true':'false';
     });
     // HR-Nummern
     const hrNrsToggle=document.getElementById('toggle-hr-nrs');
