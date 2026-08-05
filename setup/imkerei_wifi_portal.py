@@ -401,17 +401,23 @@ eingebaut) und die WireGuard-App auf dem Handy.</p>
   <img src="/hilfe/bilder/fritzbox-1.png" alt="" onerror="this.style.display='none'">
 </div>
 <div class="hilfe-step">
-  <p>Zu „Internet" → „Freigaben" → Reiter „VPN (WireGuard)" wechseln und auf „VPN-Verbindung hinzufügen" tippen.</p>
+  <p>Zu „Internet" → „Freigaben" → Reiter „VPN (WireGuard)" wechseln und auf „WireGuard-Verbindung hinzufügen" tippen.</p>
   <img src="/hilfe/bilder/fritzbox-2.png" alt="" onerror="this.style.display='none'">
 </div>
 <div class="hilfe-step">
-  <p>„Für ein Gerät, das sich von unterwegs mit diesem Heimnetz verbinden soll" auswählen, einen Namen vergeben
-  (z. B. „Handy") und speichern.</p>
+  <p>„Einzelgerät verbinden" auswählen.</p>
   <img src="/hilfe/bilder/fritzbox-3.png" alt="" onerror="this.style.display='none'">
 </div>
 <div class="hilfe-step">
-  <p>Die Fritzbox zeigt danach einen QR-Code an – dieser wird im nächsten Schritt mit dem Handy gescannt.</p>
+  <p>Einen beliebigen Namen vergeben (z. B. „Handy CF").</p>
   <img src="/hilfe/bilder/fritzbox-4.png" alt="" onerror="this.style.display='none'">
+</div>
+<div class="hilfe-step">
+  <p>Zur Bestätigung muss an der Fritzbox nun ein beliebiger Knopf gedrückt werden.</p>
+</div>
+<div class="hilfe-step">
+  <p>Nun wird ein QR-Code angezeigt. Diesen abspeichern und danach mit der WireGuard-App am Handy einscannen.</p>
+  <img src="/hilfe/bilder/fritzbox-5.png" alt="" onerror="this.style.display='none'">
 </div>
 
 <h2 style="font-size:1.05rem; margin-top:2rem;">2. WireGuard auf dem Handy einrichten</h2>

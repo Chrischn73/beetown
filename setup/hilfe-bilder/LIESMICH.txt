@@ -2,9 +2,10 @@ Screenshots fuer die VPN-Hilfeseite (/hilfe/vpn) - hier als PNG oder JPG ablegen
 mit genau diesen Dateinamen:
 
   fritzbox-1.png    Anmeldung auf fritz.box
-  fritzbox-2.png    Internet > Freigaben > VPN (WireGuard)
-  fritzbox-3.png    "VPN-Verbindung hinzufuegen"-Dialog
-  fritzbox-4.png    Angezeigter QR-Code
+  fritzbox-2.png    Internet > Freigaben > VPN (WireGuard), "WireGuard-Verbindung hinzufuegen"
+  fritzbox-3.png    "Einzelgeraet verbinden" auswaehlen
+  fritzbox-4.png    Namen vergeben (z. B. "Handy CF")
+  fritzbox-5.png    Angezeigter QR-Code
 
   wireguard-1.png   WireGuard-App im App-/Play-Store
   wireguard-2.png   "+" / "Aus QR-Code scannen"
