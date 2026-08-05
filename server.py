@@ -431,7 +431,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(rows(con,"SELECT * FROM honey_stir_batches ORDER BY seedDate DESC"))
             if path=="/api/honey_stir_entries":
                 bid=(q.get("batchId") or [""])[0]
-                rs=con.execute("SELECT * FROM honey_stir_entries WHERE batchId=? ORDER BY date",(bid,)).fetchall()
+                rs=con.execute("SELECT * FROM honey_stir_entries WHERE batchId=? ORDER BY date DESC",(bid,)).fetchall()
                 return self._json([parse_stir_entry(r) for r in rs])
             if path=="/api/backup": return self.api_backup(con)
             m=re.match(r"^/api/photos/([^/]+)$",path)
