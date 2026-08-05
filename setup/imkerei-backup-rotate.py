@@ -42,7 +42,7 @@ def backups_to_delete(directory, keep_total):
         return []
 
     now = entries[0][0]
-    daily_cutoff = now - datetime.timedelta(days=7)
+    daily_cutoff = now - datetime.timedelta(days=14)
     keep = set()
 
     # Feste Kontingente je Stufe statt eines gemeinsamen Topfes - sonst
@@ -52,7 +52,7 @@ def backups_to_delete(directory, keep_total):
     # Jahres-Kontingent wird VOR dem (flexiblen) Monats-Rest reserviert,
     # damit auch bei einem knappen Gesamtbudget mindestens ein Jahres-Stand
     # sicher erhalten bleibt.
-    daily_budget = min(7, keep_total)
+    daily_budget = min(14, keep_total)
     remaining = keep_total - daily_budget
     weekly_budget = min(4, remaining)
     remaining -= weekly_budget
@@ -60,7 +60,7 @@ def backups_to_delete(directory, keep_total):
     remaining -= yearly_budget
     monthly_budget = remaining  # Rest - waechst mit einem groesseren Gesamtbudget
 
-    # Stufe 1: taeglich - jedes Archiv der letzten 7 Tage einzeln behalten.
+    # Stufe 1: taeglich - jedes Archiv der letzten 14 Tage einzeln behalten.
     for dt, name in entries:
         if dt >= daily_cutoff and daily_budget > 0:
             keep.add(name)

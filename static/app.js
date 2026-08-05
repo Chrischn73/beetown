@@ -1,9 +1,9 @@
 /* ============================================================
-   BeeTown – PWA-Client  v1.9.2
+   BeeTown – PWA-Client
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.28';
+const APP_VERSION = 'v2.8.29';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -908,6 +908,7 @@ async function renderApiaries() {
   /* USB-Backup-Warnung: nur Pi-Betrieb, wenn kein Stick als Backup-Ziel
      eingerichtet ist - ohne ihn liegen Backups nur auf der SD-Karte. */
   let usbWarningHTML='';
+  let updateNoticeHTML='';
   try{
     const pr=await fetch('./api/platform');
     const pd=await pr.json();
@@ -918,9 +919,25 @@ async function renderApiaries() {
         <a class="btn btn-ghost block" href="${setupPortalUrl(pd.landingPort,'/backup')}">Jetzt einrichten</a>
       </div>`;
     }
+    /* Hinweis nach einem (z.B. naechtlichen) Auto-Update: einmalig anzeigen,
+       solange die zuletzt gesehene Version von der aktuellen abweicht -
+       "gesehen" wird direkt danach aktualisiert, damit es nur einmal
+       erscheint. pd.updateAvailable=false zeigt, dass die Notizen zur
+       gerade laufenden Version gehoeren (nicht zu einer noch ausstehenden). */
+    let seenVersion=null;
+    try{ seenVersion=localStorage.getItem('beetown-seen-version'); }catch(_){}
+    if(seenVersion && seenVersion!==APP_VERSION && pd && pd.setupPortal && !pd.updateAvailable){
+      const notes=(pd.latestVersionNotes||'').trim();
+      updateNoticeHTML=`<div class="msg ok" style="margin-bottom:1rem">
+        <p style="margin:0">🎉 <strong>BeeTown wurde auf ${esc(APP_VERSION)} aktualisiert.</strong></p>
+        ${notes?`<p style="margin:.5rem 0 0; white-space:pre-wrap; font-size:.9rem">${esc(notes)}</p>`:''}
+      </div>`;
+    }
+    try{ localStorage.setItem('beetown-seen-version', APP_VERSION); }catch(_){}
   }catch(_){}
 
   app.innerHTML=`
+    ${updateNoticeHTML}
     ${usbWarningHTML}
     <div class="brand">
       <svg class="brand-bee" viewBox="0 0 120 120" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -3239,6 +3256,8 @@ async function renderGewicht() {
   applyFilter();
 
   app.innerHTML = `
+    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Hier kannst du alle Gewichte erfassen –
+    einfach oben das erste Volk antippen und dann der Reihe nach alle Völker durchgehen.</p>
     <label class="lbl">Standort</label>
     <select class="inp" id="gewicht-apiary-select" style="margin-bottom:.8rem">
       <option value="" ${currentApiaryId===''?'selected':''}>Alle Standorte</option>

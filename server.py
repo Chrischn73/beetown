@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BeeTown – kleiner Server (nur Python-Standardbibliothek). v1.9.37
+BeeTown – kleiner Server (nur Python-Standardbibliothek).
 """
 
 import os, re, json, sqlite3, secrets, mimetypes
@@ -238,7 +238,7 @@ def delete_colony_cascade(con, cid):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "BeeTown/1.9.83"
+    server_version = "BeeTown"
 
     def _json(self, obj, code=200):
         body = json.dumps(obj).encode()
@@ -313,12 +313,14 @@ class Handler(BaseHTTPRequestHandler):
             # das Update-Badge auf einem Linux-Server nie erscheinen.
             update_available=False
             latest_version=None
+            latest_version_notes=None
             if has_setup_portal:
                 try:
                     with open(UPDATE_CHECK_STATE_PATH) as f:
                         state=json.load(f)
                     update_available=bool(state.get("update_available"))
                     latest_version=state.get("latest")
+                    latest_version_notes=state.get("notes")
                 except Exception:
                     pass
             # USB-Backup-Sorge ist Pi-spezifisch (SD-Karte als Single Point
@@ -335,6 +337,7 @@ class Handler(BaseHTTPRequestHandler):
                 "setupPortal": has_setup_portal,
                 "updateAvailable": update_available,
                 "latestVersion": latest_version,
+                "latestVersionNotes": latest_version_notes,
                 "usbBackupMissing": usb_backup_missing,
                 "recentBackup": recent_backup,
                 "lastBackupAt": last_backup.isoformat() if last_backup else None,

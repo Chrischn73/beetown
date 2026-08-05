@@ -66,6 +66,7 @@ Verhalten:
 - POST /system/reboot, /system/shutdown -> Neustart/Shutdown (nur Pi)
 """
 
+import html
 import io
 import json
 import os
@@ -152,8 +153,13 @@ BACKUP_CONFIG_PATH = "/opt/backup-scripts/backup.conf"
 # woechentliche/monatliche/jaehrliche Stichproben ausduennt. Einzige
 # Einstellung ist die Gesamtanzahl (Minimum 12, damit die Rotation genug
 # Spielraum fuer alle Stufen hat).
-MIN_MAX_BACKUPS = 12
-DEFAULT_MAX_BACKUPS = 20
+MIN_MAX_BACKUPS = 20
+# Bei 20 (= MIN_MAX_BACKUPS) verbraucht allein die taegliche Stufe (14)
+# so viel Budget, dass fuer die Monats-Stufe nichts mehr uebrig bleibt und
+# sogar die Jahres-Stufe gekuerzt wird (siehe backups_to_delete()). Der
+# Standard liegt daher bewusst darueber, damit eine frische Installation
+# auch tatsaechlich Monats-Archive behaelt.
+DEFAULT_MAX_BACKUPS = 30
 
 USB_MOUNT = "/mnt/backup-usb"
 
@@ -287,13 +293,13 @@ PAGE_LANDING = """<!doctype html>
 <h1>{heading}</h1>
 {status}
 {update_banner}
-<a class="btn" href="{app_url}" target="_blank" rel="noopener">🐝 BeeTown öffnen</a>
+<a class="btn" href="{app_url}">🐝 BeeTown öffnen</a>
 {wifi_link}<a class="btn" href="/backup">📦 Backups</a>
 <a class="btn" href="/update">🔄 Update</a>
 <a class="btn" href="/tipps" style="padding:.5rem; font-size:.85rem;">📱 Handy-Tipps</a>
 <div class="msg" style="font-size:.9rem;">
 <strong>IP-Adressen:</strong><br>
-Kabel (eth0): {eth0_ip}{wlan_ip_line}
+{ip_lines}
 </div>
 {system_buttons}
 <div class="donate-box">
@@ -307,13 +313,29 @@ Kabel (eth0): {eth0_ip}{wlan_ip_line}
 TIPS_CONTENT = """
 <p class="muted" style="text-align:center; font-size:.9rem;">Für ein eigenes
 App-Symbol ohne Adressleiste – „Zum Home-Bildschirm hinzufügen“:</p>
-<div class="msg ok" style="text-align:center; margin-top:1.5rem;">
-🤖 <strong>Android (Chrome)</strong><br>
-Menü ⋮ oben rechts öffnen → „Zum Startbildschirm hinzufügen“ antippen
+
+<div class="msg ok" style="margin-top:1.5rem;">
+🍎 <strong>iPhone/iPad</strong><br>
+Das geht nur im <strong>Safari</strong>-Browser – andere Browser (z. B. Chrome)
+können auf dem iPhone kein App-Symbol anlegen.
+<ol style="margin:.6rem 0 0; padding-left:1.2rem;">
+  <li>BeeTown im <strong>Safari</strong>-Browser öffnen</li>
+  <li>Unten in der Leiste (bei iPad: oben) das <strong>Teilen-Symbol</strong> ⬆️ antippen</li>
+  <li>Im aufklappenden Menü nach unten scrollen und <strong>„Zum Home-Bildschirm“</strong> antippen</li>
+  <li>Oben rechts auf <strong>„Hinzufügen“</strong> tippen</li>
+</ol>
 </div>
-<div class="msg ok" style="text-align:center; margin-top:1.5rem;">
-🍎 <strong>iPhone (Safari)</strong><br>
-Teilen-Symbol ⬆️ unten antippen → „Zum Home-Bildschirm“ auswählen
+
+<div class="msg ok" style="margin-top:1.5rem;">
+🤖 <strong>Android</strong><br>
+Am einfachsten im <strong>Chrome</strong>-Browser:
+<ol style="margin:.6rem 0 0; padding-left:1.2rem;">
+  <li>BeeTown in <strong>Chrome</strong> öffnen</li>
+  <li>Oben rechts auf das <strong>Drei-Punkte-Menü</strong> ⋮ tippen</li>
+  <li><strong>„Zum Startbildschirm hinzufügen“</strong> antippen (heißt je nach
+      Chrome-Version auch „App installieren“)</li>
+  <li>Mit <strong>„Hinzufügen“</strong> bzw. „Installieren“ bestätigen</li>
+</ol>
 </div>
 """
 
@@ -340,7 +362,7 @@ PAGE_FORM = """<!doctype html>
 {header}
 <h1>🐝 WLAN-Einstellungen</h1>
 {status}
-<a class="btn" href="{app_url}" target="_blank" rel="noopener">🐝 BeeTown öffnen</a>
+<a class="btn" href="{app_url}">🐝 BeeTown öffnen</a>
 {message}
 <form method="post" action="/wifi/connect">
   <label for="ssid">WLAN-Name (SSID)</label>
@@ -413,7 +435,7 @@ PAGE_CONNECTING = """<!doctype html>
   klappt.</p>
 </div>
 <p>Sobald die Verbindung steht, ist BeeTown hier erreichbar:</p>
-<a class="btn" href="{app_url}" target="_blank" rel="noopener">🐝 BeeTown öffnen</a>
+<a class="btn" href="{app_url}">🐝 BeeTown öffnen</a>
 <p class="muted" style="margin-top:2rem; font-size:.9rem;">
 Falls sich die Seite nicht öffnen lässt: kurz warten, das Handy neu mit dem
 richtigen WLAN verbinden und den Link erneut versuchen.</p>
@@ -460,13 +482,13 @@ eingerichteten USB-Stick, falls vorhanden.</p>
 
 <h2 style="font-size:1.05rem; margin-top:2rem;">Einstellungen</h2>
 <p class="muted">Backups laufen automatisch jede Nacht (03:30 Uhr). Aufbewahrung
-nach dem Vater-Sohn-Prinzip: die letzten 7 Tage einzeln, danach automatisch
+nach dem Vater-Sohn-Prinzip: die letzten 14 Tage einzeln, danach automatisch
 ausgedünnt auf eine Sicherung pro Woche, Monat und Jahr – so bleibt auch
 ältere Historie sinnvoll erhalten, ohne dass du Zeitpläne oder Stufen selbst
 verwalten musst. Einzige Einstellung ist die Gesamtanzahl.</p>
 <form method="post" action="/backup/settings">
   <label for="max_backups">Max. Anzahl Backups insgesamt (je Ort)</label>
-  <input type="number" id="max_backups" name="max_backups" min="12" max="200" value="{max_backups}">
+  <input type="number" id="max_backups" name="max_backups" min="20" max="200" value="{max_backups}">
   <button type="submit">Einstellung speichern</button>
 </form>
 
@@ -597,10 +619,10 @@ eine andere (z. B. ältere) Version installieren. Automatische Updates werden
 dabei ausgeschaltet, wenn es sich um eine ältere Version handelt – sonst
 würde der Pi gleich wieder darüber hinweg aktualisieren.</p>
 <form onsubmit="return startVersionSwitch(this)">
-  <select name="tag">
+  <select name="tag" data-current="{current}" onchange="updateVersionSwitchButton(this)">
     {version_options}
   </select>
-  <button type="submit" class="btn-danger">Version installieren</button>
+  <button type="submit" class="btn-danger" id="version-switch-btn">Version installieren</button>
 </form>
 
 <h2 style="font-size:1.05rem; margin-top:2rem;">Automatische Updates</h2>
@@ -665,6 +687,14 @@ function startVersionSwitch(form) {{
   }})();
   return false;
 }}
+function updateVersionSwitchButton(select) {{
+  var btn = document.getElementById('version-switch-btn');
+  var isCurrent = select.value === select.dataset.current;
+  btn.disabled = isCurrent;
+  btn.classList.toggle('btn-danger', !isCurrent);
+  btn.style.opacity = isCurrent ? '.5' : '1';
+}}
+updateVersionSwitchButton(document.querySelector('select[name="tag"]'));
 </script>
 </body></html>
 """
@@ -742,6 +772,8 @@ def current_wifi_connection():
 
 
 def get_ip(iface):
+    """IP eines bestimmten Interfaces per nmcli - auf dem Pi zuverlaessig,
+    da NetworkManager dort das Netzwerk verwaltet (siehe install.sh)."""
     try:
         out = subprocess.run(
             ["nmcli", "-g", "IP4.ADDRESS", "device", "show", iface],
@@ -750,6 +782,29 @@ def get_ip(iface):
     except Exception:
         return None
     return out.split("/")[0] if out else None
+
+
+def all_ips():
+    """Alle IPv4-Adressen ueber 'ip' ermitteln (kernelseitig, unabhaengig
+    davon, ob/wie NetworkManager, systemd-networkd oder ifupdown das Netz
+    verwalten) - fuer einen Linux-Server/LXC-Container, dessen
+    Interface-Name (anders als beim Pi) nicht zuverlaessig 'eth0' ist und
+    wo nmcli das Interface oft gar nicht verwaltet, wodurch get_ip() dort
+    faelschlich "nicht verbunden" meldet."""
+    try:
+        out = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except Exception:
+        return []
+    result = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[1] == "lo":
+            continue
+        result.append((parts[1], parts[3].split("/")[0]))
+    return result
 
 
 def status_banner():
@@ -1278,6 +1333,11 @@ def run_update_check_once():
         "latest": release["tag"] if release else None,
         "update_available": update_available,
         "checked_at": time.strftime("%Y-%m-%d %H:%M"),
+        # Notizen des zuletzt bekannten Release - solange update_available
+        # False ist, entsprechen sie der Version, die gerade laeuft (z. B.
+        # nach einem naechtlichen Auto-Update). Die App nutzt das, um nach
+        # einem Update einmalig einen Hinweis mit den Neuerungen zu zeigen.
+        "notes": (release.get("notes") if release else None),
     }
     try:
         os.makedirs(os.path.dirname(UPDATE_CHECK_STATE_PATH), exist_ok=True)
@@ -1408,12 +1468,24 @@ def perform_update(tarball_url, target_tag):
             subprocess.run(["chown", "-R", "imkerei:imkerei", "/opt/imkerei/server.py", "/opt/imkerei/static"],
                            capture_output=True, text=True)
 
-            _update_setup_portal_files(src_root)
+            # Eigener try/except: Die App selbst ist an dieser Stelle schon
+            # erfolgreich aktualisiert - ein Fehler beim (optionalen)
+            # Mit-Aktualisieren des Setup-Portals soll das nicht als
+            # Gesamt-Fehlschlag melden.
+            portal_update_error = None
+            try:
+                _update_setup_portal_files(src_root)
+            except Exception as e:
+                portal_update_error = str(e)
     except Exception as e:
         subprocess.run(["systemctl", "start", "imkerei.service"], capture_output=True, text=True)
         return False, f"Fehler beim Aktualisieren: {e}"
 
     subprocess.run(["systemctl", "start", "imkerei.service"], capture_output=True, text=True)
+    if portal_update_error:
+        return True, (f"Auf Version {target_tag} aktualisiert - BeeTown läuft wieder. "
+                      f"Das Setup-Portal konnte dabei nicht mit aktualisiert werden "
+                      f"({portal_update_error}) - bitte später erneut versuchen.")
     return True, f"Auf Version {target_tag} aktualisiert - BeeTown läuft wieder."
 
 
@@ -1461,7 +1533,7 @@ def render_update_page(message=""):
         latest = release["tag"]
         update_available = parse_version(latest) > parse_version(current)
         status_class = "err" if update_available else "ok"
-        notes_block = (f'<div class="msg" style="white-space:pre-wrap;">{release["notes"]}</div>'
+        notes_block = (f'<div class="msg" style="white-space:pre-wrap;">{html.escape(release["notes"])}</div>'
                        if update_available and release["notes"] else "")
         if update_available:
             action_block = (
@@ -1495,6 +1567,12 @@ def render_landing(request_host=None):
     update_banner = ""
     if update_state.get("update_available"):
         update_banner = f'<div class="msg ok">🔄 Update verfügbar: Version {update_state["latest"]}</div>'
+    if IS_PI:
+        ip_lines = (f'Kabel (eth0): {get_ip("eth0") or "nicht verbunden"}<br>'
+                    f'WLAN (wlan0): {get_ip("wlan0") or "nicht verbunden"}')
+    else:
+        ips = all_ips()
+        ip_lines = "<br>".join(f"{iface}: {addr}" for iface, addr in ips) if ips else "nicht verbunden"
     return PAGE_LANDING.format(
         title="BeeTown-Pi" if IS_PI else "BeeTown-Setup",
         heading="🐝 BeeTown-Pi" if IS_PI else "🐝 BeeTown-Setup",
@@ -1503,8 +1581,7 @@ def render_landing(request_host=None):
         update_banner=update_banner,
         app_url=app_url(request_host),
         wifi_link='<a class="btn" href="/wifi">📶 WLAN-Einstellungen</a>\n' if IS_PI else "",
-        eth0_ip=get_ip("eth0") or "nicht verbunden",
-        wlan_ip_line=f'<br>WLAN (wlan0): {get_ip("wlan0") or "nicht verbunden"}' if IS_PI else "",
+        ip_lines=ip_lines,
         system_buttons=SYSTEM_BUTTONS if IS_PI else "",
     )
 

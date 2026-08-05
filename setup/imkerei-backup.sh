@@ -15,7 +15,7 @@ USB_MOUNT="/mnt/backup-usb"
 CONFIG_FILE="/opt/backup-scripts/backup.conf"
 ROTATE_SCRIPT="$(dirname "$(readlink -f "$0")")/imkerei-backup-rotate.py"
 
-MAX_BACKUPS=20
+MAX_BACKUPS=30
 [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
 
 mkdir -p "$DEST_DIR"
