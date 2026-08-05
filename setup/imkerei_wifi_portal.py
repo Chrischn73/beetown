@@ -318,16 +318,17 @@ PAGE_LANDING = """<!doctype html>
 """
 
 TIPS_CONTENT = """
-<p class="muted" style="text-align:center; font-size:.9rem;">Für ein eigenes
-App-Symbol ohne Adressleiste – „Zum Home-Bildschirm hinzufügen“:</p>
+<p class="muted" style="text-align:center; font-size:.9rem;">Für ein eigenes App-Symbol ohne Adressleiste
+auf dem Home-Bildschirm. Die BeeTown App sieht dann auf dem Handy wie eine echte App aus.</p>
 
 <div class="msg ok" style="margin-top:1.5rem;">
 🍎 <strong>iPhone/iPad</strong><br>
 Das geht nur im <strong>Safari</strong>-Browser – andere Browser (z. B. Chrome)
 können auf dem iPhone kein App-Symbol anlegen.
 <ol style="margin:.6rem 0 0; padding-left:1.2rem;">
-  <li>BeeTown im <strong>Safari</strong>-Browser öffnen</li>
-  <li>Unten in der Leiste (bei iPad: oben) das <strong>Teilen-Symbol</strong> ⬆️ antippen</li>
+  <li>BeeTown App im <strong>Safari</strong>-Browser öffnen</li>
+  <li>Unten in der Leiste die drei <strong>…</strong> antippen, dann (bei iPad: oben) das
+      <strong>Teilen-Symbol</strong> ⬆️ antippen</li>
   <li>Im aufklappenden Menü nach unten scrollen und <strong>„Zum Home-Bildschirm“</strong> antippen</li>
   <li>Oben rechts auf <strong>„Hinzufügen“</strong> tippen</li>
 </ol>
