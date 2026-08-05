@@ -2635,8 +2635,9 @@ async function renderHoneyStirBatch() {
         mit ${esc(batch.seedAmountG||'?')} g ${esc(batch.seedHoneyType||'Impfhonig')}</div>
       </div>
     </div>
-    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Nur so lange rühren, bis keine dunklen Glukose-Anteile
-    mehr sichtbar sind – ist die Masse schon homogen, ist der Honig überrührt und weniger lagerfähig.</p>
+    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Nur so lange rühren, bis immer noch wenige
+    Glukose-Anteile sichtbar sind – ist die Masse schon homogen und es sind keine flüssigen Glukose-Anteile mehr
+    sichtbar, dann ist der Honig überrührt und weniger lagerfähig.</p>
     ${batch.status==='done' ? `
       <div class="msg ok" style="margin-bottom:1rem">
         <strong>Abgeschlossen.</strong>${batch.conclusion?`<div style="margin-top:.4rem;white-space:pre-wrap">${esc(batch.conclusion)}</div>`:''}
