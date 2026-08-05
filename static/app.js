@@ -1001,7 +1001,7 @@ async function renderApiaries() {
     <div class="toolbar">
       <button class="btn btn-ghost ${homeBtnHidden('all')}" id="open-all">🐝 Alle</button>
       <button class="btn btn-ghost ${homeBtnHidden('honey')}" id="open-honey">🍯 Ernte</button>
-      <button class="btn btn-ghost ${homeBtnHidden('honeystir')}" id="open-honeystir">🥄 Rühren</button>
+      <button class="btn btn-ghost ${homeBtnHidden('honeystir')}" id="open-honeystir" style="padding:.4rem .6rem"><img src="./icons/ruehren.svg" alt="" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Rühren</button>
       <button class="btn btn-ghost ${homeBtnHidden('fuetterung')}" id="open-fuetterung">🍬 Fütterung</button>
       <button class="btn btn-ghost ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge">🕒 Letzte Einträge</button>
       <button class="btn btn-ghost ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="padding:.4rem .6rem"><img src="./icons/varroa.png" alt="Varroa Zählung" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Varroazählung</button>
