@@ -935,9 +935,13 @@ async function renderApiaries() {
      eingerichtet ist - ohne ihn liegen Backups nur auf der SD-Karte. */
   let usbWarningHTML='';
   let updateNoticeHTML='';
+  let hilfeLinkHTML='';
   try{
     const pr=await fetch('./api/platform');
     const pd=await pr.json();
+    if(pd && pd.setupPortal){
+      hilfeLinkHTML=`<button class="btn btn-ghost" id="open-hilfe" title="Hilfe" style="font-size:1.2rem;line-height:1">❓</button>`;
+    }
     if(pd && pd.pi && pd.usbBackupMissing){
       usbWarningHTML=`<div class="banner-error" style="margin-bottom:1rem">
         <p style="margin:0">⚠️ Kein USB-Stick als Backup-Ziel eingerichtet – Backups liegen nur auf der SD-Karte.
@@ -1003,6 +1007,7 @@ async function renderApiaries() {
       <button class="btn btn-ghost ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="padding:.4rem .6rem"><img src="./icons/varroa.png" alt="Varroa Zählung" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Varroazählung</button>
       <button class="btn btn-ghost ${homeBtnHidden('archive')}" id="open-archive">📦 Archiv</button>
       <button class="btn btn-ghost" id="open-settings" title="Einstellungen" style="font-size:1.4rem;line-height:1">⚙︎</button>
+      ${hilfeLinkHTML}
     </div>
     ${window._showSearch!==false?`
     <div class="search-box">
@@ -1125,6 +1130,8 @@ async function renderApiaries() {
   $('#open-varroacount').onclick=()=>go('varroacount');
   $('#open-archive').onclick=()=>go('archive');
   $('#open-settings').onclick=()=>go('settings');
+  const hilfeBtn=$('#open-hilfe');
+  if(hilfeBtn) hilfeBtn.onclick=()=>{ window.location.href=setupPortalUrl(setupLandingPort,'/hilfe'); };
   const ae=$('#add-apiary-empty');
   if(ae) ae.onclick=()=>apiaryForm();
   app.querySelectorAll('[data-open]').forEach((el)=>el.onclick=()=>go('colonies',{apiaryId:el.dataset.open}));

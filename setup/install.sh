@@ -175,6 +175,11 @@ mkdir -p /opt/imkerei-wifi-setup
 cp "$SCRIPT_DIR/imkerei_wifi_portal.py" /opt/imkerei-wifi-setup/
 cp "$SCRIPT_DIR/imkerei-wifi-setup.sh" /opt/imkerei-wifi-setup/
 chmod +x /opt/imkerei-wifi-setup/imkerei-wifi-setup.sh
+# Screenshots fuer die VPN-Hilfeseite - legt der Nutzer selbst hier ab (per
+# SFTP/FileZilla direkt auf dem Server, oder vorher in setup/hilfe-bilder/
+# im Projekt, dann kommen sie mit hierher). Komplett optional.
+mkdir -p /opt/imkerei-wifi-setup/hilfe-bilder
+cp -rn "$SCRIPT_DIR/hilfe-bilder/." /opt/imkerei-wifi-setup/hilfe-bilder/ 2>/dev/null || true
 [ -n "$OWNER" ] && chown -R "$OWNER:$OWNER" /opt/imkerei-wifi-setup
 
 cp "$SCRIPT_DIR/imkerei-wifi-setup.service" /etc/systemd/system/imkerei-wifi-setup.service

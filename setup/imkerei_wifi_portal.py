@@ -28,6 +28,10 @@ WLAN, beides geht. Nur Python-Standardbibliothek.
 Verhalten:
 - GET  /                    -> Startseite mit Links, IPs, System-Buttons
 - GET  /tipps               -> Handy-Tipps ("Zum Home-Bildschirm")
+- GET  /hilfe               -> Hilfe-Uebersicht (Handy-Tipps, VPN-Einrichtung)
+- GET  /hilfe/vpn           -> Schritt-fuer-Schritt WireGuard/Fritzbox-VPN-Anleitung
+- GET  /hilfe/bilder/<datei> -> vom Nutzer selbst abgelegte Screenshots dafuer
+  (siehe HILFE_IMAGE_DIR) - optional, fehlende Dateien werden ausgeblendet
 - GET  /wifi                -> WLAN-Formular (Status, Verbinden, Trennen) -
   nur auf einem echten Raspberry Pi (404 sonst)
 - POST /wifi/connect        -> verbindet per nmcli mit dem gewaehlten WLAN.
@@ -141,6 +145,9 @@ IS_PI = _detect_is_pi()
 # die normale Server-Platte - "SD-Karte" waere dort irrefuehrend.
 LOCAL_BACKUP_LABEL = "SD-Karte" if IS_PI else "Lokal"
 LOCAL_BACKUP_PHRASE = "auf der SD-Karte" if IS_PI else "lokal"
+
+HILFE_IMAGE_DIR = "/opt/imkerei-wifi-setup/hilfe-bilder"
+HILFE_IMAGE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+\.(png|jpg|jpeg)$", re.IGNORECASE)
 
 BACKUP_DIR = "/opt/backup"
 BACKUP_SCRIPT = "/opt/backup-scripts/imkerei-backup.sh"
@@ -296,7 +303,7 @@ PAGE_LANDING = """<!doctype html>
 <a class="btn" href="{app_url}">🐝 BeeTown öffnen</a>
 {wifi_link}<a class="btn" href="/backup">📦 Backups</a>
 <a class="btn" href="/update">🔄 Update</a>
-<a class="btn" href="/tipps" style="padding:.5rem; font-size:.85rem;">📱 Handy-Tipps</a>
+<a class="btn" href="/hilfe" style="padding:.5rem; font-size:.85rem;">❓ Hilfe</a>
 <div class="msg" style="font-size:.9rem;">
 <strong>IP-Adressen:</strong><br>
 {ip_lines}
@@ -349,6 +356,84 @@ PAGE_TIPPS = """<!doctype html>
 {header}
 <h1>📱 Handy-Tipps</h1>""" + TIPS_CONTENT + """
 <a class="btn" href="/">← Zurück zur Übersicht</a>
+</body></html>
+"""
+
+PAGE_HILFE = """<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hilfe</title>
+<style>""" + STYLE + """</style>
+</head><body>
+{header}
+<h1>❓ Hilfe</h1>
+<a class="btn" href="/tipps">📱 Handy-Tipps</a>
+<p class="muted" style="font-size:.85rem; margin-top:.4rem;">BeeTown sieht dann aus wie eine echte App und wird
+nicht direkt im Browser geöffnet.</p>
+<a class="btn" href="/hilfe/vpn" style="margin-top:1.5rem;">🔒 VPN-Einrichtung</a>
+<p class="muted" style="font-size:.85rem; margin-top:.4rem;">Für den Zugriff auf BeeTown von unterwegs, außerhalb
+des Heimnetzes.</p>
+<a class="btn" href="/" style="margin-top:1.5rem;">← Zurück zur Übersicht</a>
+</body></html>
+"""
+
+PAGE_VPN = """<!doctype html>
+<html lang="de"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VPN-Einrichtung</title>
+<style>""" + STYLE + """
+  .hilfe-step {{ margin-top: 1rem; }}
+  .hilfe-step img {{ max-width: 100%; border-radius: 8px; margin-top: .5rem; display: block; }}
+</style>
+</head><body>
+{header}
+<h1>🔒 VPN-Einrichtung</h1>
+<p class="muted">Mit einem VPN lässt sich BeeTown auch von unterwegs sicher erreichen, ohne den Zugriff öffentlich
+ins Internet freizugeben. Die folgenden Schritte gelten für eine Fritzbox (ab FRITZ!OS 7.39, WireGuard ist dort
+eingebaut) und die WireGuard-App auf dem Handy.</p>
+
+<h2 style="font-size:1.05rem; margin-top:2rem;">1. VPN-Zugang auf der Fritzbox einrichten</h2>
+<div class="hilfe-step">
+  <p>Im Heimnetz auf <code>fritz.box</code> mit dem Fritzbox-Kennwort anmelden.</p>
+  <img src="/hilfe/bilder/fritzbox-1.png" alt="" onerror="this.style.display='none'">
+</div>
+<div class="hilfe-step">
+  <p>Zu „Internet" → „Freigaben" → Reiter „VPN (WireGuard)" wechseln und auf „VPN-Verbindung hinzufügen" tippen.</p>
+  <img src="/hilfe/bilder/fritzbox-2.png" alt="" onerror="this.style.display='none'">
+</div>
+<div class="hilfe-step">
+  <p>„Für ein Gerät, das sich von unterwegs mit diesem Heimnetz verbinden soll" auswählen, einen Namen vergeben
+  (z. B. „Handy") und speichern.</p>
+  <img src="/hilfe/bilder/fritzbox-3.png" alt="" onerror="this.style.display='none'">
+</div>
+<div class="hilfe-step">
+  <p>Die Fritzbox zeigt danach einen QR-Code an – dieser wird im nächsten Schritt mit dem Handy gescannt.</p>
+  <img src="/hilfe/bilder/fritzbox-4.png" alt="" onerror="this.style.display='none'">
+</div>
+
+<h2 style="font-size:1.05rem; margin-top:2rem;">2. WireGuard auf dem Handy einrichten</h2>
+<div class="hilfe-step">
+  <p>Die App „WireGuard" aus dem App Store (iPhone) bzw. Play Store (Android) installieren.</p>
+  <img src="/hilfe/bilder/wireguard-1.png" alt="" onerror="this.style.display='none'">
+</div>
+<div class="hilfe-step">
+  <p>App öffnen, auf „+" tippen und „Aus QR-Code scannen" wählen, dann den QR-Code von der Fritzbox-Seite abscannen.</p>
+  <img src="/hilfe/bilder/wireguard-2.png" alt="" onerror="this.style.display='none'">
+</div>
+<div class="hilfe-step">
+  <p>Verbindung benennen und speichern.</p>
+  <img src="/hilfe/bilder/wireguard-3.png" alt="" onerror="this.style.display='none'">
+</div>
+
+<div class="msg ok" style="margin-top:1.5rem;">Von unterwegs: in der WireGuard-App den Schalter aktivieren, um sich
+mit dem Heimnetz zu verbinden – danach ist BeeTown wie gewohnt erreichbar.</div>
+
+<p class="muted" style="font-size:.8rem; margin-top:1rem;">Menübezeichnungen können sich je nach FRITZ!OS-/App-Version
+leicht unterscheiden.</p>
+
+<a class="btn" href="/hilfe" style="margin-top:1.5rem;">← Zurück zur Hilfe</a>
 </body></html>
 """
 
@@ -1737,6 +1822,30 @@ class BaseHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def serve_hilfe_image(self, filename):
+        """Screenshots fuer die VPN-Hilfeseite (vom Nutzer selbst nach
+        HILFE_IMAGE_DIR gelegt, siehe install.sh) - optional, fehlende
+        Dateien werden im <img onerror> auf der Seite ausgeblendet."""
+        if not HILFE_IMAGE_NAME_RE.match(filename):
+            self.send_response(400)
+            self.end_headers()
+            return
+        try:
+            with open(os.path.join(HILFE_IMAGE_DIR, filename), "rb") as f:
+                data = f.read()
+        except Exception:
+            self.send_response(404)
+            self.end_headers()
+            return
+        ext = filename.rsplit(".", 1)[-1].lower()
+        content_type = "image/png" if ext == "png" else "image/jpeg"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "max-age=3600")
+        self.end_headers()
+        self.wfile.write(data)
+
     def handle_system_action(self):
         """True, wenn der Pfad eine System-Aktion war (Reboot/Shutdown).
         Nur auf einem echten Pi erreichbar - auf einem Linux-Server koennte
@@ -1777,6 +1886,16 @@ class LandingHandler(BaseHandler):
             return
         if self.path == "/tipps":
             self._send_html(PAGE_TIPPS.format(header=render_header()))
+            return
+        if self.path == "/hilfe":
+            self._send_html(PAGE_HILFE.format(header=render_header()))
+            return
+        if self.path == "/hilfe/vpn":
+            self._send_html(PAGE_VPN.format(header=render_header()))
+            return
+        m = re.match(r"^/hilfe/bilder/([^/]+)$", self.path)
+        if m:
+            self.serve_hilfe_image(m.group(1))
             return
         if self.path == "/backup":
             self._send_html(render_backup_page())

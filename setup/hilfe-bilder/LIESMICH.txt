@@ -1,0 +1,19 @@
+Screenshots fuer die VPN-Hilfeseite (/hilfe/vpn) - hier als PNG oder JPG ablegen,
+mit genau diesen Dateinamen:
+
+  fritzbox-1.png    Anmeldung auf fritz.box
+  fritzbox-2.png    Internet > Freigaben > VPN (WireGuard)
+  fritzbox-3.png    "VPN-Verbindung hinzufuegen"-Dialog
+  fritzbox-4.png    Angezeigter QR-Code
+
+  wireguard-1.png   WireGuard-App im App-/Play-Store
+  wireguard-2.png   "+" / "Aus QR-Code scannen"
+  wireguard-3.png   Verbindung benennen und speichern
+
+Fehlende Bilder werden auf der Seite automatisch ausgeblendet - man kann
+also auch nur einen Teil der Bilder hinzufuegen.
+
+Nach dem Ablegen: ./install.sh erneut ausfuehren, damit die Bilder nach
+/opt/imkerei-wifi-setup/hilfe-bilder/ uebernommen werden. Alternativ direkt
+per SFTP/FileZilla nach /opt/imkerei-wifi-setup/hilfe-bilder/ auf dem
+Server hochladen - dann ist kein install.sh-Lauf noetig.
