@@ -1334,9 +1334,11 @@ def run_update_check_once():
         "update_available": update_available,
         "checked_at": time.strftime("%Y-%m-%d %H:%M"),
         # Notizen des zuletzt bekannten Release - solange update_available
-        # False ist, entsprechen sie der Version, die gerade laeuft (z. B.
-        # nach einem naechtlichen Auto-Update). Die App nutzt das, um nach
-        # einem Update einmalig einen Hinweis mit den Neuerungen zu zeigen.
+        # False ist, entsprechen sie der Version, die gerade laeuft, egal ob
+        # sie per naechtlichem Auto-Update, manuellem Update-Button oder
+        # gezieltem Versionswechsel installiert wurde. Die App nutzt das,
+        # um nach jeder Aktualisierung einmalig einen Hinweis mit den
+        # Neuerungen zu zeigen.
         "notes": (release.get("notes") if release else None),
     }
     try:

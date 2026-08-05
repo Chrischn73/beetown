@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.29';
+const APP_VERSION = 'v2.8.30';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -919,11 +919,16 @@ async function renderApiaries() {
         <a class="btn btn-ghost block" href="${setupPortalUrl(pd.landingPort,'/backup')}">Jetzt einrichten</a>
       </div>`;
     }
-    /* Hinweis nach einem (z.B. naechtlichen) Auto-Update: einmalig anzeigen,
-       solange die zuletzt gesehene Version von der aktuellen abweicht -
-       "gesehen" wird direkt danach aktualisiert, damit es nur einmal
-       erscheint. pd.updateAvailable=false zeigt, dass die Notizen zur
-       gerade laufenden Version gehoeren (nicht zu einer noch ausstehenden). */
+    /* Hinweis nach JEDER Aktualisierung - egal ob naechtliches Auto-Update,
+       manueller Update-Button oder gezielter Versionswechsel auf die
+       neueste Version: rein anhand des Versionsunterschieds erkannt, nicht
+       an der Update-Methode. Einmalig anzeigen, solange die zuletzt
+       gesehene Version von der aktuellen abweicht - "gesehen" wird direkt
+       danach aktualisiert, damit es nur einmal erscheint.
+       pd.updateAvailable=false zeigt, dass die Notizen zur gerade
+       laufenden Version gehoeren (nicht zu einer noch ausstehenden) -
+       bei einem bewussten Rueckschritt auf eine aeltere Version bleibt
+       das Feld true, damit der Hinweis dort korrekt ausbleibt. */
     let seenVersion=null;
     try{ seenVersion=localStorage.getItem('beetown-seen-version'); }catch(_){}
     if(seenVersion && seenVersion!==APP_VERSION && pd && pd.setupPortal && !pd.updateAvailable){
