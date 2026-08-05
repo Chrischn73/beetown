@@ -2530,30 +2530,31 @@ const STIR_APPEARANCE_OPTIONS = [
   'Masse ist fest geworden',
 ];
 
+function honeyStirBatchModal(existing, onSaved) {
+  openModal(existing ? 'Charge bearbeiten' : 'Neue Charge (Impfung)', `
+    <label class="lbl">Honigsorte</label>
+    <input class="inp" name="honeyType" type="text" placeholder="z. B. Sommertracht" value="${existing?esc(existing.honeyType):''}">
+    <label class="lbl">Menge der Charge (kg)</label>
+    <input class="inp" name="amountKg" type="text" inputmode="decimal" placeholder="z. B. 9" value="${existing?esc(existing.amountKg):''}">
+    <label class="lbl">Datum + Uhrzeit der Impfung</label>
+    <input class="inp" name="seedDate" type="datetime-local" value="${existing?existing.seedDate:nowDateTimeInput()}">
+    <label class="lbl">Temperatur des Honigs (°C)</label>
+    <input class="inp" name="seedTemp" type="text" inputmode="decimal" placeholder="z. B. 24" value="${existing?esc(existing.seedTemp):''}">
+    <label class="lbl">Impfmenge (g)</label>
+    <input class="inp" name="seedAmountG" type="text" inputmode="decimal" placeholder="z. B. 500" value="${existing?esc(existing.seedAmountG):''}">
+    <label class="lbl">Sorte des Impfhonigs</label>
+    <input class="inp" name="seedHoneyType" type="text" placeholder="z. B. Frühtracht, feincremig" value="${existing?esc(existing.seedHoneyType):''}">`,
+    async (data, close) => {
+      if (existing) await api('PUT', './api/honey_stir_batches/'+existing.id, {...existing, ...data});
+      else await api('POST', './api/honey_stir_batches', data);
+      close();
+      onSaved();
+    }, null);
+}
+
 async function renderHoneyStir() {
   setHeader('Rühren', true);
   const batches = await apiGet('./api/honey_stir_batches');
-
-  const openBatchModal = () => {
-    openModal('Neue Charge (Impfung)', `
-      <label class="lbl">Honigsorte</label>
-      <input class="inp" name="honeyType" type="text" placeholder="z. B. Sommertracht">
-      <label class="lbl">Menge der Charge (kg)</label>
-      <input class="inp" name="amountKg" type="text" inputmode="decimal" placeholder="z. B. 9">
-      <label class="lbl">Datum + Uhrzeit der Impfung</label>
-      <input class="inp" name="seedDate" type="datetime-local" value="${nowDateTimeInput()}">
-      <label class="lbl">Temperatur des Honigs (°C)</label>
-      <input class="inp" name="seedTemp" type="text" inputmode="decimal" placeholder="z. B. 24">
-      <label class="lbl">Impfmenge (g)</label>
-      <input class="inp" name="seedAmountG" type="text" inputmode="decimal" placeholder="z. B. 500">
-      <label class="lbl">Sorte des Impfhonigs</label>
-      <input class="inp" name="seedHoneyType" type="text" placeholder="z. B. Frühtracht, feincremig">`,
-      async (data, close) => {
-        await api('POST', './api/honey_stir_batches', data);
-        close();
-        renderHoneyStir();
-      }, null);
-  };
 
   app.innerHTML = `
     <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Hier den Rührvorgang beim cremig Rühren von Honig
@@ -2573,7 +2574,7 @@ async function renderHoneyStir() {
           </li>`).join('')}
       </ul>`}`;
 
-  document.getElementById('btn-add-stirbatch').onclick = openBatchModal;
+  document.getElementById('btn-add-stirbatch').onclick = () => honeyStirBatchModal(null, renderHoneyStir);
   app.querySelectorAll('[data-open]').forEach(el => {
     el.onclick = () => go('honeystirbatch', {batchId: el.dataset.open});
   });
@@ -2637,7 +2638,10 @@ async function renderHoneyStirBatch() {
   app.innerHTML = `
     <div class="card" style="margin-bottom:1rem">
       <div class="card-main" style="width:100%">
-        <div style="font-weight:600;margin-bottom:.3rem">${esc(batch.honeyType||'(ohne Sorte)')} – ${esc(batch.amountKg||'?')} kg</div>
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:.5rem">
+          <div style="font-weight:600;margin-bottom:.3rem">${esc(batch.honeyType||'(ohne Sorte)')} – ${esc(batch.amountKg||'?')} kg</div>
+          <button class="btn btn-ghost btn-sm" id="btn-edit-stirbatch" style="margin:0;width:auto;padding:.3rem .6rem">✏️ Bearbeiten</button>
+        </div>
         <div class="muted" style="font-size:.85rem">Geimpft ${fmtDateTime(batch.seedDate)} bei ${esc(batch.seedTemp||'?')}°C
         mit ${esc(batch.seedAmountG||'?')} g ${esc(batch.seedHoneyType||'Impfhonig')}</div>
       </div>
@@ -2665,6 +2669,7 @@ async function renderHoneyStirBatch() {
           </li>`).join('')}
       </ul>`}`;
 
+  document.getElementById('btn-edit-stirbatch').onclick = () => honeyStirBatchModal(batch, renderHoneyStirBatch);
   document.getElementById('btn-add-stirentry').onclick = () => entryModal(null);
   const finishBtn = document.getElementById('btn-finish-batch');
   if (finishBtn) finishBtn.onclick = finishModal;
