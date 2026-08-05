@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.30';
+const APP_VERSION = 'v2.8.31';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -919,26 +919,26 @@ async function renderApiaries() {
         <a class="btn btn-ghost block" href="${setupPortalUrl(pd.landingPort,'/backup')}">Jetzt einrichten</a>
       </div>`;
     }
-    /* Hinweis nach JEDER Aktualisierung - egal ob naechtliches Auto-Update,
-       manueller Update-Button oder gezielter Versionswechsel auf die
-       neueste Version: rein anhand des Versionsunterschieds erkannt, nicht
-       an der Update-Methode. Einmalig anzeigen, solange die zuletzt
-       gesehene Version von der aktuellen abweicht - "gesehen" wird direkt
-       danach aktualisiert, damit es nur einmal erscheint.
-       pd.updateAvailable=false zeigt, dass die Notizen zur gerade
-       laufenden Version gehoeren (nicht zu einer noch ausstehenden) -
-       bei einem bewussten Rueckschritt auf eine aeltere Version bleibt
-       das Feld true, damit der Hinweis dort korrekt ausbleibt. */
-    let seenVersion=null;
-    try{ seenVersion=localStorage.getItem('beetown-seen-version'); }catch(_){}
-    if(seenVersion && seenVersion!==APP_VERSION && pd && pd.setupPortal && !pd.updateAvailable){
+    /* Hinweis NUR nach einem naechtlichen Auto-Update, nicht nach einem
+       manuellen Update (dort stehen die Versionshinweise ja schon auf der
+       Update-Seite selbst). pd.autoUpdatedVersion wird serverseitig
+       ausschliesslich vom automatischen Update-Zweig gesetzt (siehe
+       run_update_check_once() in imkerei_wifi_portal.py) - der Vergleich
+       mit APP_VERSION stellt sicher, dass wirklich die gerade laufende
+       Version gemeint ist (nicht ein alter Stand, falls zwischenzeitlich
+       manuell auf eine andere Version gewechselt wurde). Einmalig
+       anzeigen, "gesehen" wird direkt danach vermerkt. */
+    let seenAutoUpdate=null;
+    try{ seenAutoUpdate=localStorage.getItem('beetown-seen-auto-update'); }catch(_){}
+    if(pd && pd.setupPortal && pd.autoUpdatedVersion && pd.autoUpdatedVersion===APP_VERSION
+       && seenAutoUpdate!==pd.autoUpdatedVersion){
       const notes=(pd.latestVersionNotes||'').trim();
       updateNoticeHTML=`<div class="msg ok" style="margin-bottom:1rem">
-        <p style="margin:0">🎉 <strong>BeeTown wurde auf ${esc(APP_VERSION)} aktualisiert.</strong></p>
+        <p style="margin:0">🎉 <strong>BeeTown wurde über Nacht automatisch auf ${esc(APP_VERSION)} aktualisiert.</strong></p>
         ${notes?`<p style="margin:.5rem 0 0; white-space:pre-wrap; font-size:.9rem">${esc(notes)}</p>`:''}
       </div>`;
+      try{ localStorage.setItem('beetown-seen-auto-update', pd.autoUpdatedVersion); }catch(_){}
     }
-    try{ localStorage.setItem('beetown-seen-version', APP_VERSION); }catch(_){}
   }catch(_){}
 
   app.innerHTML=`
@@ -2364,6 +2364,8 @@ async function renderHoney() {
   const gesamtVoelkerAvg = apiaryAvgList.reduce((s, [_, v]) => s + v.voelker, 0);
 
   app.innerHTML = `
+    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Honigernten je Standort und Jahr erfassen und die
+    Gesamtmenge im Überblick behalten.</p>
     <div style="padding:.5rem 0 1rem">
       <button class="btn btn-primary" id="btn-add-harvest">+ Ernte erfassen</button>
     </div>
@@ -2793,6 +2795,9 @@ async function renderFuetterungsvorschlag() {
   };
 
   app.innerHTML = `
+    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Hier wird ein Vorschlag auf Basis der aktuell
+    erfassten Gewichte erstellt. Wenn die Fütterung so durchgeführt wurde, kann man mit dem Button unten die
+    Fütterung für alle Völker übernehmen. Anpassungen sind noch möglich.</p>
     <label class="lbl">Standort</label>
     <select class="inp" id="fv-apiary-select" style="margin-bottom:.8rem">
       ${apiaries.map(a => `<option value="${esc(a.id)}" ${a.id===currentApiaryId?'selected':''}>${esc(a.name)}</option>`).join('')}
@@ -2884,6 +2889,8 @@ async function renderSirupCalc() {
   setHeader('Zuckersirup-Rechner', true);
 
   app.innerHTML = `
+    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Zuckersirup berechnen – wahlweise ausgehend von
+    der gewünschten Sirupmenge oder von der vorhandenen Zuckermenge.</p>
     <label class="lbl">Mischungsverhältnis (Zucker : Wasser)</label>
     <select class="inp" id="sirup-ratio">
       ${Object.entries(SIRUP_RATIOS).map(([k,r])=>`<option value="${esc(k)}">${esc(r.label)}</option>`).join('')}
@@ -3096,6 +3103,8 @@ async function renderVarroaCount() {
   };
 
   app.innerHTML = `
+    <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Ein Volk antippen, um eine neue Varroa-Zählung
+    dafür zu erfassen.</p>
     <div class="toolbar" style="justify-content:space-between;align-items:center">
       <span class="muted" id="varroa-count-label">Völker</span>
       <button class="btn btn-ghost btn-sm" id="open-varroahistory">📋 Alle Zählungen</button>
@@ -3451,7 +3460,8 @@ async function renderArchive() {
   const groups={};
   for(const c of list){const y=(c.archivedAt||'').slice(0,4)||'Ohne Jahr';(groups[y]=groups[y]||[]).push(c);}
   const years=Object.keys(groups).sort((a,b)=>b.localeCompare(a));
-  app.innerHTML=years.map((y)=>`<h2 class="section-h">${esc(y)}</h2>
+  app.innerHTML='<p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Archivierte Völker nach Jahr – hier'+
+    ' wiederherstellen oder endgültig löschen.</p>'+years.map((y)=>`<h2 class="section-h">${esc(y)}</h2>
     <ul class="card-list">${groups[y].map((c)=>`<li class="card" data-open="${c.id}">
       <div class="card-main"><div class="card-title">${esc(c.name)}</div>
       <div class="card-sub">${c.apiaryName?esc(c.apiaryName):'(Standort gelöscht)'}${c.queenYear?` · Kö ${queenYearBadge(c.queenYear)}`:''}</div></div>

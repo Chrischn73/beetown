@@ -1317,12 +1317,21 @@ def run_update_check_once():
     current = app_version()
     release = fetch_latest_release()
     update_available = bool(release) and parse_version(release["tag"]) > parse_version(current)
+    # Wird beibehalten (nicht bei jedem Aufruf zurueckgesetzt), damit ein
+    # manueller Update-Button-Klick - der diese Funktion am Ende ebenfalls
+    # aufruft, um den Zwischenspeicher zu aktualisieren - dieses Feld nicht
+    # ueberschreibt. Nur der echte naechtliche Auto-Update-Zweig unten setzt
+    # es neu; so zeigt die App den "wurde ueber Nacht aktualisiert"-Hinweis
+    # gezielt nur nach einem tatsaechlichen Auto-Update, nicht nach jedem
+    # manuellen Update.
+    auto_updated_version = read_update_check_state().get("auto_updated_version")
     if update_available and get_auto_update() and release.get("tarball_url"):
         ok, detail = perform_update(release["tarball_url"], release["tag"])
         UPDATE_STATE.update(done=True, ok=ok, detail=detail)
         if ok:
             current = app_version()  # nach erfolgreichem Update neu einlesen
             update_available = False
+            auto_updated_version = current
         # bei Fehlschlag bleibt update_available=True, damit die Update-Seite
         # weiterhin einen manuellen Versuch anbietet
         # Läuft hier (naechtlicher Timer, eigener oneshot-Prozess) - sicher,
@@ -1333,13 +1342,12 @@ def run_update_check_once():
         "latest": release["tag"] if release else None,
         "update_available": update_available,
         "checked_at": time.strftime("%Y-%m-%d %H:%M"),
-        # Notizen des zuletzt bekannten Release - solange update_available
-        # False ist, entsprechen sie der Version, die gerade laeuft, egal ob
-        # sie per naechtlichem Auto-Update, manuellem Update-Button oder
-        # gezieltem Versionswechsel installiert wurde. Die App nutzt das,
-        # um nach jeder Aktualisierung einmalig einen Hinweis mit den
-        # Neuerungen zu zeigen.
+        # Notizen des zuletzt bekannten Release, fuer die Update-Seite.
         "notes": (release.get("notes") if release else None),
+        # Version, die zuletzt per naechtlichem Auto-Update installiert
+        # wurde (siehe oben) - die App zeigt anhand dieses Felds (nicht
+        # anhand von "notes"/"latest") den einmaligen Update-Hinweis.
+        "auto_updated_version": auto_updated_version,
     }
     try:
         os.makedirs(os.path.dirname(UPDATE_CHECK_STATE_PATH), exist_ok=True)

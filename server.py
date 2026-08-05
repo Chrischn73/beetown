@@ -314,6 +314,7 @@ class Handler(BaseHTTPRequestHandler):
             update_available=False
             latest_version=None
             latest_version_notes=None
+            auto_updated_version=None
             if has_setup_portal:
                 try:
                     with open(UPDATE_CHECK_STATE_PATH) as f:
@@ -321,6 +322,7 @@ class Handler(BaseHTTPRequestHandler):
                     update_available=bool(state.get("update_available"))
                     latest_version=state.get("latest")
                     latest_version_notes=state.get("notes")
+                    auto_updated_version=state.get("auto_updated_version")
                 except Exception:
                     pass
             # USB-Backup-Sorge ist Pi-spezifisch (SD-Karte als Single Point
@@ -338,6 +340,7 @@ class Handler(BaseHTTPRequestHandler):
                 "updateAvailable": update_available,
                 "latestVersion": latest_version,
                 "latestVersionNotes": latest_version_notes,
+                "autoUpdatedVersion": auto_updated_version,
                 "usbBackupMissing": usb_backup_missing,
                 "recentBackup": recent_backup,
                 "lastBackupAt": last_backup.isoformat() if last_backup else None,
