@@ -76,16 +76,17 @@ body{
 .toolbar .btn.hidden{display:none!important}
 
 /* ---------- Startseite: Icon-Kacheln statt unterschiedlich breiter Reihen-Buttons -----------
-   Jeder Button bekommt seine Groesse individuell ueber inline CSS-Variablen (aus den
-   Einstellungen, siehe homeBtnSizeVars(key) je Button); die Spaltenbreite des Grids
-   selbst bleibt eine gemeinsame Basis (minmax), damit die Kacheln sauber ausgerichtet
-   bleiben, egal welche einzelnen Groessen gerade gemischt sind. Werte hier sind der
-   "mittel"-Standard-Fallback, falls fuer einen Button keine Variable gesetzt ist. */
-.home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:.5rem; align-items:start}
-.home-btn{flex-direction:column; gap:.3rem; padding:.6rem .3rem; min-height:var(--home-btn-h,66px); white-space:normal; line-height:1.2}
-.home-btn-icon{font-size:var(--home-btn-icon,1.6rem); line-height:1}
-.home-btn-icon img{width:26px; height:26px; object-fit:contain}
-.home-btn-label{font-size:var(--home-btn-label,.72rem); font-weight:700; text-align:center}
+   12-Spalten-Basisgrid: jeder Button spannt ueber grid-column (inline, siehe
+   homeBtnSizeVars(key)) eine zu seiner Groesse passende Anzahl Spalten - klein=3
+   (4 pro Reihe), mittel=4 (3 pro Reihe), gross=6 (2 pro Reihe). So kann jeder Button
+   wirklich einzeln groesser/kleiner sein, ohne dass sich die anderen daran ausrichten
+   muessen. Reihe statt Spalte (Icon+Text nebeneinander) fuer eine flachere, laenglichere
+   statt wuerfelige Optik. */
+.home-toolbar{display:grid; grid-template-columns:repeat(12,1fr); gap:.5rem; align-items:start}
+.home-btn{flex-direction:row; justify-content:center; gap:.5rem; padding:.5rem .6rem; min-height:var(--home-btn-h,50px); white-space:normal; line-height:1.15}
+.home-btn-icon{font-size:var(--home-btn-icon,1.3rem); line-height:1; flex-shrink:0}
+.home-btn-icon img{width:22px; height:22px; object-fit:contain}
+.home-btn-label{font-size:var(--home-btn-label,.8rem); font-weight:700; text-align:left}
 .search-box{margin-bottom:1rem}
 .search-box .inp{width:100%}
 .search-box-wrap{position:relative}

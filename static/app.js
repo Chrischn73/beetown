@@ -83,17 +83,21 @@ const HOME_BTN_SIZE_CONFIG = [
   {key:'hilfe',    label:'Hilfe',         defaultSize:'klein', noHide:true},
 ];
 /* Rechnet die Einstellungen Größe (klein/mittel/groß/eigene Pixelzahl) eines einzelnen
-   Buttons in konkrete CSS-Werte um. "Mittel" entspricht bewusst den bisherigen Werten. */
-const HOME_BTN_SIZE_PRESETS = { klein: 50, mittel: 66, gross: 84 };
+   Buttons in konkrete CSS-Werte um. "Mittel" entspricht bewusst den bisherigen Werten.
+   Die drei Hoehen stehen bewusst im Verhaeltnis 0.75 : 1 : 1.5 zueinander, damit sich
+   daraus (ueber denselben Skalierungsfaktor) eine grid-column-Spannweite auf einem
+   12-Spalten-Grid ableiten laesst, die genau 4 / 3 / 2 Kacheln pro Reihe ergibt. */
+const HOME_BTN_SIZE_PRESETS = { klein: 38, mittel: 50, gross: 75 };
 function homeBtnSizeVars(key) {
   const size = (window._homeBtnSize && window._homeBtnSize[key]) || 'mittel';
   const h = size === 'custom'
     ? (parseInt(window._homeBtnSizePx && window._homeBtnSizePx[key]) || HOME_BTN_SIZE_PRESETS.mittel)
     : (HOME_BTN_SIZE_PRESETS[size] || HOME_BTN_SIZE_PRESETS.mittel);
   const scale = h / HOME_BTN_SIZE_PRESETS.mittel;
-  const iconRem = Math.min(3, Math.max(0.9, 1.6 * scale)).toFixed(2);
-  const labelRem = Math.min(1.1, Math.max(0.55, 0.72 * scale)).toFixed(2);
-  return `--home-btn-h:${h}px;--home-btn-icon:${iconRem}rem;--home-btn-label:${labelRem}rem`;
+  const iconRem = Math.min(2.4, Math.max(0.8, 1.3 * scale)).toFixed(2);
+  const labelRem = Math.min(1.05, Math.max(0.55, 0.8 * scale)).toFixed(2);
+  const span = Math.min(12, Math.max(2, Math.round(4 * scale)));
+  return `--home-btn-h:${h}px;--home-btn-icon:${iconRem}rem;--home-btn-label:${labelRem}rem;grid-column:span ${span}`;
 }
 function homeBtnTextHidden(key) {
   return (window._homeBtnShowText && window._homeBtnShowText[key]===false);
@@ -3934,7 +3938,8 @@ async function renderVerkauf(){
       <div class="vk-product-grid">
         ${sonstigeProducts.map(tileHTML).join('')}
       </div>`:''}`}
-      <label class="lbl" style="margin-top:1rem">Betrag (€)</label>
+      <div id="vk-selection-summary" class="muted" style="font-size:.85rem;margin-top:1rem;display:none"></div>
+      <label class="lbl" style="margin-top:.3rem">Betrag (€)</label>
       <input class="inp" id="vk-total" type="text" inputmode="decimal" value="0,00">
       <label class="lbl">Notiz (optional)</label>
       <input class="inp" id="vk-notes" type="text" placeholder="z. B. Geschenkbox klein">
@@ -3948,6 +3953,12 @@ async function renderVerkauf(){
       const sum = activeProducts.reduce((s,p)=>s+qty[p.id]*p.price,0);
       totalInput.value = fmtEUR(sum).replace(' €','');
     };
+    const summaryEl = document.getElementById('vk-selection-summary');
+    const updateSummary = () => {
+      const parts = activeProducts.filter(p=>qty[p.id]>0).map(p=>`${qty[p.id]}× ${p.name}`);
+      summaryEl.textContent = parts.join(', ');
+      summaryEl.style.display = parts.length ? '' : 'none';
+    };
     totalInput.addEventListener('input', ()=>{ totalManual = true; });
 
     bodyEl.querySelectorAll('.vk-product-tile').forEach(tile=>{
@@ -3958,6 +3969,7 @@ async function renderVerkauf(){
         document.getElementById('vk-qty-'+pid).textContent = qty[pid];
         tile.classList.toggle('vk-active', qty[pid]>0);
         recalcTotal();
+        updateSummary();
       });
     });
     bodyEl.querySelectorAll('.vk-minus').forEach(btn=>{
@@ -3968,6 +3980,7 @@ async function renderVerkauf(){
         document.getElementById('vk-qty-'+pid).textContent = qty[pid];
         bodyEl.querySelector(`.vk-product-tile[data-id="${pid}"]`)?.classList.toggle('vk-active', qty[pid]>0);
         recalcTotal();
+        updateSummary();
       });
     });
 
