@@ -78,7 +78,7 @@ body{
 /* ---------- Startseite: Icon-Kacheln statt unterschiedlich breiter Reihen-Buttons -----------
    minmax(100px,..) ist bewusst so gewaehlt, dass auf einem Handy (~375px) genau 3 pro Reihe passen. */
 .home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:.5rem}
-.home-btn{flex-direction:column; gap:.3rem; padding:.7rem .3rem; min-height:78px; white-space:normal; line-height:1.2}
+.home-btn{flex-direction:column; gap:.3rem; padding:.6rem .3rem; min-height:66px; white-space:normal; line-height:1.2}
 .home-btn-icon{font-size:1.6rem; line-height:1}
 .home-btn-icon img{width:26px; height:26px; object-fit:contain}
 .home-btn-label{font-size:.72rem; font-weight:700; text-align:center}
@@ -95,16 +95,17 @@ body{
 .section-h{font-size:.8rem; text-transform:uppercase; letter-spacing:.8px; color:var(--ink-soft); margin:1.4rem 0 .6rem}
 .muted{color:var(--ink-soft)} .small{font-size:.85rem}
 
-/* ---------- Buttons ---------- */
+/* ---------- Buttons (Hoehe app-weit 15% flacher) ---------- */
 .btn{display:inline-flex; align-items:center; justify-content:center; gap:.4rem;
   font:inherit; font-weight:600; border:1px solid transparent; border-radius:11px;
-  padding:.7rem 1rem; min-height:46px; cursor:pointer; text-decoration:none}
+  padding:.6rem 1rem; min-height:39px; cursor:pointer; text-decoration:none}
 .btn:active{transform:translateY(1px)}
 .btn-primary{background:var(--honey); color:#fff}
 .btn-primary:hover{background:var(--honey-dark)}
 .btn-ghost{background:var(--surface); color:var(--ink); border-color:var(--line)}
 .btn-danger{background:var(--surface); color:var(--danger); border-color:var(--danger-soft-line)}
-.btn-sm{min-height:38px; padding:.4rem .7rem; font-size:.9rem}
+.btn-subtle{background:var(--chip-bg); color:var(--chip-ink); border-color:var(--chip-line)}
+.btn-sm{min-height:32px; padding:.34rem .7rem; font-size:.9rem}
 .btn.block{display:flex; width:100%; margin:.5rem 0}
 .btn-photo{background:var(--photo-bg); color:var(--photo-ink); border:1px dashed var(--honey)}
 .btn-photo.busy{opacity:.6; pointer-events:none}

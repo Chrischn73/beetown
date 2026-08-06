@@ -3584,10 +3584,9 @@ async function renderGewicht() {
   };
 
   /* Eigenes (nicht auf openModal() basierendes) Modal fuer die Gewichtserfassung:
-     Speichern-Aktion oben statt unten, kein X, Fenster oben statt als Bottom-Sheet
-     ausgerichtet, Abbrechen/Zurueck/Weiterspringen unten. Der obere Button heisst
-     "Weiter" waehrend der Cursor in Teilgewicht 1 steht und wechselt zu
-     "Speichern → nächstes Volk" sobald Teilgewicht 2 fokussiert ist. */
+     kein X, Fenster oben statt als Bottom-Sheet ausgerichtet, Abbrechen/Zurueck/
+     Weiterspringen unten. "Weiter" und "Speichern" sitzen jeweils direkt rechts
+     neben ihrem Eingabefeld statt als ein gemeinsamer Button oben. */
   const openWeightModal = (idx) => {
     if(idx<0 || idx>=all.length) return;
     const c = all[idx];
@@ -3602,7 +3601,6 @@ async function renderGewicht() {
     back.innerHTML=`<div class="modal" role="dialog" aria-modal="true">
       <div class="modal-head"><h2>Gewicht erfassen — ${esc(c.name)}</h2></div>
       <div style="padding:0 1rem .6rem;font-size:.85rem;color:var(--ink-soft)">Bisheriges Gewicht: <strong style="color:var(--ink)">${oldWeightText}</strong></div>
-      <div style="padding:0 1rem .8rem"><button type="button" class="btn btn-primary" id="w-action" style="width:100%">Weiter</button></div>
       <form class="modal-body">
         <div style="display:flex;align-items:center;gap:.6rem;margin:.4rem 0">
           <label class="lbl" style="margin:0;flex-shrink:0">Datum</label>
@@ -3610,14 +3608,20 @@ async function renderGewicht() {
           <button type="button" class="btn btn-ghost btn-sm date-clear" data-clear="date" title="Datum löschen" style="flex-shrink:0">✕</button>
         </div>
         <label class="lbl">Teilgewicht 1 (kg)</label>
-        <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3" style="flex:1;min-width:0">
+          <button type="button" class="btn btn-primary" id="w-next" style="flex-shrink:0">Weiter</button>
+        </div>
         <label class="lbl" style="margin-top:.5rem">Teilgewicht 2 (kg)</label>
-        <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1" style="flex:1;min-width:0">
+          <button type="button" class="btn btn-primary" id="w-save" style="flex-shrink:0">Speichern</button>
+        </div>
       </form>
       <div class="modal-foot" style="flex-direction:column;gap:.5rem;align-items:stretch">
         <div style="display:flex;gap:.5rem">
-          <button type="button" class="btn btn-ghost btn-sm" id="w-prev" style="flex:0 0 auto" ${idx<=0?'disabled':''}>← Zurück</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="w-skip" style="flex:1">Zum nächsten Volk springen</button>
+          <button type="button" class="btn btn-subtle btn-sm" id="w-prev" style="flex:0 0 auto" ${idx<=0?'disabled':''}>← Zurück</button>
+          <button type="button" class="btn btn-subtle btn-sm" id="w-skip" style="flex:1">Zum nächsten Volk springen</button>
         </div>
         <button type="button" class="btn btn-ghost" id="w-cancel" style="width:100%">Abbrechen</button>
       </div>
@@ -3641,18 +3645,17 @@ async function renderGewicht() {
     const prevBtn = back.querySelector('#w-prev');
     if(!prevBtn.disabled) prevBtn.onclick=()=>guardedLeave(()=>openWeightModal(idx-1));
 
-    const actionBtn = back.querySelector('#w-action');
+    const saveBtn = back.querySelector('#w-save');
     const t1input = form.querySelector('input[name="teil1"]');
     const t2input = form.querySelector('input[name="teil2"]');
-    let mode='next';
-    t1input.addEventListener('focus', ()=>{ mode='next'; actionBtn.textContent='Weiter'; });
-    t2input.addEventListener('focus', ()=>{ mode='save'; actionBtn.textContent='Speichern → nächstes Volk'; });
     /* Leeres Teilgewicht 1 beim Weiterspringen automatisch mit 0 besetzen, statt zu blockieren -
        eine Waagschale kann durchaus leer sein. */
     const advanceToTeil2 = () => {
       if(t1input.value.trim()==='') t1input.value='0';
       t2input.focus();
     };
+    back.querySelector('#w-next').onclick = advanceToTeil2;
+    saveBtn.onclick = () => doSave();
     t1input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); advanceToTeil2(); } });
     t2input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); doSave(); } });
 
@@ -3665,7 +3668,7 @@ async function renderGewicht() {
       const entryDate = dateInput.value || todayInput();
       const newWeight = Math.round((t1+t2)*10)/10;
       const totalStr = newWeight.toString();
-      actionBtn.disabled=true;
+      saveBtn.disabled=true;
       try{
         await api('POST','./api/entries',{
           colonyId: c.id, type:'Gewichtserfassung', date: entryDate, notes:'', photos:[], obs:[],
