@@ -2739,7 +2739,7 @@ async function renderHoneyStirBatch() {
             <div class="card-main" style="width:100%">
               <div class="card-title">${fmtDateTime(e.date)}${e.temp?` · ${esc(e.temp)}°C`:''}</div>
               <div class="card-sub">${esc(e.appearance||'')}</div>
-              ${e.photos && e.photos.length ? `<div class="photo-grid" style="margin-top:.4rem">${e.photos.map(p=>`<img class="thumb" src="${photoURL(p.id)}">`).join('')}</div>` : ''}
+              ${e.photos && e.photos.length ? `<div class="photos">${e.photos.map(p=>`<figure class="photo-fig"><img class="thumb" loading="lazy" src="${photoURL(p.id)}" data-full="${photoURL(p.id)}" data-cap=""></figure>`).join('')}</div>` : ''}
             </div>
           </li>`).join('')}
       </ul>`}`;
@@ -2754,6 +2754,7 @@ async function renderHoneyStirBatch() {
       if (en) entryModal(en);
     };
   });
+  app.querySelectorAll('.thumb').forEach((im)=>im.onclick=(ev)=>{ ev.stopPropagation(); openLightbox(im.dataset.full,im.dataset.cap); });
 }
 
 /* ---------- Fütterungs-Übersicht ---------- */
