@@ -75,12 +75,13 @@ body{
 .toolbar{display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap}
 .toolbar .btn.hidden{display:none!important}
 
-/* ---------- Startseite: Icon-Kacheln statt unterschiedlich breiter Reihen-Buttons ---------- */
-.home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:.5rem}
-.home-btn{flex-direction:column; gap:.3rem; padding:.6rem .3rem; min-height:70px; white-space:normal; line-height:1.15}
-.home-btn-icon{font-size:1.4rem; line-height:1}
-.home-btn-icon img{width:22px; height:22px; object-fit:contain}
-.home-btn-label{font-size:.68rem; font-weight:600; text-align:center}
+/* ---------- Startseite: Icon-Kacheln statt unterschiedlich breiter Reihen-Buttons -----------
+   minmax(100px,..) ist bewusst so gewaehlt, dass auf einem Handy (~375px) genau 3 pro Reihe passen. */
+.home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:.5rem}
+.home-btn{flex-direction:column; gap:.3rem; padding:.7rem .3rem; min-height:78px; white-space:normal; line-height:1.2}
+.home-btn-icon{font-size:1.6rem; line-height:1}
+.home-btn-icon img{width:26px; height:26px; object-fit:contain}
+.home-btn-label{font-size:.72rem; font-weight:700; text-align:center}
 .search-box{margin-bottom:1rem}
 .search-box .inp{width:100%}
 .search-box-wrap{position:relative}
