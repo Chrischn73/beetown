@@ -272,8 +272,12 @@ textarea.inp{resize:vertical}
 .vk-product-tile:active{background:var(--chip-bg)}
 .vk-product-tile.vk-active{border-color:var(--honey); background:var(--chip-bg)}
 .vk-product-name{font-weight:600; font-size:.85rem}
-.vk-product-price{font-size:.75rem; color:var(--ink-soft); margin-top:.15rem}
+.vk-product-price{font-size:.75rem; margin-top:.15rem; opacity:.75}
 .vk-product-qty-row{display:flex; align-items:center; justify-content:center; gap:.5rem; margin-top:.5rem}
+
+/* ---------- Gewicht: Rundgang-Modus (kuerzlich gewogene Voelker hervorheben) ---------- */
+.gewicht-item-done{background:rgba(47,158,68,.12)}
+:root[data-theme="dark"] .gewicht-item-done{background:rgba(81,207,102,.15)}
 
 /* ---------- Königin-Nummer & Herkunft Badge (v1.4) ---------- */
 .queen-nr{display:inline-block; background:var(--honey); color:#fff;

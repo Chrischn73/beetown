@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.33';
+const APP_VERSION = 'v2.8.34';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -1059,7 +1059,7 @@ async function renderApiaries() {
               ${k ? `<div class="reminder-group-head">📍 ${esc(k)}</div>` : '<div class="reminder-group-head reminder-no-apiary">Ohne Standort</div>'}
               <ul class="reminder-list">
                 ${groups[k].map(r=>{
-                  const due=isReminderDue(r);
+                  const due=isReminderDue(r) && !isReminderSnoozed(r);
                   const dateInfo = r.dueDate
                     ? `Fällig: ${fmtDate(r.dueDate)}${parseInt(r.remindDaysBefore)>0?' · ab '+parseInt(r.remindDaysBefore)+' Tagen vorher':''}`
                     : `Angelegt: ${fmtDateTime(r.createdAt)}`;
@@ -1068,6 +1068,10 @@ async function renderApiaries() {
                     <div class="reminder-body">
                       <div class="reminder-text">${due?'🔔 ':''}${esc(r.text)}</div>
                       <div class="reminder-date">${dateInfo}</div>
+                      ${due?`<div style="display:flex;gap:.4rem;margin-top:.35rem">
+                        <button type="button" class="btn btn-ghost btn-sm reminder-mute-btn" data-id="${r.id}" data-hours="24">Stumm 24h</button>
+                        <button type="button" class="btn btn-ghost btn-sm reminder-mute-btn" data-id="${r.id}" data-hours="3">Stumm 3h</button>
+                      </div>`:''}
                     </div>
                     <div style="display:flex;flex-direction:column;gap:.2rem;flex-shrink:0">
                       <button class="btn btn-ghost btn-sm reminder-edit" data-id="${r.id}">✏</button>
@@ -1154,6 +1158,10 @@ async function renderApiaries() {
   document.querySelectorAll('.reminder-del').forEach(b=>b.onclick=async()=>{
     if(!confirm('Erinnerung löschen?')) return;
     await api('DELETE','./api/reminders/'+b.dataset.id);
+    renderApiaries();
+  });
+  document.querySelectorAll('.reminder-mute-btn').forEach(b=>b.onclick=()=>{
+    snoozeReminder(b.dataset.id, parseInt(b.dataset.hours));
     renderApiaries();
   });
 }
@@ -1345,14 +1353,16 @@ function reminderForm(existing, apiaries, after) {
       close(); done();
     } : null);
 }
-/* Snooze: pro Gerät (localStorage), damit ein Handy das andere nicht stummschaltet */
+/* Snooze: pro Gerät (localStorage), damit ein Handy das andere nicht stummschaltet.
+   Speichert einen Unix-Zeitstempel (ms), damit auch stundenweises Stummschalten (3h) geht -
+   ein reines Datum (siehe fruehere Version) kann keine Uhrzeit abbilden. */
 function reminderSnoozeKey(id) { return 'snoozeReminder_'+id; }
 function isReminderSnoozed(r) {
-  try { const until = localStorage.getItem(reminderSnoozeKey(r.id)); return !!until && todayInput() < until; }
+  try { const until = parseInt(localStorage.getItem(reminderSnoozeKey(r.id))); return !!until && Date.now() < until; }
   catch(_) { return false; }
 }
-function snoozeReminder(id, days) {
-  try { localStorage.setItem(reminderSnoozeKey(id), addDays(todayInput(), days)); } catch(_) {}
+function snoozeReminder(id, hours) {
+  try { localStorage.setItem(reminderSnoozeKey(id), String(Date.now() + hours*3600*1000)); } catch(_) {}
 }
 
 /* Popup beim App-Start: fällige Erinnerungen anzeigen und direkt aufrufbar machen */
@@ -1368,10 +1378,13 @@ async function checkDueReminders() {
           <div class="reminder-text">🔔 ${esc(r.text)}</div>
           <div class="reminder-date">${r.apiaryName?'📍 '+esc(r.apiaryName)+' · ':''}Fällig: ${fmtDate(r.dueDate)}</div>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm reminder-snooze-btn" data-id="${r.id}" title="Bis morgen stummschalten">⏰ Stumm</button>
+        <div style="display:flex;flex-direction:column;gap:.2rem;flex-shrink:0">
+          <button type="button" class="btn btn-ghost btn-sm reminder-snooze-btn" data-id="${r.id}" data-hours="24" title="24 Stunden stummschalten">Stumm 24h</button>
+          <button type="button" class="btn btn-ghost btn-sm reminder-snooze-btn" data-id="${r.id}" data-hours="3" title="3 Stunden stummschalten">Stumm 3h</button>
+        </div>
       </li>`).join('')}
     </ul>
-    <p class="muted">Antippen, um die Erinnerung zu öffnen. Mit ⏰ bis morgen stummschalten.</p>`,
+    <p class="muted">Antippen, um die Erinnerung zu öffnen. Mit "Stumm" vorübergehend stummschalten.</p>`,
     async(data,close)=>{ close(); },
     null);
   document.querySelector('.modal-back .modal-foot')?.style.setProperty('display','none');
@@ -1388,7 +1401,7 @@ async function checkDueReminders() {
   document.querySelectorAll('.reminder-snooze-btn').forEach(btn=>{
     btn.onclick=(e)=>{
       e.stopPropagation();
-      snoozeReminder(btn.dataset.id, 1);
+      snoozeReminder(btn.dataset.id, parseInt(btn.dataset.hours));
       const li=btn.closest('li');
       li?.remove();
       if(!document.querySelectorAll('.reminder-due-popup-item').length){
@@ -3466,12 +3479,28 @@ async function renderGewicht() {
   const gewichtSettings = await apiGet('./api/settings').catch(()=>({}));
   const savedApiaryId = gewichtSettings.gewichtApiaryFilter || '';
   let currentApiaryId = apiaries.some(a => a.id === savedApiaryId) ? savedApiaryId : '';
+  const rundgangTage = parseInt(gewichtSettings.gewichtRundgangTage) || 4;
+  let onlyUnweighedMode = false;
   let all = [];
   const applyFilter = () => {
     all = currentApiaryId ? fullList.filter(c => c.apiaryId === currentApiaryId) : fullList.slice();
     all.sort((a,b) => a.name.localeCompare(b.name, 'de'));
   };
   applyFilter();
+
+  /* War das Volk innerhalb der Rundgang-Tage-Schwelle (Einstellungen) schon dran? */
+  const recentlyWeighed = (c) => {
+    if(!c.currentWeightDate) return false;
+    const diffDays = (new Date(todayInput()) - new Date(c.currentWeightDate)) / 86400000;
+    return diffDays <= rundgangTage;
+  };
+  /* Naechster Index zum Weiterspringen - im Rundgang-Modus wird ueber bereits
+     kuerzlich gewogene Voelker hinweg zum naechsten noch offenen gesprungen. */
+  const findNextIndex = (fromIdx) => {
+    if(!onlyUnweighedMode) return fromIdx+1;
+    for(let i=fromIdx+1;i<all.length;i++){ if(!recentlyWeighed(all[i])) return i; }
+    return all.length;
+  };
 
   app.innerHTML = `
     <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Hier kannst du alle Gewichte erfassen –
@@ -3481,6 +3510,10 @@ async function renderGewicht() {
       <option value="" ${currentApiaryId===''?'selected':''}>Alle Standorte</option>
       ${apiaries.map(a => `<option value="${esc(a.id)}" ${a.id===currentApiaryId?'selected':''}>${esc(a.name)}</option>`).join('')}
     </select>
+    <label class="check-item" style="margin-bottom:.8rem">
+      <input type="checkbox" id="gewicht-rundgang-toggle">
+      <span>Nur seit ${rundgangTage} Tagen nicht gewogene hervorheben</span>
+    </label>
     <div id="gewicht-body"></div>
     <div style="padding:1rem .8rem .5rem;display:flex;flex-direction:column;gap:.5rem">
       <button class="btn btn-primary" id="btn-set-ziel">🎯 Ziel-Gewicht setzen</button>
@@ -3502,8 +3535,9 @@ async function renderGewicht() {
           const fehlt = (hasCur && hasZiel) ? ziel - cur : null;
           const fehltText = fehlt === null ? '–' : (fehlt > 0 ? fmtKg(fehlt) : '✓');
           const fehltColor = fehlt === null ? 'var(--ink-soft)' : (fehlt > 0 ? 'var(--ink)' : 'var(--ok,#2f9e44)');
+          const done = onlyUnweighedMode && recentlyWeighed(c);
           return `
-            <li class="card gewicht-item" data-id="${esc(c.id)}" data-apiary="${esc(c.apiaryId)}"
+            <li class="card gewicht-item${done?' gewicht-item-done':''}" data-id="${esc(c.id)}" data-apiary="${esc(c.apiaryId)}"
                 style="display:grid;grid-template-columns:1fr 52px 52px 60px;gap:.5rem;align-items:center;padding:.55rem .8rem;touch-action:manipulation;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none">
               <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(c.name)}</div>
               <div style="text-align:right;font-size:.85rem;color:var(--ink-soft);font-variant-numeric:tabular-nums;line-height:1.2">${hasCur ? fmtKg(cur) : '–'}${c.currentWeightDate ? `<div style="font-size:.62rem;opacity:.75">${fmtDateShort(c.currentWeightDate)}</div>` : ''}</div>
@@ -3551,9 +3585,9 @@ async function renderGewicht() {
 
   /* Eigenes (nicht auf openModal() basierendes) Modal fuer die Gewichtserfassung:
      Speichern-Aktion oben statt unten, kein X, Fenster oben statt als Bottom-Sheet
-     ausgerichtet, Abbrechen unten. Der obere Button heisst "Weiter" waehrend der
-     Cursor in Teilgewicht 1 steht und wechselt zu "Speichern" sobald Teilgewicht 2
-     fokussiert ist. */
+     ausgerichtet, Abbrechen/Zurueck/Weiterspringen unten. Der obere Button heisst
+     "Weiter" waehrend der Cursor in Teilgewicht 1 steht und wechselt zu
+     "Speichern → nächstes Volk" sobald Teilgewicht 2 fokussiert ist. */
   const openWeightModal = (idx) => {
     if(idx<0 || idx>=all.length) return;
     const c = all[idx];
@@ -3570,13 +3604,23 @@ async function renderGewicht() {
       <div style="padding:0 1rem .6rem;font-size:.85rem;color:var(--ink-soft)">Bisheriges Gewicht: <strong style="color:var(--ink)">${oldWeightText}</strong></div>
       <div style="padding:0 1rem .8rem"><button type="button" class="btn btn-primary" id="w-action" style="width:100%">Weiter</button></div>
       <form class="modal-body">
-        ${field('Datum','date',todayInput(),true,'date')}
+        <div style="display:flex;align-items:center;gap:.6rem;margin:.4rem 0">
+          <label class="lbl" style="margin:0;flex-shrink:0">Datum</label>
+          <input class="inp" name="date" type="date" value="${todayInput()}" style="flex:1;padding:.35rem .6rem">
+          <button type="button" class="btn btn-ghost btn-sm date-clear" data-clear="date" title="Datum löschen" style="flex-shrink:0">✕</button>
+        </div>
         <label class="lbl">Teilgewicht 1 (kg)</label>
         <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3">
         <label class="lbl" style="margin-top:.5rem">Teilgewicht 2 (kg)</label>
         <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1">
       </form>
-      <div class="modal-foot" style="justify-content:center"><button type="button" class="btn btn-ghost" id="w-cancel" style="width:100%">Abbrechen</button></div>
+      <div class="modal-foot" style="flex-direction:column;gap:.5rem;align-items:stretch">
+        <div style="display:flex;gap:.5rem">
+          <button type="button" class="btn btn-ghost btn-sm" id="w-prev" style="flex:0 0 auto" ${idx<=0?'disabled':''}>← Zurück</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="w-skip" style="flex:1">Zum nächsten Volk springen</button>
+        </div>
+        <button type="button" class="btn btn-ghost" id="w-cancel" style="width:100%">Abbrechen</button>
+      </div>
     </div>`;
     document.body.appendChild(back);
 
@@ -3587,17 +3631,22 @@ async function renderGewicht() {
       if(inp) inp.value='';
     });
     const close=()=>back.remove();
-    back.querySelector('#w-cancel').onclick=()=>{
+    const guardedLeave = (next) => {
       if(formIsDirty(form,initialValues) && !confirm('Ohne zu speichern schließen?')) return;
       close();
+      next();
     };
+    back.querySelector('#w-cancel').onclick=()=>guardedLeave(()=>{});
+    back.querySelector('#w-skip').onclick=()=>guardedLeave(()=>openWeightModal(findNextIndex(idx)));
+    const prevBtn = back.querySelector('#w-prev');
+    if(!prevBtn.disabled) prevBtn.onclick=()=>guardedLeave(()=>openWeightModal(idx-1));
 
     const actionBtn = back.querySelector('#w-action');
     const t1input = form.querySelector('input[name="teil1"]');
     const t2input = form.querySelector('input[name="teil2"]');
     let mode='next';
     t1input.addEventListener('focus', ()=>{ mode='next'; actionBtn.textContent='Weiter'; });
-    t2input.addEventListener('focus', ()=>{ mode='save'; actionBtn.textContent='Speichern'; });
+    t2input.addEventListener('focus', ()=>{ mode='save'; actionBtn.textContent='Speichern → nächstes Volk'; });
     t1input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); t2input.focus(); } });
     t2input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); doSave(); } });
 
@@ -3628,11 +3677,11 @@ async function renderGewicht() {
           <div style="margin-top:.15rem;font-size:1.25rem;font-weight:800">${diffSign}${fmtKg(Math.abs(diff))} kg</div>`;
       }
       showToast(toastMsg, 6000, true);
-      openWeightModal(idx+1);
+      openWeightModal(findNextIndex(idx));
     };
     actionBtn.onclick = ()=>{ if(mode==='next'){ t2input.focus(); } else { doSave(); } };
 
-    setTimeout(()=>{ t1input.focus(); }, 50);
+    t1input.focus();
   };
 
   renderList();
@@ -3641,6 +3690,11 @@ async function renderGewicht() {
     currentApiaryId = ev.target.value;
     api('POST','./api/settings',{gewichtApiaryFilter: currentApiaryId}).catch(()=>{});
     applyFilter();
+    renderList();
+  };
+
+  document.getElementById('gewicht-rundgang-toggle').onchange = (ev) => {
+    onlyUnweighedMode = ev.target.checked;
     renderList();
   };
 
@@ -3710,6 +3764,15 @@ function printGewichtList(all, fmtKg) {
 /* ---------- Honig-Verkauf ---------- */
 function fmtEUR(n){ return (Math.round(((parseFloat(n)||0)+Number.EPSILON)*100)/100).toFixed(2).replace('.',',')+' €'; }
 const VERKAUF_CATEGORIES = ['Box','Familie','Nachbarn','Freunde','Firma','Weihnachten'];
+/* Schwarz oder Weiß je nach Helligkeit der Hintergrundfarbe, damit der Produkt-Kachel-Text
+   bei beliebig gewählten Farben lesbar bleibt. */
+function readableTextColor(hex){
+  const h = (hex||'').replace('#','');
+  if(h.length!==6) return '#1a1a1a';
+  const r=parseInt(h.substr(0,2),16), g=parseInt(h.substr(2,2),16), b=parseInt(h.substr(4,2),16);
+  const yiq = (r*299+g*587+b*114)/1000;
+  return yiq>=150 ? '#1a1a1a' : '#ffffff';
+}
 
 /* Wirtschaftsjahr-Grenzen: startet am Stichtag (Format "MM-DD") des jeweiligen Startjahres,
    endet am selben Stichtag im Folgejahr (exklusiv). */
@@ -3789,7 +3852,7 @@ async function renderVerkauf(){
       ${activeProducts.length===0 ? '<p class="muted">Keine aktiven Produkte – unter „Produkte" anlegen.</p>' : `
       <div class="vk-product-grid">
         ${activeProducts.map(p=>`
-          <div class="vk-product-tile" data-id="${esc(p.id)}">
+          <div class="vk-product-tile" data-id="${esc(p.id)}" ${p.color?`style="background:${esc(p.color)};color:${readableTextColor(p.color)}"`:''}>
             <div class="vk-product-name">${esc(p.name)}</div>
             <div class="vk-product-price">${fmtEUR(p.price)}</div>
             <div class="vk-product-qty-row">
@@ -4056,7 +4119,7 @@ async function renderVerkauf(){
         ${products.slice().sort((a,b)=>a.sortOrder-b.sortOrder).map(p=>`
           <li class="card" data-edit="${esc(p.id)}" style="cursor:pointer;opacity:${p.active?1:.5}">
             <div class="card-main">
-              <div class="card-title">${esc(p.name)}</div>
+              <div class="card-title">${p.color?`<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${esc(p.color)};border:1px solid var(--line);margin-right:.4rem;vertical-align:middle"></span>`:''}${esc(p.name)}</div>
               <div class="card-sub">${fmtEUR(p.price)}${p.sizeGrams?' · '+p.sizeGrams+'g':''}${p.active?'':' · ausgeblendet'}</div>
             </div>
           </li>`).join('')}
@@ -4087,9 +4150,15 @@ async function renderVerkauf(){
       <label class="lbl">Glasgröße (g, optional)</label>
       <input class="inp" name="sizeGrams" type="number" min="0" value="${p&&p.sizeGrams?p.sizeGrams:''}">
       <label class="check-item" style="margin-top:.6rem"><input type="checkbox" id="vk-product-active" ${(!p||p.active)?'checked':''}><span>Aktiv (in der Schnellerfassung anzeigen)</span></label>
+      <label class="check-item" style="margin-top:.5rem"><input type="checkbox" id="vk-product-color-enabled" ${p&&p.color?'checked':''}><span>Eigene Button-Farbe</span></label>
+      <div id="vk-product-color-row" style="margin-top:.4rem${p&&p.color?'':';display:none'}">
+        <input class="inp" id="vk-product-color-input" type="color" value="${p&&p.color?esc(p.color):'#ffd43b'}" style="width:4rem;height:2.6rem;padding:.2rem">
+      </div>
     `, async(data,close)=>{
       if(!data.name) return alert('Bitte einen Namen eingeben.');
-      const payload = { name:data.name, price:parseDecimal(data.price)||0, sizeGrams:parseInt(data.sizeGrams)||0, active: document.getElementById('vk-product-active').checked };
+      const colorEnabled = document.getElementById('vk-product-color-enabled').checked;
+      const color = colorEnabled ? document.getElementById('vk-product-color-input').value : '';
+      const payload = { name:data.name, price:parseDecimal(data.price)||0, sizeGrams:parseInt(data.sizeGrams)||0, active: document.getElementById('vk-product-active').checked, color };
       if(isNew){
         const res = await api('POST','./api/honey_products', payload);
         products.push({id:res.id, ...payload, sortOrder:products.length, createdAt:new Date().toISOString()});
@@ -4104,6 +4173,9 @@ async function renderVerkauf(){
       products = products.filter(x=>x.id!==p.id);
       close(); drawProdukte();
     });
+    document.getElementById('vk-product-color-enabled').onchange = (e) => {
+      document.getElementById('vk-product-color-row').style.display = e.target.checked ? '' : 'none';
+    };
   }
 
   drawTab();
@@ -4229,7 +4301,11 @@ async function renderSettings() {
     ${settingsSection('gewicht','Gewicht',`
       <p class="muted">Ziel-Gewicht, das neuen Völkern automatisch zugewiesen wird.</p>
       <label class="lbl">Ziel-Gewicht (kg)</label>
-      <input class="inp" id="ziel-gewicht" type="number" step="0.1" min="0" placeholder="z.B. 44">`)}
+      <input class="inp" id="ziel-gewicht" type="number" step="0.1" min="0" placeholder="z.B. 44">
+      <p class="muted" style="margin-top:1rem">Rundgang-Modus auf der Gewicht-Seite: Völker, deren letzte Wägung
+      höchstens so viele Tage zurückliegt, gelten als "erledigt" (grün hervorgehoben).</p>
+      <label class="lbl">Tage-Schwelle</label>
+      <input class="inp" id="gewicht-rundgang-tage" type="number" min="1" max="60" value="4">`)}
     ${settingsSection('oxalblockgap','Oxalsäure-Blockbehandlung',`
       <p class="muted">Nach jeder gespeicherten Blockstufe wird automatisch eine Erinnerung für die
       nächste fällige Stufe angelegt (und die vorherige Auto-Erinnerung entfernt).</p>
@@ -4396,6 +4472,8 @@ async function renderSettings() {
     if(ed) ed.value = s.eilageDays  || '28';
     const zg = document.getElementById('ziel-gewicht');
     if(zg) zg.value = s.zielGewicht || '';
+    const grt = document.getElementById('gewicht-rundgang-tage');
+    if(grt) grt.value = s.gewichtRundgangTage || '4';
     const obg = document.getElementById('oxal-block-gap-days');
     if(obg) obg.value = s.oxalBlockGapDays || '4';
     const bkP = document.getElementById('bk-prefix');
@@ -4478,6 +4556,8 @@ async function renderSettings() {
     if(ed) payload.eilageDays=ed;
     const zg=document.getElementById('ziel-gewicht')?.value;
     if(zg) payload.zielGewicht=zg;
+    const grt=document.getElementById('gewicht-rundgang-tage')?.value;
+    if(grt) payload.gewichtRundgangTage=grt;
     const obg=document.getElementById('oxal-block-gap-days')?.value;
     if(obg) payload.oxalBlockGapDays=obg;
     const bkPEl=document.getElementById('bk-prefix');
