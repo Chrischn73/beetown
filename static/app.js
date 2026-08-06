@@ -3940,8 +3940,8 @@ async function renderVerkauf(){
       <div class="vk-product-grid">
         ${sonstigeProducts.map(tileHTML).join('')}
       </div>`:''}`}
-      <div id="vk-selection-summary" class="muted" style="font-size:1rem;margin-top:1rem;display:none"></div>
-      <label class="lbl" style="margin-top:.3rem">Betrag (€)</label>
+      <div id="vk-selection-summary" class="muted" style="font-size:1rem;margin-top:1rem;padding-top:.6rem;border-top:1px solid var(--line);display:none"></div>
+      <label class="lbl" style="margin-top:.6rem">Betrag (€)</label>
       <input class="inp" id="vk-total" type="text" inputmode="decimal" value="0,00">
       <label class="lbl">Notiz (optional)</label>
       <input class="inp" id="vk-notes" type="text" placeholder="z. B. Geschenkbox klein">
