@@ -3938,7 +3938,7 @@ async function renderVerkauf(){
       <div class="vk-product-grid">
         ${sonstigeProducts.map(tileHTML).join('')}
       </div>`:''}`}
-      <div id="vk-selection-summary" class="muted" style="font-size:.85rem;margin-top:1rem;display:none"></div>
+      <div id="vk-selection-summary" class="muted" style="font-size:1rem;margin-top:1rem;display:none"></div>
       <label class="lbl" style="margin-top:.3rem">Betrag (€)</label>
       <input class="inp" id="vk-total" type="text" inputmode="decimal" value="0,00">
       <label class="lbl">Notiz (optional)</label>
@@ -3955,8 +3955,8 @@ async function renderVerkauf(){
     };
     const summaryEl = document.getElementById('vk-selection-summary');
     const updateSummary = () => {
-      const parts = activeProducts.filter(p=>qty[p.id]>0).map(p=>`${qty[p.id]}× ${p.name}`);
-      summaryEl.textContent = parts.join(', ');
+      const parts = activeProducts.filter(p=>qty[p.id]>0).map(p=>`<div>${qty[p.id]}× ${esc(p.name)}</div>`);
+      summaryEl.innerHTML = parts.join('');
       summaryEl.style.display = parts.length ? '' : 'none';
     };
     totalInput.addEventListener('input', ()=>{ totalManual = true; });
