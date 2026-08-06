@@ -70,15 +70,21 @@ ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 # Einmalige Startbelegung fuer honey_products (Name, Preis in Euro, Gewicht in Gramm, Button-Farbe) -
 # entspricht den in der bisher genutzten Excel-Liste tatsaechlich verwendeten Sorten/Groessen.
 DEFAULT_HONEY_PRODUCTS = [
+    ("Raps 500g", 9.0, 500, "#ffffff"),
+    ("Raps 250g", 6.0, 250, "#ffffff"),
     ("Frühtracht 500g", 9.0, 500, "#ffd43b"),
     ("Frühtracht 250g", 6.0, 250, "#ffd43b"),
     ("Sommertracht 500g", 9.0, 500, "#e8590c"),
     ("Sommertracht 250g", 6.0, 250, "#e8590c"),
-    ("Raps 500g", 9.0, 500, "#ffffff"),
-    ("Raps 250g", 6.0, 250, "#ffffff"),
     ("Sommertracht flüssig 500g", 9.0, 500, "#8b0000"),
     ("Sommertracht flüssig 250g", 6.0, 250, "#8b0000"),
 ]
+# Feste sortOrder-Zuordnung fuer die Standard-Produkte (Raps, Fruehtracht, Sommertracht,
+# Sommertracht fluessig - in dieser Reihenfolge) - wird bei jedem Start erneut angewendet,
+# damit sie auch bei bereits existierenden Installationen (vor dieser Reihenfolge angelegt)
+# korrigiert wird. Neu angelegte eigene Produkte bekommen ueber maxSort+1 weiterhin einen
+# hoeheren Wert und landen damit automatisch darunter.
+HONEY_PRODUCT_SORTORDER_BY_NAME = {name: i for i, (name, *_rest) in enumerate(DEFAULT_HONEY_PRODUCTS)}
 # Nach Namens-Praefix, um Farben auch bei bereits vorhandenen (aelteren) Produkten
 # nachtraeglich zu setzen (siehe Migration/Backfill in init_db()) - Reihenfolge wichtig:
 # "Sommertracht fluessig" muss VOR dem allgemeineren "Sommertracht" stehen, sonst
@@ -236,6 +242,8 @@ def init_db():
     for prefix, color in HONEY_PRODUCT_COLOR_BY_PREFIX:
         con.execute("UPDATE honey_products SET color=? WHERE (color IS NULL OR color='') AND name LIKE ?",
             (color, prefix+'%'))
+    for name, order in HONEY_PRODUCT_SORTORDER_BY_NAME.items():
+        con.execute("UPDATE honey_products SET sortOrder=? WHERE name=?", (order, name))
     if column_exists(con,"entries","photoIds"):
         for r in con.execute("SELECT id, photoIds FROM entries WHERE photos IS NULL").fetchall():
             try: ids = json.loads(r["photoIds"] or "[]")

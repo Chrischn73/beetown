@@ -264,16 +264,28 @@ textarea.inp{resize:vertical}
 .cnt-btn:active{background:var(--honey); color:#fff}
 .cnt-val{min-width:22px; text-align:center; font-weight:700; font-size:1rem}
 
-/* ---------- Honig-Verkauf: Produkt-Kacheln (Schnellerfassung) ---------- */
-.vk-product-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:.6rem; margin-top:.5rem}
+/* ---------- Honig-Verkauf: Produkt-Kacheln (Schnellerfassung) - 20% kleiner als Standardgroesse ---------- */
+.vk-product-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(112px,1fr)); gap:.5rem; margin-top:.5rem}
 .vk-product-tile{border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);
-  padding:.7rem; text-align:center; cursor:pointer; user-select:none; -webkit-user-select:none;
+  padding:.56rem; text-align:center; cursor:pointer; user-select:none; -webkit-user-select:none;
   touch-action:manipulation; transition:border-color .15s, background .15s}
 .vk-product-tile:active{background:var(--chip-bg)}
 .vk-product-tile.vk-active{border-color:var(--honey); background:var(--chip-bg)}
-.vk-product-name{font-weight:600; font-size:.85rem}
-.vk-product-price{font-size:.75rem; margin-top:.15rem; opacity:.75}
-.vk-product-qty-row{display:flex; align-items:center; justify-content:center; gap:.5rem; margin-top:.5rem}
+.vk-product-name{font-weight:600; font-size:.68rem}
+.vk-product-price{font-size:.6rem; margin-top:.12rem; opacity:.75}
+.vk-product-qty-row{display:flex; align-items:center; justify-content:center; gap:.4rem; margin-top:.4rem}
+.vk-product-tile .cnt-btn{width:24px; height:24px; font-size:.88rem}
+.vk-product-tile .cnt-val{font-size:.8rem; min-width:18px}
+
+/* ---------- Honig-Verkauf: Verkaufstabelle - vertikale Spaltenkoepfe je Produkt ---------- */
+.vk-th-vertical{writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; text-align:left; vertical-align:bottom; padding:.4rem .3rem !important}
+
+/* ---------- Honig-Verkauf: Summen-Boxen (je Produkt / je Sorte) ---------- */
+.vk-summary-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:.6rem; margin-top:.8rem}
+.vk-summary-box{border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); padding:.7rem .9rem}
+.vk-summary-row{display:flex; justify-content:space-between; gap:.6rem; font-size:.82rem; padding:.2rem 0; font-variant-numeric:tabular-nums}
+.vk-summary-row-strong{font-weight:700; font-size:.88rem}
+.vk-summary-row-total{border-top:1px solid var(--line); margin-top:.3rem; padding-top:.4rem}
 
 /* ---------- Gewicht: Rundgang-Modus (noch nicht gewogene Voelker hervorheben) ---------- */
 .gewicht-item-open{background:rgba(240,140,0,.15)}

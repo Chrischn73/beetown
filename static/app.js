@@ -3937,11 +3937,20 @@ async function renderVerkauf(){
     const cols = [...colSet].sort((a,b)=>(nameOrder[a]??999)-(nameOrder[b]??999) || a.localeCompare(b,'de'));
     const qtyFor = (s,name) => { const it=s.items.find(i=>i.productName===name); return it?it.qty:null; };
     const colTotal = (name) => filtered.reduce((s,x)=>{ const it=x.items.find(i=>i.productName===name); return s+(it?it.qty:0); },0);
+    const colRevenue = (name) => filtered.reduce((s,x)=>{ const it=x.items.find(i=>i.productName===name); return s+(it?it.qty*it.unitPrice:0); },0);
 
     const gramsByName = {}; products.forEach(p=>{ gramsByName[p.name]=p.sizeGrams; });
-    let totalGrams = 0;
-    filtered.forEach(s=>s.items.forEach(it=>{ const g=gramsByName[it.productName]; if(g) totalGrams += g*it.qty; }));
-    const perProductSummary = cols.map(c=>gramsByName[c]?`${esc(c)}: ${colTotal(c)}`:null).filter(Boolean).join(' · ');
+    /* Sorte = Produktname ohne die abschliessende Glasgroesse ("Frühtracht 500g" -> "Frühtracht"),
+       damit sich Glasgroessen derselben Sorte zu einer Zeile zusammenfassen lassen. */
+    const productBase = (name) => name.replace(/\s*\d+\s*g\s*$/i,'').trim() || name;
+    const sortenMap = new Map();
+    cols.forEach(c => {
+      const base = productBase(c), qty = colTotal(c), grams = gramsByName[c]||0;
+      const s = sortenMap.get(base) || {name:base, qty:0, revenue:0, kg:0};
+      s.qty += qty; s.revenue += colRevenue(c); s.kg += grams ? (grams*qty)/1000 : 0;
+      sortenMap.set(base, s);
+    });
+    const sorten = [...sortenMap.values()];
 
     bodyEl.innerHTML = `
       <div class="toolbar" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
@@ -3956,7 +3965,7 @@ async function renderVerkauf(){
         <table class="data-table data-table-compact">
           <thead><tr>
             <th>Datum</th><th>Kategorie</th><th>Name</th>
-            ${cols.map(c=>`<th style="text-align:right">${esc(c)}</th>`).join('')}
+            ${cols.map(c=>`<th class="vk-th-vertical"><span>${esc(c)}</span></th>`).join('')}
             <th style="text-align:right">Betrag</th><th>Notiz</th><th></th>
           </tr></thead>
           <tbody>
@@ -3976,12 +3985,22 @@ async function renderVerkauf(){
           </tr></tfoot>
         </table>
       </div>
-      ${perProductSummary || totalGrams ? `<p class="muted" style="font-size:.8rem;margin-top:.5rem">${perProductSummary}${perProductSummary&&totalGrams?' · ':''}${totalGrams?`Gesamt in kg: ${fmtNum(totalGrams/1000)}`:''}</p>` : ''}
+      <div class="vk-summary-grid">
+        <div class="vk-summary-box">
+          <div class="section-h" style="margin:0 0 .3rem">Je Produkt</div>
+          ${cols.map(c=>`<div class="vk-summary-row"><span>${esc(c)}</span><span>${colTotal(c)} Stk · ${fmtEUR(colRevenue(c))}</span></div>`).join('')}
+        </div>
+        <div class="vk-summary-box">
+          <div class="section-h" style="margin:0 0 .3rem">Je Sorte</div>
+          ${sorten.map(s=>`<div class="vk-summary-row vk-summary-row-strong"><span>${esc(s.name)}</span><span>${s.qty} Stk${s.kg?' · '+fmtNum(s.kg)+' kg':''} · ${fmtEUR(s.revenue)}</span></div>`).join('')}
+          <div class="vk-summary-row vk-summary-row-strong vk-summary-row-total"><span>Gesamt</span><span>${sorten.reduce((a,s)=>a+s.qty,0)} Stk · ${fmtNum(sorten.reduce((a,s)=>a+s.kg,0))} kg · ${fmtEUR(revenue)}</span></div>
+        </div>
+      </div>
       `}`;
 
     document.getElementById('vk-wj-select').onchange = (e)=>{ selectedWJYear=parseInt(e.target.value); drawVerkaeufe(); };
     const printBtn = document.getElementById('vk-print-verkaeufe');
-    if(printBtn) printBtn.onclick = () => printVerkaufList(filtered, cols, wj, revenue);
+    if(printBtn) printBtn.onclick = () => printVerkaufList(filtered, cols, wj, revenue, sorten);
     bodyEl.querySelectorAll('tr[data-edit]').forEach(tr=>{
       tr.onclick = (e) => { if(e.target.closest('[data-del]')) return; openSaleEditModal(sales.find(s=>s.id===tr.dataset.edit)); };
     });
@@ -4189,25 +4208,31 @@ async function renderVerkauf(){
   drawTab();
 }
 
-function printVerkaufList(filtered, cols, wj, revenue){
+function printVerkaufList(filtered, cols, wj, revenue, sorten){
   const dateStr = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
   const rowsHtml = filtered.map(s=>{
     const qtyCells = cols.map(c=>{const it=s.items.find(i=>i.productName===c); return `<td>${it?it.qty:''}</td>`;}).join('');
     return `<tr><td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td><td>${esc(s.buyerName||'')}</td>${qtyCells}<td>${fmtEUR(s.total)}</td><td>${esc(s.notes||'')}</td></tr>`;
   }).join('');
+  const sortenHtml = (sorten||[]).map(s=>`<tr><td>${esc(s.name)}</td><td>${s.qty}</td><td>${s.kg?fmtNum(s.kg):'–'}</td><td>${fmtEUR(s.revenue)}</td></tr>`).join('');
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Verkäufe ${wj.label}</title>
     <style>
       body{font-family:Arial,sans-serif;margin:1.5cm;color:#000}
       h1{font-size:18px;margin:0 0 .2cm 0}
+      h2{font-size:13px;margin:.8cm 0 .2cm 0}
       .sub{font-size:11px;color:#555;margin-bottom:.5cm}
       table{width:100%;border-collapse:collapse;font-size:10px}
       th,td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}
       th{background:#f0f0f0;font-weight:700}
+      .vertical{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;text-align:left}
     </style></head><body>
     <h1>Honig-Verkäufe – Wirtschaftsjahr ${wj.label}</h1>
     <div class="sub">Erstellt: ${dateStr} · Gesamt: ${fmtEUR(revenue)}</div>
-    <table><thead><tr><th>Datum</th><th>Kategorie</th><th>Name</th>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}<th>Betrag</th><th>Notiz</th></tr></thead>
+    <table><thead><tr><th>Datum</th><th>Kategorie</th><th>Name</th>${cols.map(c=>`<th class="vertical">${esc(c)}</th>`).join('')}<th>Betrag</th><th>Notiz</th></tr></thead>
     <tbody>${rowsHtml}</tbody></table>
+    <h2>Je Sorte</h2>
+    <table><thead><tr><th>Sorte</th><th>Stück</th><th>kg</th><th>Betrag</th></tr></thead>
+    <tbody>${sortenHtml}</tbody></table>
     <script>window.onload=()=>{window.print();}<\/script>
     </body></html>`;
   const w = window.open('', '_blank');
