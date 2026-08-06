@@ -76,13 +76,16 @@ DEFAULT_HONEY_PRODUCTS = [
     ("Sommertracht 250g", 6.0, 250, "#e8590c"),
     ("Raps 500g", 9.0, 500, "#ffffff"),
     ("Raps 250g", 6.0, 250, "#ffffff"),
-    ("Sommertracht flüssig 500g", 9.0, 500, "#e8590c"),
-    ("Sommertracht flüssig 250g", 6.0, 250, "#e8590c"),
+    ("Sommertracht flüssig 500g", 9.0, 500, "#8b0000"),
+    ("Sommertracht flüssig 250g", 6.0, 250, "#8b0000"),
 ]
 # Nach Namens-Praefix, um Farben auch bei bereits vorhandenen (aelteren) Produkten
-# nachtraeglich zu setzen (siehe Migration/Backfill in init_db()).
+# nachtraeglich zu setzen (siehe Migration/Backfill in init_db()) - Reihenfolge wichtig:
+# "Sommertracht fluessig" muss VOR dem allgemeineren "Sommertracht" stehen, sonst
+# wuerde die generischere Regel zuerst zuschlagen (beide Namen teilen das Praefix).
 HONEY_PRODUCT_COLOR_BY_PREFIX = [
     ("Frühtracht", "#ffd43b"),
+    ("Sommertracht flüssig", "#8b0000"),
     ("Sommertracht", "#e8590c"),
     ("Raps", "#ffffff"),
 ]

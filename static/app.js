@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.02';
+const APP_VERSION = 'v2.9.03';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -3512,7 +3512,7 @@ async function renderGewicht() {
     </select>
     <label class="check-item" style="margin-bottom:.8rem">
       <input type="checkbox" id="gewicht-rundgang-toggle">
-      <span>Nur seit ${rundgangTage} Tagen nicht gewogene hervorheben</span>
+      <span>Nicht gewogen (${rundgangTage} Tage)</span>
     </label>
     <div id="gewicht-body"></div>
     <div style="padding:1rem .8rem .5rem;display:flex;flex-direction:column;gap:.5rem">
@@ -3535,9 +3535,9 @@ async function renderGewicht() {
           const fehlt = (hasCur && hasZiel) ? ziel - cur : null;
           const fehltText = fehlt === null ? '–' : (fehlt > 0 ? fmtKg(fehlt) : '✓');
           const fehltColor = fehlt === null ? 'var(--ink-soft)' : (fehlt > 0 ? 'var(--ink)' : 'var(--ok,#2f9e44)');
-          const done = onlyUnweighedMode && recentlyWeighed(c);
+          const needsWeighing = onlyUnweighedMode && !recentlyWeighed(c);
           return `
-            <li class="card gewicht-item${done?' gewicht-item-done':''}" data-id="${esc(c.id)}" data-apiary="${esc(c.apiaryId)}"
+            <li class="card gewicht-item${needsWeighing?' gewicht-item-open':''}" data-id="${esc(c.id)}" data-apiary="${esc(c.apiaryId)}"
                 style="display:grid;grid-template-columns:1fr 52px 52px 60px;gap:.5rem;align-items:center;padding:.55rem .8rem;touch-action:manipulation;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none">
               <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(c.name)}</div>
               <div style="text-align:right;font-size:.85rem;color:var(--ink-soft);font-variant-numeric:tabular-nums;line-height:1.2">${hasCur ? fmtKg(cur) : '–'}${c.currentWeightDate ? `<div style="font-size:.62rem;opacity:.75">${fmtDateShort(c.currentWeightDate)}</div>` : ''}</div>
@@ -3647,12 +3647,20 @@ async function renderGewicht() {
     let mode='next';
     t1input.addEventListener('focus', ()=>{ mode='next'; actionBtn.textContent='Weiter'; });
     t2input.addEventListener('focus', ()=>{ mode='save'; actionBtn.textContent='Speichern → nächstes Volk'; });
-    t1input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); t2input.focus(); } });
+    /* Leeres Teilgewicht 1 beim Weiterspringen automatisch mit 0 besetzen, statt zu blockieren -
+       eine Waagschale kann durchaus leer sein. */
+    const advanceToTeil2 = () => {
+      if(t1input.value.trim()==='') t1input.value='0';
+      t2input.focus();
+    };
+    t1input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); advanceToTeil2(); } });
     t2input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); doSave(); } });
 
     const doSave = async()=>{
+      if(t1input.value.trim()==='') t1input.value='0';
       const t1 = parseDecimal(t1input.value), t2 = parseDecimal(t2input.value);
-      if(isNaN(t1) || isNaN(t2)) return alert('Bitte beide Teilgewichte eingeben.');
+      if(isNaN(t1)){ alert('Teilgewicht 1 ist ungültig.'); t1input.focus(); return; }
+      if(isNaN(t2)){ alert('Bitte Teilgewicht 2 eingeben.'); t2input.focus(); return; }
       const dateInput = form.querySelector('input[name="date"]');
       const entryDate = dateInput.value || todayInput();
       const newWeight = Math.round((t1+t2)*10)/10;
@@ -3679,7 +3687,7 @@ async function renderGewicht() {
       showToast(toastMsg, 6000, true);
       openWeightModal(findNextIndex(idx));
     };
-    actionBtn.onclick = ()=>{ if(mode==='next'){ t2input.focus(); } else { doSave(); } };
+    actionBtn.onclick = ()=>{ if(mode==='next'){ advanceToTeil2(); } else { doSave(); } };
 
     t1input.focus();
   };
