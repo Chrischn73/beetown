@@ -46,14 +46,14 @@ async function loadSettings() {
     const homeVis = {};
     HOME_BTN_CONFIG.forEach(c => { homeVis[c.key] = (s['homeBtn_'+c.key] !== 'false'); });
     window._homeBtnVis = homeVis;
-    const homeSize = {}, homeSizePx = {}, homeShowText = {};
+    const homeSize = {}, homeHeight = {}, homeShowText = {};
     HOME_BTN_SIZE_CONFIG.forEach(c => {
       homeSize[c.key] = s['homeBtnSize_'+c.key] || c.defaultSize;
-      homeSizePx[c.key] = s['homeBtnSizePx_'+c.key] || '';
+      homeHeight[c.key] = parseInt(s['homeBtnHeight_'+c.key]) || c.defaultHeight;
       homeShowText[c.key] = (s['homeBtnShowText_'+c.key] !== 'false');
     });
     window._homeBtnSize = homeSize;
-    window._homeBtnSizePx = homeSizePx;
+    window._homeBtnHeight = homeHeight;
     window._homeBtnShowText = homeShowText;
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
   } catch(_) {}
@@ -74,29 +74,29 @@ const HOME_BTN_CONFIG = [
 function homeBtnHidden(key) {
   return (window._homeBtnVis && window._homeBtnVis[key]===false) ? 'hidden' : '';
 }
-/* Alle Startseiten-Buttons, fuer die Größe + Text-Anzeige einzeln einstellbar sind -
+/* Breite (klein/mittel/groß) und Höhe (freie Pixelzahl) sind bewusst unabhängig
+   voneinander einstellbar: die Breite bestimmt nur, wie viele Kacheln pro Reihe
+   passen (ueber grid-column auf einem 12-Spalten-Grid: klein=4, mittel=3, groß=2
+   pro Reihe), die Höhe steuert unabhängig davon die Kachel-Höhe UND (ueber densel­ben
+   Skalierungsfaktor gegenueber der Standardhöhe) automatisch mit, wie groß Icon und
+   Text ausfallen - eine höhere Kachel bekommt automatisch ein größeres Icon. */
+const HOME_BTN_WIDTH_SPANS = { klein: 3, mittel: 4, gross: 6 };
+const HOME_BTN_HEIGHT_BASE = 50;
+/* Alle Startseiten-Buttons, fuer die Breite/Höhe + Text-Anzeige einzeln einstellbar sind -
    HOME_BTN_CONFIG (ausblendbar) plus die immer sichtbaren Einstellungen/Hilfe.
    Deren Standardgröße ist bewusst "klein" (Utility-Buttons, keine Hauptkategorie). */
 const HOME_BTN_SIZE_CONFIG = [
-  ...HOME_BTN_CONFIG.map(c => ({...c, defaultSize:'mittel'})),
-  {key:'settings', label:'Einstellungen', defaultSize:'klein', noHide:true},
-  {key:'hilfe',    label:'Hilfe',         defaultSize:'klein', noHide:true},
+  ...HOME_BTN_CONFIG.map(c => ({...c, defaultSize:'mittel', defaultHeight:HOME_BTN_HEIGHT_BASE})),
+  {key:'settings', label:'Einstellungen', defaultSize:'klein', defaultHeight:38, noHide:true},
+  {key:'hilfe',    label:'Hilfe',         defaultSize:'klein', defaultHeight:38, noHide:true},
 ];
-/* Rechnet die Einstellungen Größe (klein/mittel/groß/eigene Pixelzahl) eines einzelnen
-   Buttons in konkrete CSS-Werte um. "Mittel" entspricht bewusst den bisherigen Werten.
-   Die drei Hoehen stehen bewusst im Verhaeltnis 0.75 : 1 : 1.5 zueinander, damit sich
-   daraus (ueber denselben Skalierungsfaktor) eine grid-column-Spannweite auf einem
-   12-Spalten-Grid ableiten laesst, die genau 4 / 3 / 2 Kacheln pro Reihe ergibt. */
-const HOME_BTN_SIZE_PRESETS = { klein: 38, mittel: 50, gross: 75 };
 function homeBtnSizeVars(key) {
-  const size = (window._homeBtnSize && window._homeBtnSize[key]) || 'mittel';
-  const h = size === 'custom'
-    ? (parseInt(window._homeBtnSizePx && window._homeBtnSizePx[key]) || HOME_BTN_SIZE_PRESETS.mittel)
-    : (HOME_BTN_SIZE_PRESETS[size] || HOME_BTN_SIZE_PRESETS.mittel);
-  const scale = h / HOME_BTN_SIZE_PRESETS.mittel;
-  const iconRem = Math.min(2.4, Math.max(0.8, 1.3 * scale)).toFixed(2);
-  const labelRem = Math.min(1.05, Math.max(0.55, 0.8 * scale)).toFixed(2);
-  const span = Math.min(12, Math.max(2, Math.round(4 * scale)));
+  const widthKey = (window._homeBtnSize && window._homeBtnSize[key]) || 'mittel';
+  const span = HOME_BTN_WIDTH_SPANS[widthKey] || HOME_BTN_WIDTH_SPANS.mittel;
+  const h = (window._homeBtnHeight && parseInt(window._homeBtnHeight[key])) || HOME_BTN_HEIGHT_BASE;
+  const scale = h / HOME_BTN_HEIGHT_BASE;
+  const iconRem = Math.min(2.6, Math.max(0.75, 1.3 * scale)).toFixed(2);
+  const labelRem = Math.min(1.1, Math.max(0.55, 0.8 * scale)).toFixed(2);
   return `--home-btn-h:${h}px;--home-btn-icon:${iconRem}rem;--home-btn-label:${labelRem}rem;grid-column:span ${span}`;
 }
 function homeBtnTextHidden(key) {
@@ -4475,12 +4475,11 @@ async function renderSettings() {
           </label>`}
           <div class="home-btn-cfg-controls">
             <select class="inp home-btn-size-sel" data-key="${c.key}">
-              <option value="klein">Klein</option>
-              <option value="mittel">Mittel</option>
-              <option value="gross">Groß</option>
-              <option value="custom">Eigene (px)</option>
+              <option value="klein">Klein (4/Reihe)</option>
+              <option value="mittel">Mittel (3/Reihe)</option>
+              <option value="gross">Groß (2/Reihe)</option>
             </select>
-            <input class="inp home-btn-size-px-inp" data-key="${c.key}" type="number" min="30" max="200" placeholder="px" style="display:none">
+            <input class="inp home-btn-height-inp" data-key="${c.key}" type="number" min="30" max="200" placeholder="Höhe (px)" title="Höhe (px)">
             <label class="check-item home-btn-text-label">
               <input type="checkbox" class="home-btn-text-chk" data-key="${c.key}" checked><span>Text</span>
             </label>
@@ -4696,22 +4695,16 @@ async function renderSettings() {
       const k=sel.dataset.key;
       const cfg=HOME_BTN_SIZE_CONFIG.find(c=>c.key===k);
       sel.value = s['homeBtnSize_'+k] || (cfg?cfg.defaultSize:'mittel');
-      const pxInp=document.querySelector(`.home-btn-size-px-inp[data-key="${k}"]`);
-      if(pxInp){
-        pxInp.value = s['homeBtnSizePx_'+k] || '';
-        pxInp.style.display = sel.value==='custom' ? '' : 'none';
-      }
+    });
+    document.querySelectorAll('.home-btn-height-inp').forEach(inp=>{
+      const k=inp.dataset.key;
+      const cfg=HOME_BTN_SIZE_CONFIG.find(c=>c.key===k);
+      inp.value = parseInt(s['homeBtnHeight_'+k]) || (cfg?cfg.defaultHeight:HOME_BTN_HEIGHT_BASE);
     });
     document.querySelectorAll('.home-btn-text-chk').forEach(chk=>{
       chk.checked = (s['homeBtnShowText_'+chk.dataset.key] !== 'false');
     });
   }).catch(()=>{});
-  document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
-    sel.addEventListener('change', ()=>{
-      const pxInp=document.querySelector(`.home-btn-size-px-inp[data-key="${sel.dataset.key}"]`);
-      if(pxInp) pxInp.style.display = sel.value==='custom' ? '' : 'none';
-    });
-  });
   document.getElementById('save-all-settings')?.addEventListener('click', async()=>{
     const payload={};
     // Betriebsname
@@ -4741,8 +4734,8 @@ async function renderSettings() {
     document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
       payload['homeBtnSize_'+sel.dataset.key]=sel.value;
     });
-    document.querySelectorAll('.home-btn-size-px-inp').forEach(inp=>{
-      payload['homeBtnSizePx_'+inp.dataset.key]=inp.value;
+    document.querySelectorAll('.home-btn-height-inp').forEach(inp=>{
+      if(inp.value) payload['homeBtnHeight_'+inp.dataset.key]=inp.value;
     });
     document.querySelectorAll('.home-btn-text-chk').forEach(chk=>{
       payload['homeBtnShowText_'+chk.dataset.key]=chk.checked?'true':'false';

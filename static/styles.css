@@ -83,7 +83,8 @@ body{
    muessen. Reihe statt Spalte (Icon+Text nebeneinander) fuer eine flachere, laenglichere
    statt wuerfelige Optik. */
 .home-toolbar{display:grid; grid-template-columns:repeat(12,1fr); gap:.5rem; align-items:start}
-.home-btn{flex-direction:row; justify-content:center; gap:.5rem; padding:.5rem .6rem; min-height:var(--home-btn-h,50px); white-space:normal; line-height:1.15}
+.home-btn{flex-direction:row; justify-content:center; gap:.5rem; padding:.5rem .6rem; white-space:normal; line-height:1.15}
+.btn.home-btn{min-height:var(--home-btn-h,50px)}
 .home-btn-icon{font-size:var(--home-btn-icon,1.3rem); line-height:1; flex-shrink:0}
 .home-btn-icon img{width:22px; height:22px; object-fit:contain}
 .home-btn-label{font-size:var(--home-btn-label,.8rem); font-weight:700; text-align:left}
