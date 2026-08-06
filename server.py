@@ -95,6 +95,9 @@ HONEY_PRODUCT_COLOR_BY_PREFIX = [
     ("Sommertracht", "#e8590c"),
     ("Raps", "#ffffff"),
 ]
+# Diese Standard-Sorten gelten als "honig" (kind), alles andere per Default als
+# "sonstige" - siehe Backfill in init_db().
+HONEY_PRODUCT_HONIG_NAMES = set(name for name, *_rest in DEFAULT_HONEY_PRODUCTS)
 
 def now_iso(): return datetime.now(timezone.utc).isoformat()
 def new_id():  return secrets.token_hex(8)
@@ -171,7 +174,8 @@ def init_db():
             appearance TEXT, photos TEXT, createdAt TEXT);
         CREATE TABLE IF NOT EXISTS honey_products(
             id TEXT PRIMARY KEY, name TEXT, price REAL DEFAULT 0, sizeGrams INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1, sortOrder INTEGER DEFAULT 0, color TEXT DEFAULT '', createdAt TEXT);
+            active INTEGER DEFAULT 1, sortOrder INTEGER DEFAULT 0, color TEXT DEFAULT '',
+            kind TEXT DEFAULT 'sonstige', createdAt TEXT);
         CREATE TABLE IF NOT EXISTS honey_sales(
             id TEXT PRIMARY KEY, date TEXT, category TEXT, buyerName TEXT, items TEXT,
             total REAL DEFAULT 0, notes TEXT, createdAt TEXT);
@@ -229,13 +233,14 @@ def init_db():
         ("reminders","dueDate",          "ALTER TABLE reminders ADD COLUMN dueDate TEXT"),
         ("reminders","remindDaysBefore", "ALTER TABLE reminders ADD COLUMN remindDaysBefore INTEGER DEFAULT 0"),
         ("honey_products","color",       "ALTER TABLE honey_products ADD COLUMN color TEXT DEFAULT ''"),
+        ("honey_products","kind",        "ALTER TABLE honey_products ADD COLUMN kind TEXT DEFAULT 'sonstige'"),
     ]
     for table, col, sql in migrations:
         if not column_exists(con, table, col):
             con.execute(sql)
     if con.execute("SELECT COUNT(*) FROM honey_products").fetchone()[0] == 0:
         for i, (name, price, grams, color) in enumerate(DEFAULT_HONEY_PRODUCTS):
-            con.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,createdAt) VALUES(?,?,?,?,1,?,?,?)",
+            con.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,kind,createdAt) VALUES(?,?,?,?,1,?,?,'honig',?)",
                 (new_id(), name, price, grams, i, color, now_iso()))
     # Farben auch fuer bereits vorhandene Standard-Produkte nachtragen (z.B. nach Upgrade
     # von einer Version ohne Farb-Spalte), aber keine vom Nutzer bewusst geloeschte Farbe ueberschreiben.
@@ -244,6 +249,10 @@ def init_db():
             (color, prefix+'%'))
     for name, order in HONEY_PRODUCT_SORTORDER_BY_NAME.items():
         con.execute("UPDATE honey_products SET sortOrder=? WHERE name=?", (order, name))
+    # Standard-Sorten immer als "honig" markieren (auch bei Upgrade von einer Version ohne
+    # kind-Spalte) - alle anderen (eigene) Produkte bleiben beim Default "sonstige".
+    for name in HONEY_PRODUCT_HONIG_NAMES:
+        con.execute("UPDATE honey_products SET kind='honig' WHERE name=?", (name,))
     if column_exists(con,"entries","photoIds"):
         for r in con.execute("SELECT id, photoIds FROM entries WHERE photos IS NULL").fetchall():
             try: ids = json.loads(r["photoIds"] or "[]")
@@ -561,9 +570,9 @@ class Handler(BaseHTTPRequestHandler):
             rid=new_id()
             con2=db()
             maxSort=con2.execute("SELECT COALESCE(MAX(sortOrder),-1)+1 FROM honey_products").fetchone()[0]
-            con2.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,createdAt) VALUES(?,?,?,?,?,?,?,?)",
+            con2.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,kind,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
                 (rid,body2.get("name",""),float(body2.get("price",0) or 0),int(body2.get("sizeGrams",0) or 0),
-                 1 if body2.get("active",True) else 0,int(maxSort),body2.get("color",""),now_iso()))
+                 1 if body2.get("active",True) else 0,int(maxSort),body2.get("color",""),body2.get("kind","sonstige"),now_iso()))
             con2.commit(); con2.close()
             return self._json({"id":rid})
         if path=="/api/honey_sales":
@@ -820,9 +829,9 @@ class Handler(BaseHTTPRequestHandler):
                     (body.get("date",""),body.get("temp",""),body.get("appearance",""),
                      json.dumps(new_photos),rid))
             elif kind=="honey_products":
-                con.execute("UPDATE honey_products SET name=?,price=?,sizeGrams=?,active=?,sortOrder=?,color=? WHERE id=?",
+                con.execute("UPDATE honey_products SET name=?,price=?,sizeGrams=?,active=?,sortOrder=?,color=?,kind=? WHERE id=?",
                     (body.get("name",""),float(body.get("price",0) or 0),int(body.get("sizeGrams",0) or 0),
-                     1 if body.get("active",True) else 0,int(body.get("sortOrder",0) or 0),body.get("color",""),rid))
+                     1 if body.get("active",True) else 0,int(body.get("sortOrder",0) or 0),body.get("color",""),body.get("kind","sonstige"),rid))
             elif kind=="honey_sales":
                 con.execute("UPDATE honey_sales SET date=?,category=?,buyerName=?,items=?,total=?,notes=? WHERE id=?",
                     (body.get("date",""),body.get("category",""),body.get("buyerName",""),
@@ -976,9 +985,10 @@ class Handler(BaseHTTPRequestHandler):
                  e.get("appearance",""),json.dumps(e.get("photos",[])),e.get("createdAt","")))
         for p in body.get("honey_products",[]):
             con.execute("""INSERT INTO honey_products
-                (id,name,price,sizeGrams,active,sortOrder,color,createdAt) VALUES(?,?,?,?,?,?,?,?)""",
+                (id,name,price,sizeGrams,active,sortOrder,color,kind,createdAt) VALUES(?,?,?,?,?,?,?,?,?)""",
                 (p["id"],p.get("name",""),float(p.get("price",0) or 0),int(p.get("sizeGrams",0) or 0),
-                 1 if p.get("active",True) else 0,int(p.get("sortOrder",0) or 0),p.get("color",""),p.get("createdAt","")))
+                 1 if p.get("active",True) else 0,int(p.get("sortOrder",0) or 0),p.get("color",""),
+                 p.get("kind","sonstige"),p.get("createdAt","")))
         for sa in body.get("honey_sales",[]):
             con.execute("""INSERT INTO honey_sales
                 (id,date,category,buyerName,items,total,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)""",

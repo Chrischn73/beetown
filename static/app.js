@@ -947,7 +947,7 @@ async function renderApiaries() {
     const pr=await fetch('./api/platform');
     const pd=await pr.json();
     if(pd && pd.setupPortal){
-      hilfeLinkHTML=`<button class="btn btn-ghost" id="open-hilfe" title="Hilfe" style="font-size:1.2rem;line-height:1">❓</button>`;
+      hilfeLinkHTML=`<button class="btn btn-ghost home-btn" id="open-hilfe" title="Hilfe"><span class="home-btn-icon">❓</span><span class="home-btn-label">Hilfe</span></button>`;
     }
     if(pd && pd.pi && pd.usbBackupMissing){
       usbWarningHTML=`<div class="banner-error" style="margin-bottom:1rem">
@@ -1005,16 +1005,16 @@ async function renderApiaries() {
       </div>
       ${logoHTML ? `<div class="brand-logo-wrap">${logoHTML}</div>` : ''}
     </div>
-    <div class="toolbar">
-      <button class="btn btn-ghost ${homeBtnHidden('all')}" id="open-all">🐝 Alle</button>
-      <button class="btn btn-ghost ${homeBtnHidden('honey')}" id="open-honey">🍯 Ernte</button>
-      <button class="btn btn-ghost ${homeBtnHidden('honeystir')}" id="open-honeystir" style="padding:.4rem .6rem"><img src="./icons/ruehren.svg" alt="" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Rühren</button>
-      <button class="btn btn-ghost ${homeBtnHidden('verkauf')}" id="open-verkauf">💰 Verkauf</button>
-      <button class="btn btn-ghost ${homeBtnHidden('fuetterung')}" id="open-fuetterung">🍬 Fütterung</button>
-      <button class="btn btn-ghost ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge">🕒 Letzte Einträge</button>
-      <button class="btn btn-ghost ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="padding:.4rem .6rem"><img src="./icons/varroa.png" alt="Varroa Zählung" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Varroazählung</button>
-      <button class="btn btn-ghost ${homeBtnHidden('archive')}" id="open-archive">📦 Archiv</button>
-      <button class="btn btn-ghost" id="open-settings" title="Einstellungen" style="font-size:1.4rem;line-height:1">⚙︎</button>
+    <div class="toolbar home-toolbar">
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all"><span class="home-btn-icon">🐝</span><span class="home-btn-label">Alle</span></button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('honey')}" id="open-honey"><span class="home-btn-icon">🍯</span><span class="home-btn-label">Ernte</span></button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('honeystir')}" id="open-honeystir"><span class="home-btn-icon"><img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain"></span><span class="home-btn-label">Rühren</span></button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('verkauf')}" id="open-verkauf"><span class="home-btn-icon">💰</span><span class="home-btn-label">Verkauf</span></button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('fuetterung')}" id="open-fuetterung"><span class="home-btn-icon">🍬</span><span class="home-btn-label">Fütterung</span></button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge"><span class="home-btn-icon">🕒</span><span class="home-btn-label">Letzte Einträge</span></button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span><span class="home-btn-label">Varroazählung</span></button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive"><span class="home-btn-icon">📦</span><span class="home-btn-label">Archiv</span></button>
+      <button class="btn btn-ghost home-btn" id="open-settings" title="Einstellungen"><span class="home-btn-icon">⚙︎</span><span class="home-btn-label">Einstellungen</span></button>
       ${hilfeLinkHTML}
     </div>
     ${window._showSearch!==false?`
@@ -3846,7 +3846,20 @@ async function renderVerkauf(){
 
   /* ---------- Tab: Erfassen (Schnellerfassung) ---------- */
   function drawErfassen(){
-    const activeProducts = products.filter(p=>p.active).slice().sort((a,b)=>a.sortOrder-b.sortOrder);
+    const active = products.filter(p=>p.active);
+    const honigProducts = active.filter(p=>p.kind!=='sonstige').sort((a,b)=>a.sortOrder-b.sortOrder);
+    const sonstigeProducts = active.filter(p=>p.kind==='sonstige').sort((a,b)=>a.sortOrder-b.sortOrder);
+    const activeProducts = [...honigProducts, ...sonstigeProducts];
+    const tileHTML = (p) => `
+          <div class="vk-product-tile${p.kind==='sonstige'?' vk-product-tile-other':''}" data-id="${esc(p.id)}" ${p.color?`style="background:${esc(p.color)};color:${readableTextColor(p.color)}"`:''}>
+            <div class="vk-product-name">${esc(p.name)}</div>
+            <div class="vk-product-price">${fmtEUR(p.price)}</div>
+            <div class="vk-product-qty-row">
+              <button type="button" class="cnt-btn vk-minus" data-id="${esc(p.id)}">−</button>
+              <span class="cnt-val" id="vk-qty-${esc(p.id)}">0</span>
+            </div>
+          </div>`;
+    const nameSuggestions = [...new Set(sales.map(s=>s.buyerName).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
     bodyEl.innerHTML = `
       <label class="lbl" style="margin-top:0">Datum</label>
       <input class="inp" id="vk-date" type="date" value="${todayInput()}">
@@ -3855,20 +3868,18 @@ async function renderVerkauf(){
         ${VERKAUF_CATEGORIES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}
       </select>
       <label class="lbl">Name (optional)</label>
-      <input class="inp" id="vk-name" type="text" placeholder="z. B. Familie Meyer">
+      <input class="inp" id="vk-name" type="text" list="vk-name-suggestions" placeholder="z. B. Familie Meyer" autocomplete="off">
+      <datalist id="vk-name-suggestions">${nameSuggestions.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
       <label class="lbl" style="margin-top:1rem">Produkte antippen zum Hochzählen</label>
       ${activeProducts.length===0 ? '<p class="muted">Keine aktiven Produkte – unter „Produkte" anlegen.</p>' : `
       <div class="vk-product-grid">
-        ${activeProducts.map(p=>`
-          <div class="vk-product-tile" data-id="${esc(p.id)}" ${p.color?`style="background:${esc(p.color)};color:${readableTextColor(p.color)}"`:''}>
-            <div class="vk-product-name">${esc(p.name)}</div>
-            <div class="vk-product-price">${fmtEUR(p.price)}</div>
-            <div class="vk-product-qty-row">
-              <button type="button" class="cnt-btn vk-minus" data-id="${esc(p.id)}">−</button>
-              <span class="cnt-val" id="vk-qty-${esc(p.id)}">0</span>
-            </div>
-          </div>`).join('')}
-      </div>`}
+        ${honigProducts.map(tileHTML).join('')}
+      </div>
+      ${sonstigeProducts.length?`
+      <div class="section-h" style="margin:.9rem 0 .3rem">Weitere Produkte</div>
+      <div class="vk-product-grid">
+        ${sonstigeProducts.map(tileHTML).join('')}
+      </div>`:''}`}
       <label class="lbl" style="margin-top:1rem">Betrag (€)</label>
       <input class="inp" id="vk-total" type="text" inputmode="decimal" value="0,00">
       <label class="lbl">Notiz (optional)</label>
@@ -4142,15 +4153,19 @@ async function renderVerkauf(){
         <h2 class="section-h" style="margin:0">Produkte</h2>
         <button class="btn btn-primary btn-sm" id="vk-add-product">+ Produkt</button>
       </div>
-      <ul class="card-list">
-        ${products.slice().sort((a,b)=>a.sortOrder-b.sortOrder).map(p=>`
+      ${(() => {
+        const li = (p) => `
           <li class="card" data-edit="${esc(p.id)}" style="cursor:pointer;opacity:${p.active?1:.5}">
             <div class="card-main">
               <div class="card-title">${p.color?`<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${esc(p.color)};border:1px solid var(--line);margin-right:.4rem;vertical-align:middle"></span>`:''}${esc(p.name)}</div>
               <div class="card-sub">${fmtEUR(p.price)}${p.sizeGrams?' · '+p.sizeGrams+'g':''}${p.active?'':' · ausgeblendet'}</div>
             </div>
-          </li>`).join('')}
-      </ul>`;
+          </li>`;
+        const honigList = products.filter(p=>p.kind!=='sonstige').sort((a,b)=>a.sortOrder-b.sortOrder);
+        const sonstigeList = products.filter(p=>p.kind==='sonstige').sort((a,b)=>a.sortOrder-b.sortOrder);
+        return `<ul class="card-list">${honigList.map(li).join('')}</ul>`
+          + (sonstigeList.length?`<div class="section-h" style="margin:.9rem 0 .3rem">Weitere Produkte</div><ul class="card-list">${sonstigeList.map(li).join('')}</ul>`:'');
+      })()}`;
 
     document.getElementById('vk-save-stichtag').onclick = async () => {
       const raw = document.getElementById('vk-stichtag').value.trim();
@@ -4176,6 +4191,11 @@ async function renderVerkauf(){
       <input class="inp" name="price" type="text" inputmode="decimal" value="${p?fmtNum(p.price):''}">
       <label class="lbl">Glasgröße (g, optional)</label>
       <input class="inp" name="sizeGrams" type="number" min="0" value="${p&&p.sizeGrams?p.sizeGrams:''}">
+      <label class="lbl">Kategorie</label>
+      <select class="inp" id="vk-product-kind">
+        <option value="honig" ${p&&p.kind==='honig'?'selected':''}>🍯 Honigprodukt</option>
+        <option value="sonstige" ${(!p||p.kind!=='honig')?'selected':''}>📦 Sonstiges Produkt (immer unten)</option>
+      </select>
       <label class="check-item" style="margin-top:.6rem"><input type="checkbox" id="vk-product-active" ${(!p||p.active)?'checked':''}><span>Aktiv (in der Schnellerfassung anzeigen)</span></label>
       <label class="check-item" style="margin-top:.5rem"><input type="checkbox" id="vk-product-color-enabled" ${p&&p.color?'checked':''}><span>Eigene Button-Farbe</span></label>
       <div id="vk-product-color-row" style="margin-top:.4rem${p&&p.color?'':';display:none'}">
@@ -4185,7 +4205,8 @@ async function renderVerkauf(){
       if(!data.name) return alert('Bitte einen Namen eingeben.');
       const colorEnabled = document.getElementById('vk-product-color-enabled').checked;
       const color = colorEnabled ? document.getElementById('vk-product-color-input').value : '';
-      const payload = { name:data.name, price:parseDecimal(data.price)||0, sizeGrams:parseInt(data.sizeGrams)||0, active: document.getElementById('vk-product-active').checked, color };
+      const kindVal = document.getElementById('vk-product-kind').value;
+      const payload = { name:data.name, price:parseDecimal(data.price)||0, sizeGrams:parseInt(data.sizeGrams)||0, active: document.getElementById('vk-product-active').checked, color, kind: kindVal };
       if(isNew){
         const res = await api('POST','./api/honey_products', payload);
         products.push({id:res.id, ...payload, sortOrder:products.length, createdAt:new Date().toISOString()});

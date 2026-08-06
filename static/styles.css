@@ -74,6 +74,13 @@ body{
 #app{max-width:680px; margin:0 auto; padding:1rem 1rem calc(2rem + var(--safe-bottom))}
 .toolbar{display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap}
 .toolbar .btn.hidden{display:none!important}
+
+/* ---------- Startseite: Icon-Kacheln statt unterschiedlich breiter Reihen-Buttons ---------- */
+.home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:.5rem}
+.home-btn{flex-direction:column; gap:.3rem; padding:.6rem .3rem; min-height:70px; white-space:normal; line-height:1.15}
+.home-btn-icon{font-size:1.4rem; line-height:1}
+.home-btn-icon img{width:22px; height:22px; object-fit:contain}
+.home-btn-label{font-size:.68rem; font-weight:600; text-align:center}
 .search-box{margin-bottom:1rem}
 .search-box .inp{width:100%}
 .search-box-wrap{position:relative}
@@ -276,6 +283,8 @@ textarea.inp{resize:vertical}
 .vk-product-qty-row{display:flex; align-items:center; justify-content:center; gap:.4rem; margin-top:.4rem}
 .vk-product-tile .cnt-btn{width:24px; height:24px; font-size:.88rem}
 .vk-product-tile .cnt-val{font-size:.8rem; min-width:18px}
+.vk-product-tile-other{border-style:dashed; background:var(--bg)}
+.vk-product-tile-other .vk-product-name{opacity:.85}
 
 /* ---------- Honig-Verkauf: Verkaufstabelle - vertikale Spaltenkoepfe je Produkt ---------- */
 .vk-th-vertical{writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; text-align:left; vertical-align:bottom; padding:.4rem .3rem !important}
