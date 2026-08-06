@@ -728,6 +728,7 @@ würde der Pi gleich wieder darüber hinweg aktualisieren.</p>
 </form>
 
 <a class="btn" href="/">← Zurück zur Übersicht</a>
+{changelog_block}
 
 <div id="update-modal" class="modal-backdrop">
   <div class="modal-box" id="update-modal-content"></div>
@@ -1336,7 +1337,8 @@ def fetch_latest_release():
 def fetch_all_releases(limit=10):
     """Liste der letzten Releases (neueste zuerst) - fuer die Auswahl "Andere
     Version installieren" (z. B. Rueckwechsel auf eine aeltere Version bei
-    Problemen mit der neuesten). Leere Liste bei Fehler."""
+    Problemen mit der neuesten) UND fuer den Aenderungsverlauf auf der
+    Update-Seite (notes/published_at). Leere Liste bei Fehler."""
     try:
         req = urllib.request.Request(
             f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page={limit}",
@@ -1344,7 +1346,8 @@ def fetch_all_releases(limit=10):
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        return [{"tag": r["tag_name"], "tarball_url": r.get("tarball_url") or ""}
+        return [{"tag": r["tag_name"], "tarball_url": r.get("tarball_url") or "",
+                  "notes": (r.get("body") or "").strip(), "published_at": r.get("published_at") or ""}
                  for r in data if r.get("tag_name")]
     except Exception:
         return []
@@ -1656,11 +1659,27 @@ def render_update_page(message=""):
     else:
         version_options = '<option value="">– keine Releases abrufbar –</option>'
 
+    changelog_items = "".join(
+        f'<div style="margin-bottom:.9rem">'
+        f'<strong>{html.escape(r["tag"])}</strong>'
+        + (f' <span class="muted" style="font-size:.8rem">· {html.escape(r["published_at"][:10])}</span>' if r.get("published_at") else "")
+        + f'<div class="muted" style="white-space:pre-wrap;font-size:.85rem;margin-top:.2rem">{html.escape(r["notes"])}</div>'
+        f'</div>'
+        for r in all_releases if r.get("notes")
+    )
+    changelog_block = (
+        f'<details style="margin-top:2rem">'
+        f'<summary class="muted" style="cursor:pointer">Änderungsverlauf früherer Versionen</summary>'
+        f'<div style="margin-top:.8rem">{changelog_items}</div>'
+        f'</details>'
+    ) if changelog_items else ""
+
     return PAGE_UPDATE.format(
         header=render_header(), message=message, current=current, latest=latest,
         status_class=status_class, notes_block=notes_block, action_block=action_block,
         version_options=version_options,
         auto_update_checked="checked" if get_auto_update() else "",
+        changelog_block=changelog_block,
     )
 
 

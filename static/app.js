@@ -28,6 +28,9 @@ window._showSearch = true; // Default: anzeigen
 window._actionBtnVis = {}; // key -> bool, Default: alle an (siehe actionBtnHidden())
 window._obsBtnVis = {};    // key -> bool, Default: alle an (siehe obsBtnHidden())
 window._homeBtnVis = {};   // key -> bool, Default: alle an (siehe homeBtnHidden())
+/* Von der aktuellen (Nicht-Modal-)Ansicht gesetzte Funktion, die true liefert, wenn
+   ungespeicherte Eingaben vorliegen - go() fragt dann vor dem Verlassen nach. */
+window._leaveGuard = null;
 async function loadSettings() {
   try {
     const s = await apiGet('./api/settings');
@@ -43,9 +46,15 @@ async function loadSettings() {
     const homeVis = {};
     HOME_BTN_CONFIG.forEach(c => { homeVis[c.key] = (s['homeBtn_'+c.key] !== 'false'); });
     window._homeBtnVis = homeVis;
-    window._homeBtnSize = s.homeBtnSize || 'mittel';
-    window._homeBtnSizePx = s.homeBtnSizePx || '';
-    window._homeBtnShowText = (s.homeBtnShowText !== 'false');
+    const homeSize = {}, homeSizePx = {}, homeShowText = {};
+    HOME_BTN_SIZE_CONFIG.forEach(c => {
+      homeSize[c.key] = s['homeBtnSize_'+c.key] || c.defaultSize;
+      homeSizePx[c.key] = s['homeBtnSizePx_'+c.key] || '';
+      homeShowText[c.key] = (s['homeBtnShowText_'+c.key] !== 'false');
+    });
+    window._homeBtnSize = homeSize;
+    window._homeBtnSizePx = homeSizePx;
+    window._homeBtnShowText = homeShowText;
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
   } catch(_) {}
 }
@@ -65,19 +74,32 @@ const HOME_BTN_CONFIG = [
 function homeBtnHidden(key) {
   return (window._homeBtnVis && window._homeBtnVis[key]===false) ? 'hidden' : '';
 }
-/* Rechnet die Einstellungen Größe (klein/mittel/groß/eigene Pixelzahl) in konkrete
-   CSS-Werte um. "Mittel" entspricht bewusst den bisherigen Werten (Standard). */
+/* Alle Startseiten-Buttons, fuer die Größe + Text-Anzeige einzeln einstellbar sind -
+   HOME_BTN_CONFIG (ausblendbar) plus die immer sichtbaren Einstellungen/Hilfe.
+   Deren Standardgröße ist bewusst "klein" (Utility-Buttons, keine Hauptkategorie). */
+const HOME_BTN_SIZE_CONFIG = [
+  ...HOME_BTN_CONFIG.map(c => ({...c, defaultSize:'mittel'})),
+  {key:'settings', label:'Einstellungen', defaultSize:'klein', noHide:true},
+  {key:'hilfe',    label:'Hilfe',         defaultSize:'klein', noHide:true},
+];
+/* Rechnet die Einstellungen Größe (klein/mittel/groß/eigene Pixelzahl) eines einzelnen
+   Buttons in konkrete CSS-Werte um. "Mittel" entspricht bewusst den bisherigen Werten. */
 const HOME_BTN_SIZE_PRESETS = { klein: 50, mittel: 66, gross: 84 };
-function homeBtnSizeVars() {
-  const size = window._homeBtnSize || 'mittel';
+function homeBtnSizeVars(key) {
+  const size = (window._homeBtnSize && window._homeBtnSize[key]) || 'mittel';
   const h = size === 'custom'
-    ? (parseInt(window._homeBtnSizePx) || HOME_BTN_SIZE_PRESETS.mittel)
+    ? (parseInt(window._homeBtnSizePx && window._homeBtnSizePx[key]) || HOME_BTN_SIZE_PRESETS.mittel)
     : (HOME_BTN_SIZE_PRESETS[size] || HOME_BTN_SIZE_PRESETS.mittel);
   const scale = h / HOME_BTN_SIZE_PRESETS.mittel;
   const iconRem = Math.min(3, Math.max(0.9, 1.6 * scale)).toFixed(2);
   const labelRem = Math.min(1.1, Math.max(0.55, 0.72 * scale)).toFixed(2);
-  const tileMin = Math.round(h * 1.515);
-  return `--home-btn-h:${h}px;--home-btn-icon:${iconRem}rem;--home-btn-label:${labelRem}rem;--home-tile-min:${tileMin}px`;
+  return `--home-btn-h:${h}px;--home-btn-icon:${iconRem}rem;--home-btn-label:${labelRem}rem`;
+}
+function homeBtnTextHidden(key) {
+  return (window._homeBtnShowText && window._homeBtnShowText[key]===false);
+}
+function homeBtnLabelHTML(key, text) {
+  return `<span class="home-btn-label"${homeBtnTextHidden(key)?' style="display:none"':''}>${esc(text)}</span>`;
 }
 /* Sonderbehandlung von Völkern/Standorten, deren Name mit dem konfigurierbaren
    Präfix beginnt (Standard „BK“); leerer Präfix deaktiviert die Sonderbehandlung. */
@@ -816,6 +838,8 @@ const backBtn = $('#back-btn');
 let nav = { view:'apiaries', apiaryId:null, colonyId:null };
 
 function go(view, params={}) {
+  if(window._leaveGuard && window._leaveGuard() && !confirm('Ohne zu speichern verlassen?')) return;
+  window._leaveGuard = null;
   stopAutoRefresh();
   stopFvCooldownTimer();
   const restoreScrollY = params.restoreScrollY;
@@ -964,7 +988,7 @@ async function renderApiaries() {
     const pr=await fetch('./api/platform');
     const pd=await pr.json();
     if(pd && pd.setupPortal){
-      hilfeLinkHTML=`<button class="btn btn-ghost home-btn" id="open-hilfe" title="Hilfe"><span class="home-btn-icon">❓</span><span class="home-btn-label">Hilfe</span></button>`;
+      hilfeLinkHTML=`<button class="btn btn-ghost home-btn" id="open-hilfe" title="Hilfe" style="${homeBtnSizeVars('hilfe')}"><span class="home-btn-icon">❓</span>${homeBtnLabelHTML('hilfe','Hilfe')}</button>`;
     }
     if(pd && pd.pi && pd.usbBackupMissing){
       usbWarningHTML=`<div class="banner-error" style="margin-bottom:1rem">
@@ -1022,18 +1046,16 @@ async function renderApiaries() {
       </div>
       ${logoHTML ? `<div class="brand-logo-wrap">${logoHTML}</div>` : ''}
     </div>
-    <div class="toolbar home-toolbar${window._homeBtnShowText===false?' home-toolbar-no-text':''}" style="${homeBtnSizeVars()}">
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all"><span class="home-btn-icon">🐝</span><span class="home-btn-label">Alle</span></button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('honey')}" id="open-honey"><span class="home-btn-icon">🍯</span><span class="home-btn-label">Ernte</span></button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('honeystir')}" id="open-honeystir"><span class="home-btn-icon"><img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain"></span><span class="home-btn-label">Rühren</span></button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('verkauf')}" id="open-verkauf"><span class="home-btn-icon">💰</span><span class="home-btn-label">Verkauf</span></button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('fuetterung')}" id="open-fuetterung"><span class="home-btn-icon">🍬</span><span class="home-btn-label">Fütterung</span></button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge"><span class="home-btn-icon">🕒</span><span class="home-btn-label">Letzte Einträge</span></button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span><span class="home-btn-label">Varroazählung</span></button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive"><span class="home-btn-icon">📦</span><span class="home-btn-label">Archiv</span></button>
-    </div>
-    <div class="toolbar home-toolbar home-toolbar-small${window._homeBtnShowText===false?' home-toolbar-no-text':''}">
-      <button class="btn btn-ghost home-btn" id="open-settings" title="Einstellungen"><span class="home-btn-icon">⚙︎</span><span class="home-btn-label">Einstellungen</span></button>
+    <div class="toolbar home-toolbar">
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all" style="${homeBtnSizeVars('all')}"><span class="home-btn-icon">🐝</span>${homeBtnLabelHTML('all','Alle')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('honey')}" id="open-honey" style="${homeBtnSizeVars('honey')}"><span class="home-btn-icon">🍯</span>${homeBtnLabelHTML('honey','Ernte')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('honeystir')}" id="open-honeystir" style="${homeBtnSizeVars('honeystir')}"><span class="home-btn-icon"><img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('honeystir','Rühren')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('verkauf')}" id="open-verkauf" style="${homeBtnSizeVars('verkauf')}"><span class="home-btn-icon">💰</span>${homeBtnLabelHTML('verkauf','Verkauf')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('fuetterung')}" id="open-fuetterung" style="${homeBtnSizeVars('fuetterung')}"><span class="home-btn-icon">🍬</span>${homeBtnLabelHTML('fuetterung','Fütterung')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge" style="${homeBtnSizeVars('lastentries')}"><span class="home-btn-icon">🕒</span>${homeBtnLabelHTML('lastentries','Letzte Einträge')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="${homeBtnSizeVars('varroacount')}"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('varroacount','Varroazählung')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive" style="${homeBtnSizeVars('archive')}"><span class="home-btn-icon">📦</span>${homeBtnLabelHTML('archive','Archiv')}</button>
+      <button class="btn btn-ghost home-btn" id="open-settings" title="Einstellungen" style="${homeBtnSizeVars('settings')}"><span class="home-btn-icon">⚙︎</span>${homeBtnLabelHTML('settings','Einstellungen')}</button>
       ${hilfeLinkHTML}
     </div>
     ${window._showSearch!==false?`
@@ -2584,10 +2606,18 @@ function honeyStirBatchModal(existing, onSaved) {
     <label class="lbl">Impfmenge (g)</label>
     <input class="inp" name="seedAmountG" type="text" inputmode="decimal" placeholder="z. B. 500" value="${existing?esc(existing.seedAmountG):''}">
     <label class="lbl">Sorte des Impfhonigs</label>
-    <input class="inp" name="seedHoneyType" type="text" placeholder="z. B. Frühtracht, feincremig" value="${existing?esc(existing.seedHoneyType):''}">`,
+    <input class="inp" name="seedHoneyType" type="text" placeholder="z. B. Frühtracht, feincremig" value="${existing?esc(existing.seedHoneyType):''}">
+    ${existing?`
+    <label class="check-item" style="margin-top:.8rem"><input type="checkbox" id="stirbatch-done" ${existing.status==='done'?'checked':''}><span>Abgeschlossen</span></label>
+    <label class="lbl" style="margin-top:.6rem">Schlussfazit</label>
+    <textarea class="inp" name="conclusion" rows="4">${esc(existing.conclusion||'')}</textarea>`:''}`,
     async (data, close) => {
-      if (existing) await api('PUT', './api/honey_stir_batches/'+existing.id, {...existing, ...data});
-      else await api('POST', './api/honey_stir_batches', data);
+      if (existing) {
+        const status = document.getElementById('stirbatch-done').checked ? 'done' : 'active';
+        await api('PUT', './api/honey_stir_batches/'+existing.id, {...existing, ...data, status});
+      } else {
+        await api('POST', './api/honey_stir_batches', data);
+      }
       close();
       onSaved();
     }, null);
@@ -3853,6 +3883,8 @@ async function renderVerkauf(){
   const bodyEl = document.getElementById('vk-body');
   const tabBtns = { erfassen:$('#vk-tab-erfassen'), verkaeufe:$('#vk-tab-verkaeufe'), kosten:$('#vk-tab-kosten'), produkte:$('#vk-tab-produkte') };
   const setTab = (t) => {
+    if(t!==activeTab && window._leaveGuard && window._leaveGuard() && !confirm('Ohne zu speichern verlassen?')) return;
+    window._leaveGuard = null;
     activeTab = t;
     Object.keys(tabBtns).forEach(k=>{ tabBtns[k].className = 'btn ' + (k===t?'btn-primary':'btn-ghost'); });
     drawTab();
@@ -3951,6 +3983,17 @@ async function renderVerkauf(){
       sales.unshift({id:res.id,date,category,buyerName,items,total,notes,createdAt:new Date().toISOString()});
       showToast(`✅ Verkauf gespeichert (${fmtEUR(total)})`);
       drawErfassen();
+    };
+
+    /* Verlassen-Warnung (Tab-Wechsel via setTab() sowie Seite verlassen via go()) -
+       liest bei jeder Pruefung live aus dem DOM, damit auch nach Speichern (frisch
+       zurueckgesetztes Formular) sofort wieder "nicht dirty" erkannt wird. */
+    window._leaveGuard = () => {
+      const nameV = document.getElementById('vk-name')?.value || '';
+      const notesV = document.getElementById('vk-notes')?.value || '';
+      const totalV = document.getElementById('vk-total')?.value || '0,00';
+      const anyQty = Object.values(qty).some(v=>v>0);
+      return !!(nameV || notesV || anyQty || totalV!=='0,00');
     };
   }
 
@@ -4409,27 +4452,28 @@ async function renderSettings() {
         </label>`).join('')}
       </div>`)}
     ${settingsSection('homebtns','Startseite – Angezeigte Buttons',`
-      <p class="muted">Welche Buttons sollen auf der Startseite erscheinen?</p>
-      <div class="check-list" id="home-btns-cfg">
-        ${HOME_BTN_CONFIG.map(c=>`<label class="check-item">
-          <input type="checkbox" class="home-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
-        </label>`).join('')}
-      </div>
-      <label class="lbl" style="margin-top:1rem">Button-Größe</label>
-      <select class="inp" id="home-btn-size">
-        <option value="klein">Klein</option>
-        <option value="mittel">Mittel (Standard)</option>
-        <option value="gross">Groß</option>
-        <option value="custom">Eigene Größe (Pixel)</option>
-      </select>
-      <div id="home-btn-size-px-row" style="margin-top:.5rem;display:none">
-        <label class="lbl">Höhe in Pixel</label>
-        <input class="inp" id="home-btn-size-px" type="number" min="30" max="200" placeholder="z. B. 70">
-      </div>
-      <p class="muted" style="font-size:.78rem;margin-top:.3rem">„Einstellungen" und „Hilfe" bleiben unabhängig von dieser Auswahl immer klein.</p>
-      <label class="check-item" style="margin-top:.8rem">
-        <input type="checkbox" id="home-btn-show-text" checked><span>Text unter den Icons anzeigen</span>
-      </label>`)}
+      <p class="muted">Welche Buttons sollen erscheinen, wie groß, mit oder ohne Text? Jeder Button einzeln einstellbar.</p>
+      <div id="home-btns-cfg">
+        ${HOME_BTN_SIZE_CONFIG.map(c=>`
+        <div class="home-btn-cfg-row" data-key="${c.key}">
+          ${c.noHide ? `<div class="home-btn-cfg-name">${esc(c.label)}</div>` : `
+          <label class="check-item" style="padding:0">
+            <input type="checkbox" class="home-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
+          </label>`}
+          <div class="home-btn-cfg-controls">
+            <select class="inp home-btn-size-sel" data-key="${c.key}">
+              <option value="klein">Klein</option>
+              <option value="mittel">Mittel</option>
+              <option value="gross">Groß</option>
+              <option value="custom">Eigene (px)</option>
+            </select>
+            <input class="inp home-btn-size-px-inp" data-key="${c.key}" type="number" min="30" max="200" placeholder="px" style="display:none">
+            <label class="check-item home-btn-text-label">
+              <input type="checkbox" class="home-btn-text-chk" data-key="${c.key}" checked><span>Text</span>
+            </label>
+          </div>
+        </div>`).join('')}
+      </div>`)}
     ${settingsSection('darstellung','Darstellung',`
       <label class="lbl">Design</label>
       <select class="inp" id="theme-select">
@@ -4635,20 +4679,25 @@ async function renderSettings() {
       const stored=s['homeBtn_'+k];
       chk.checked=(stored!=='false');
     });
-    const sizeSel=document.getElementById('home-btn-size');
-    const sizePxRow=document.getElementById('home-btn-size-px-row');
-    const sizePxInp=document.getElementById('home-btn-size-px');
-    if(sizeSel){
-      sizeSel.value = s.homeBtnSize || 'mittel';
-      if(sizePxInp) sizePxInp.value = s.homeBtnSizePx || '';
-      if(sizePxRow) sizePxRow.style.display = sizeSel.value==='custom' ? '' : 'none';
-    }
-    const showTextChk=document.getElementById('home-btn-show-text');
-    if(showTextChk) showTextChk.checked = (s.homeBtnShowText !== 'false');
+    document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
+      const k=sel.dataset.key;
+      const cfg=HOME_BTN_SIZE_CONFIG.find(c=>c.key===k);
+      sel.value = s['homeBtnSize_'+k] || (cfg?cfg.defaultSize:'mittel');
+      const pxInp=document.querySelector(`.home-btn-size-px-inp[data-key="${k}"]`);
+      if(pxInp){
+        pxInp.value = s['homeBtnSizePx_'+k] || '';
+        pxInp.style.display = sel.value==='custom' ? '' : 'none';
+      }
+    });
+    document.querySelectorAll('.home-btn-text-chk').forEach(chk=>{
+      chk.checked = (s['homeBtnShowText_'+chk.dataset.key] !== 'false');
+    });
   }).catch(()=>{});
-  document.getElementById('home-btn-size')?.addEventListener('change', (e)=>{
-    const row=document.getElementById('home-btn-size-px-row');
-    if(row) row.style.display = e.target.value==='custom' ? '' : 'none';
+  document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      const pxInp=document.querySelector(`.home-btn-size-px-inp[data-key="${sel.dataset.key}"]`);
+      if(pxInp) pxInp.style.display = sel.value==='custom' ? '' : 'none';
+    });
   });
   document.getElementById('save-all-settings')?.addEventListener('click', async()=>{
     const payload={};
@@ -4676,12 +4725,15 @@ async function renderSettings() {
     document.querySelectorAll('.home-btn-chk').forEach(chk=>{
       payload['homeBtn_'+chk.dataset.key]=chk.checked?'true':'false';
     });
-    const homeBtnSizeEl=document.getElementById('home-btn-size');
-    if(homeBtnSizeEl) payload.homeBtnSize=homeBtnSizeEl.value;
-    const homeBtnSizePxEl=document.getElementById('home-btn-size-px');
-    if(homeBtnSizePxEl) payload.homeBtnSizePx=homeBtnSizePxEl.value;
-    const homeBtnShowTextEl=document.getElementById('home-btn-show-text');
-    if(homeBtnShowTextEl) payload.homeBtnShowText=homeBtnShowTextEl.checked?'true':'false';
+    document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
+      payload['homeBtnSize_'+sel.dataset.key]=sel.value;
+    });
+    document.querySelectorAll('.home-btn-size-px-inp').forEach(inp=>{
+      payload['homeBtnSizePx_'+inp.dataset.key]=inp.value;
+    });
+    document.querySelectorAll('.home-btn-text-chk').forEach(chk=>{
+      payload['homeBtnShowText_'+chk.dataset.key]=chk.checked?'true':'false';
+    });
     // HR-Nummern
     const hrNrsToggle=document.getElementById('toggle-hr-nrs');
     if(hrNrsToggle) payload.showHrNrs=hrNrsToggle.checked?'true':'false';

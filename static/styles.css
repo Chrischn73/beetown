@@ -76,20 +76,16 @@ body{
 .toolbar .btn.hidden{display:none!important}
 
 /* ---------- Startseite: Icon-Kacheln statt unterschiedlich breiter Reihen-Buttons -----------
-   Groesse ueber CSS-Variablen (aus den Einstellungen, siehe homeBtnSizeVars()) steuerbar;
-   Werte hier sind der "mittel"-Standard-Fallback, falls keine Variablen gesetzt sind.
-   minmax(...) ist bewusst so gewaehlt, dass bei "mittel" auf einem Handy (~375px)
-   genau 3 pro Reihe passen. */
-.home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--home-tile-min,100px),1fr)); gap:.5rem}
+   Jeder Button bekommt seine Groesse individuell ueber inline CSS-Variablen (aus den
+   Einstellungen, siehe homeBtnSizeVars(key) je Button); die Spaltenbreite des Grids
+   selbst bleibt eine gemeinsame Basis (minmax), damit die Kacheln sauber ausgerichtet
+   bleiben, egal welche einzelnen Groessen gerade gemischt sind. Werte hier sind der
+   "mittel"-Standard-Fallback, falls fuer einen Button keine Variable gesetzt ist. */
+.home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:.5rem; align-items:start}
 .home-btn{flex-direction:column; gap:.3rem; padding:.6rem .3rem; min-height:var(--home-btn-h,66px); white-space:normal; line-height:1.2}
 .home-btn-icon{font-size:var(--home-btn-icon,1.6rem); line-height:1}
 .home-btn-icon img{width:26px; height:26px; object-fit:contain}
 .home-btn-label{font-size:var(--home-btn-label,.72rem); font-weight:700; text-align:center}
-.home-toolbar-no-text .home-btn-label{display:none}
-.home-toolbar-small{grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); margin-top:.5rem}
-.home-toolbar-small .home-btn{min-height:50px; padding:.5rem .3rem}
-.home-toolbar-small .home-btn-icon{font-size:1.2rem}
-.home-toolbar-small .home-btn-label{font-size:.62rem}
 .search-box{margin-bottom:1rem}
 .search-box .inp{width:100%}
 .search-box-wrap{position:relative}
@@ -201,6 +197,16 @@ body{
   border:1px solid var(--line); border-radius:10px; cursor:pointer; background:var(--surface)}
 .check-item input{width:22px; height:22px; accent-color:var(--honey)}
 
+/* ---------- Einstellungen: Startseite-Buttons einzeln (Groesse/Text je Zeile) ---------- */
+.home-btn-cfg-row{padding:.6rem 0; border-bottom:1px solid var(--line)}
+.home-btn-cfg-row:last-child{border-bottom:none}
+.home-btn-cfg-name{font-weight:600; font-size:.9rem; padding:.2rem 0}
+.home-btn-cfg-controls{display:flex; gap:.5rem; align-items:center; margin-top:.4rem; flex-wrap:wrap}
+.home-btn-cfg-controls select.inp{width:auto; font-size:.85rem; padding:.35rem .5rem; min-height:auto}
+.home-btn-cfg-controls input[type="number"].inp{width:4.5rem; font-size:.85rem; padding:.35rem .5rem; min-height:auto}
+.home-btn-text-label{padding:0; gap:.3rem; border:none; background:none}
+.home-btn-text-label span{font-size:.85rem}
+
 /* ---------- Wabe: Typ je Position ---------- */
 .wabe-pos-grid{display:flex; flex-direction:column; gap:.4rem; margin:.2rem 0 .3rem}
 .wabe-pos-row{display:flex; align-items:center; gap:.7rem; padding:.4rem .7rem;
@@ -288,8 +294,8 @@ textarea.inp{resize:vertical}
   touch-action:manipulation; transition:border-color .15s, background .15s}
 .vk-product-tile:active{background:var(--chip-bg)}
 .vk-product-tile.vk-active{border-color:var(--honey); background:var(--chip-bg)}
-.vk-product-name{font-weight:600; font-size:.68rem}
-.vk-product-price{font-size:.6rem; margin-top:.12rem; opacity:.75}
+.vk-product-name{font-weight:600; font-size:.82rem; line-height:1.15}
+.vk-product-price{font-size:.72rem; margin-top:.12rem; opacity:.75}
 .vk-product-qty-row{display:flex; align-items:center; justify-content:center; gap:.4rem; margin-top:.4rem}
 .vk-product-tile .cnt-btn{width:24px; height:24px; font-size:.88rem}
 .vk-product-tile .cnt-val{font-size:.8rem; min-width:18px}
