@@ -129,6 +129,8 @@ def db():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
+    con.execute("PRAGMA journal_mode = WAL")
+    con.execute("PRAGMA synchronous = NORMAL")
     return con
 def column_exists(con, table, col):
     return any(r[1]==col for r in con.execute(f"PRAGMA table_info({table})").fetchall())
