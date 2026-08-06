@@ -3926,8 +3926,10 @@ async function renderVerkauf(){
         ${VERKAUF_CATEGORIES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}
       </select>
       <label class="lbl">Name (optional)</label>
-      <input class="inp" id="vk-name" type="text" list="vk-name-suggestions" placeholder="z. B. Familie Meyer" autocomplete="off">
-      <datalist id="vk-name-suggestions">${nameSuggestions.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+      <div class="vk-name-wrap" style="position:relative">
+        <input class="inp" id="vk-name" type="text" placeholder="z. B. Familie Meyer" autocomplete="off">
+        <div class="vk-name-suggestions" id="vk-name-suggestions" style="display:none"></div>
+      </div>
       <label class="lbl" style="margin-top:1rem">Produkte antippen zum Hochzählen</label>
       ${activeProducts.length===0 ? '<p class="muted">Keine aktiven Produkte – unter „Produkte" anlegen.</p>' : `
       <div class="vk-product-grid">
@@ -3960,6 +3962,29 @@ async function renderVerkauf(){
       summaryEl.style.display = parts.length ? '' : 'none';
     };
     totalInput.addEventListener('input', ()=>{ totalManual = true; });
+
+    // Eigene Namensvorschläge statt <datalist> - Safari (iOS/macOS) zeigt
+    // datalist-Vorschläge grundsätzlich nicht an.
+    const nameInput = document.getElementById('vk-name');
+    const nameSuggBox = document.getElementById('vk-name-suggestions');
+    const hideNameSuggestions = () => { nameSuggBox.style.display = 'none'; nameSuggBox.innerHTML = ''; };
+    const showNameSuggestions = () => {
+      const q = nameInput.value.trim().toLowerCase();
+      const matches = (q ? nameSuggestions.filter(n=>n.toLowerCase().includes(q)) : nameSuggestions).slice(0,6);
+      if(matches.length===0){ hideNameSuggestions(); return; }
+      nameSuggBox.innerHTML = matches.map(n=>`<div class="vk-name-suggestion">${esc(n)}</div>`).join('');
+      nameSuggBox.style.display = '';
+    };
+    nameInput.addEventListener('input', showNameSuggestions);
+    nameInput.addEventListener('focus', showNameSuggestions);
+    nameInput.addEventListener('blur', ()=>setTimeout(hideNameSuggestions, 150));
+    nameSuggBox.addEventListener('mousedown', (e)=>{
+      const item = e.target.closest('.vk-name-suggestion');
+      if(!item) return;
+      e.preventDefault();
+      nameInput.value = item.textContent;
+      hideNameSuggestions();
+    });
 
     bodyEl.querySelectorAll('.vk-product-tile').forEach(tile=>{
       const pid = tile.dataset.id;

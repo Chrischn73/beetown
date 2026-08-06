@@ -303,6 +303,12 @@ textarea.inp{resize:vertical}
 .vk-product-tile .cnt-val{font-size:1rem; min-width:20px}
 .vk-product-tile-other{border-style:dashed; background:var(--bg)}
 .vk-product-tile-other .vk-product-name{opacity:.85}
+.vk-name-suggestions{position:absolute; left:0; right:0; top:100%; margin-top:.2rem; z-index:30;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow); max-height:12rem; overflow-y:auto}
+.vk-name-suggestion{padding:.55rem .8rem; cursor:pointer}
+.vk-name-suggestion:active{background:var(--chip-bg)}
+.vk-name-suggestion+.vk-name-suggestion{border-top:1px solid var(--line)}
 
 /* ---------- Honig-Verkauf: Verkaufstabelle - vertikale Spaltenkoepfe je Produkt ---------- */
 .vk-th-vertical{writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; text-align:left; vertical-align:bottom; padding:.4rem .3rem !important}
