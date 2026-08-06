@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.8.32';
+const APP_VERSION = 'v2.8.33';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -53,6 +53,7 @@ const HOME_BTN_CONFIG = [
   {key:'all',         label:'Alle'},
   {key:'honey',       label:'Ernte'},
   {key:'honeystir',   label:'Rühren'},
+  {key:'verkauf',     label:'Verkauf'},
   {key:'fuetterung',  label:'Fütterung'},
   {key:'lastentries', label:'Letzte Einträge'},
   {key:'varroacount', label:'Varroazählung'},
@@ -108,6 +109,11 @@ function fmtDate(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+function fmtDateShort(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
 }
 function fmtDateTime(iso) {
   if (!iso) return '';
@@ -831,6 +837,7 @@ async function render() {
     if(nav.view==='fuetterungsvorschlag') return await renderFuetterungsvorschlag();
     if(nav.view==='honeystir') return await renderHoneyStir();
     if(nav.view==='honeystirbatch') return await renderHoneyStirBatch();
+    if(nav.view==='verkauf') return await renderVerkauf();
   } catch(e) {
     app.innerHTML=`<div class="banner-error">${esc(e.message)}
       <button class="btn btn-ghost btn-sm" onclick="location.reload()">Neu laden</button></div>`;
@@ -841,7 +848,7 @@ backBtn.addEventListener('click',()=>{
   if(nav.from){ go(nav.from, nav.fromParams||{}); return; }
   if(nav.view==='colony'){ go('colonies',{apiaryId:nav.apiaryId,restoreScrollY:nav.backScrollY}); return; }
   if(nav.view==='honeystirbatch'){ go('honeystir'); return; }
-  if(['colonies','settings','archive','all','honey','honeystir','fuetterung','gewicht','lastentries','varroacount','varroahistory','sirupcalc','fuetterungsvorschlag'].includes(nav.view)) go('apiaries');
+  if(['colonies','settings','archive','all','honey','honeystir','verkauf','fuetterung','gewicht','lastentries','varroacount','varroahistory','sirupcalc','fuetterungsvorschlag'].includes(nav.view)) go('apiaries');
 });
 
 /* Update-Hinweis im Header (Setup-Portal installiert - Pi ODER
@@ -1002,6 +1009,7 @@ async function renderApiaries() {
       <button class="btn btn-ghost ${homeBtnHidden('all')}" id="open-all">🐝 Alle</button>
       <button class="btn btn-ghost ${homeBtnHidden('honey')}" id="open-honey">🍯 Ernte</button>
       <button class="btn btn-ghost ${homeBtnHidden('honeystir')}" id="open-honeystir" style="padding:.4rem .6rem"><img src="./icons/ruehren.svg" alt="" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Rühren</button>
+      <button class="btn btn-ghost ${homeBtnHidden('verkauf')}" id="open-verkauf">💰 Verkauf</button>
       <button class="btn btn-ghost ${homeBtnHidden('fuetterung')}" id="open-fuetterung">🍬 Fütterung</button>
       <button class="btn btn-ghost ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge">🕒 Letzte Einträge</button>
       <button class="btn btn-ghost ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="padding:.4rem .6rem"><img src="./icons/varroa.png" alt="Varroa Zählung" style="width:20px;height:20px;object-fit:contain;vertical-align:middle"> Varroazählung</button>
@@ -1125,6 +1133,7 @@ async function renderApiaries() {
   $('#open-all').onclick=()=>go('all');
   $('#open-honey').onclick=()=>go('honey');
   $('#open-honeystir').onclick=()=>go('honeystir');
+  $('#open-verkauf').onclick=()=>go('verkauf');
   $('#open-fuetterung').onclick=()=>go('fuetterung');
   $('#open-lastentries').onclick=()=>go('lastentries');
   $('#open-varroacount').onclick=()=>go('varroacount');
@@ -3497,7 +3506,7 @@ async function renderGewicht() {
             <li class="card gewicht-item" data-id="${esc(c.id)}" data-apiary="${esc(c.apiaryId)}"
                 style="display:grid;grid-template-columns:1fr 52px 52px 60px;gap:.5rem;align-items:center;padding:.55rem .8rem;touch-action:manipulation;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none">
               <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(c.name)}</div>
-              <div style="text-align:right;font-size:.85rem;color:var(--ink-soft);font-variant-numeric:tabular-nums">${hasCur ? fmtKg(cur) : '–'}</div>
+              <div style="text-align:right;font-size:.85rem;color:var(--ink-soft);font-variant-numeric:tabular-nums;line-height:1.2">${hasCur ? fmtKg(cur) : '–'}${c.currentWeightDate ? `<div style="font-size:.62rem;opacity:.75">${fmtDateShort(c.currentWeightDate)}</div>` : ''}</div>
               <div style="text-align:right;font-size:.85rem;color:var(--ink-soft);font-variant-numeric:tabular-nums">${hasZiel ? fmtKg(ziel) : '–'}</div>
               <div style="text-align:right;font-size:.85rem;font-weight:650;color:${fehltColor};font-variant-numeric:tabular-nums">${fehltText}</div>
             </li>`;
@@ -3540,39 +3549,90 @@ async function renderGewicht() {
     });
   };
 
+  /* Eigenes (nicht auf openModal() basierendes) Modal fuer die Gewichtserfassung:
+     Speichern-Aktion oben statt unten, kein X, Fenster oben statt als Bottom-Sheet
+     ausgerichtet, Abbrechen unten. Der obere Button heisst "Weiter" waehrend der
+     Cursor in Teilgewicht 1 steht und wechselt zu "Speichern" sobald Teilgewicht 2
+     fokussiert ist. */
   const openWeightModal = (idx) => {
     if(idx<0 || idx>=all.length) return;
     const c = all[idx];
-    openModal(`Gewicht erfassen — ${esc(c.name)}`, `
-      ${field('Datum','date',todayInput(),true,'date')}
-      <label class="lbl">Teilgewicht 1 (kg)</label>
-      <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3" autofocus>
-      <label class="lbl" style="margin-top:.5rem">Teilgewicht 2 (kg)</label>
-      <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1">`,
-      async(data,close)=>{
-        const t1 = parseDecimal(data.teil1), t2 = parseDecimal(data.teil2);
-        if(isNaN(t1) || isNaN(t2)) return alert('Bitte beide Teilgewichte eingeben.');
-        const entryDate = data.date || todayInput();
-        const totalStr = (Math.round((t1+t2)*10)/10).toString();
+    const oldCur = parseFloat(c.currentWeight);
+    const hasOld = !isNaN(oldCur);
+    const oldWeightText = hasOld
+      ? `${fmtKg(oldCur)} kg${c.currentWeightDate ? ' (Stand '+fmtDate(c.currentWeightDate)+')' : ''}`
+      : 'noch kein Gewicht erfasst';
+
+    const back=document.createElement('div');
+    back.className='modal-back modal-top';
+    back.innerHTML=`<div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head"><h2>Gewicht erfassen — ${esc(c.name)}</h2></div>
+      <div style="padding:0 1rem .6rem;font-size:.85rem;color:var(--ink-soft)">Bisheriges Gewicht: <strong style="color:var(--ink)">${oldWeightText}</strong></div>
+      <div style="padding:0 1rem .8rem"><button type="button" class="btn btn-primary" id="w-action" style="width:100%">Weiter</button></div>
+      <form class="modal-body">
+        ${field('Datum','date',todayInput(),true,'date')}
+        <label class="lbl">Teilgewicht 1 (kg)</label>
+        <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3">
+        <label class="lbl" style="margin-top:.5rem">Teilgewicht 2 (kg)</label>
+        <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1">
+      </form>
+      <div class="modal-foot" style="justify-content:center"><button type="button" class="btn btn-ghost" id="w-cancel" style="width:100%">Abbrechen</button></div>
+    </div>`;
+    document.body.appendChild(back);
+
+    const form=back.querySelector('.modal-body');
+    const initialValues=snapshotFormValues(form);
+    back.querySelectorAll('.date-clear').forEach(b=>b.onclick=()=>{
+      const inp=form.querySelector(`input[name="${b.dataset.clear}"]`);
+      if(inp) inp.value='';
+    });
+    const close=()=>back.remove();
+    back.querySelector('#w-cancel').onclick=()=>{
+      if(formIsDirty(form,initialValues) && !confirm('Ohne zu speichern schließen?')) return;
+      close();
+    };
+
+    const actionBtn = back.querySelector('#w-action');
+    const t1input = form.querySelector('input[name="teil1"]');
+    const t2input = form.querySelector('input[name="teil2"]');
+    let mode='next';
+    t1input.addEventListener('focus', ()=>{ mode='next'; actionBtn.textContent='Weiter'; });
+    t2input.addEventListener('focus', ()=>{ mode='save'; actionBtn.textContent='Speichern'; });
+    t1input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); t2input.focus(); } });
+    t2input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); doSave(); } });
+
+    const doSave = async()=>{
+      const t1 = parseDecimal(t1input.value), t2 = parseDecimal(t2input.value);
+      if(isNaN(t1) || isNaN(t2)) return alert('Bitte beide Teilgewichte eingeben.');
+      const dateInput = form.querySelector('input[name="date"]');
+      const entryDate = dateInput.value || todayInput();
+      const newWeight = Math.round((t1+t2)*10)/10;
+      const totalStr = newWeight.toString();
+      actionBtn.disabled=true;
+      try{
         await api('POST','./api/entries',{
           colonyId: c.id, type:'Gewichtserfassung', date: entryDate, notes:'', photos:[], obs:[],
-          obs_extra: { gewicht: totalStr, teilgewicht1: data.teil1, teilgewicht2: data.teil2 },
+          obs_extra: { gewicht: totalStr, teilgewicht1: t1input.value, teilgewicht2: t2input.value },
           createdAt: new Date().toISOString()
         });
         await api('PUT','./api/colonies/'+c.id, {...c, currentWeight: totalStr, currentWeightDate: entryDate});
         c.currentWeight = totalStr; c.currentWeightDate = entryDate;
-        close();
-        renderList();
-        showToast(`✅ ${totalStr.replace('.',',')} kg gespeichert`);
-        openWeightModal(idx+1);
-      }, null, true);
-    setTimeout(()=>{
-      const t1input = document.querySelector('.modal-body input[name="teil1"]');
-      const t2input = document.querySelector('.modal-body input[name="teil2"]');
-      t1input?.focus();
-      t1input?.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); t2input?.focus(); } });
-      t2input?.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('m-save')?.click(); } });
-    }, 50);
+      }catch(err){ actionBtn.disabled=false; return alert('Fehler: '+err.message); }
+      close();
+      renderList();
+      let toastMsg = `✅ ${fmtKg(newWeight)} kg gespeichert`;
+      if(hasOld){
+        const diff = Math.round((newWeight-oldCur)*10)/10;
+        const diffSign = diff>0?'+':(diff<0?'−':'±');
+        toastMsg += `<div style="margin-top:.3rem;font-size:.78rem;font-weight:400;opacity:.85">Alt: ${fmtKg(oldCur)} kg → Neu: ${fmtKg(newWeight)} kg</div>
+          <div style="margin-top:.15rem;font-size:1.25rem;font-weight:800">${diffSign}${fmtKg(Math.abs(diff))} kg</div>`;
+      }
+      showToast(toastMsg, 6000, true);
+      openWeightModal(idx+1);
+    };
+    actionBtn.onclick = ()=>{ if(mode==='next'){ t2input.focus(); } else { doSave(); } };
+
+    setTimeout(()=>{ t1input.focus(); }, 50);
   };
 
   renderList();
@@ -3639,6 +3699,459 @@ function printGewichtList(all, fmtKg) {
     <div class="sub">Stand: ${dateStr}</div>
     <table><thead><tr><th>Volk</th><th>Standort</th><th>Ist (kg)</th><th>Ziel (kg)</th><th>Fehlt (kg)</th></tr></thead>
     <tbody>${rows}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if(!w){ alert('Bitte Pop-ups erlauben, um zu drucken.'); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
+/* ---------- Honig-Verkauf ---------- */
+function fmtEUR(n){ return (Math.round(((parseFloat(n)||0)+Number.EPSILON)*100)/100).toFixed(2).replace('.',',')+' €'; }
+const VERKAUF_CATEGORIES = ['Box','Familie','Nachbarn','Freunde','Firma','Weihnachten'];
+
+/* Wirtschaftsjahr-Grenzen: startet am Stichtag (Format "MM-DD") des jeweiligen Startjahres,
+   endet am selben Stichtag im Folgejahr (exklusiv). */
+function wjFromStartYear(startYear, stichtag){
+  const [mm,dd] = (stichtag||'06-01').split('-').map(Number);
+  return { startYear, start: new Date(startYear,mm-1,dd), end: new Date(startYear+1,mm-1,dd), label: `${startYear}/${startYear+1}` };
+}
+function wjBounds(dateStr, stichtag){
+  const [mm,dd] = (stichtag||'06-01').split('-').map(Number);
+  const d = new Date(dateStr);
+  let startYear = d.getFullYear();
+  if(d < new Date(startYear,mm-1,dd)) startYear -= 1;
+  return wjFromStartYear(startYear, stichtag);
+}
+function inWJ(dateStr, wj){
+  if(!dateStr) return false;
+  const d = new Date(dateStr);
+  return d >= wj.start && d < wj.end;
+}
+
+async function renderVerkauf(){
+  setHeader('Verkauf', true);
+  let [products, sales, costs, settings] = await Promise.all([
+    apiGet('./api/honey_products'),
+    apiGet('./api/honey_sales'),
+    apiGet('./api/honey_costs'),
+    apiGet('./api/settings').catch(()=>({}))
+  ]);
+  const stichtag = settings.verkaufStichtag || '06-01';
+  const currentWJ = wjBounds(todayInput(), stichtag);
+  const computeWJYears = () => {
+    const set = new Set([currentWJ.startYear]);
+    [...sales,...costs].forEach(x=>{ if(x.date) set.add(wjBounds(x.date, stichtag).startYear); });
+    return [...set].sort((a,b)=>b-a);
+  };
+  let selectedWJYear = currentWJ.startYear;
+  let activeTab = 'erfassen';
+
+  app.innerHTML = `
+    <div class="toolbar" style="margin-bottom:.8rem">
+      <button class="btn btn-primary" id="vk-tab-erfassen">Erfassen</button>
+      <button class="btn btn-ghost" id="vk-tab-verkaeufe">Verkäufe</button>
+      <button class="btn btn-ghost" id="vk-tab-kosten">Kosten</button>
+      <button class="btn btn-ghost" id="vk-tab-produkte">Produkte</button>
+    </div>
+    <div id="vk-body"></div>`;
+
+  const bodyEl = document.getElementById('vk-body');
+  const tabBtns = { erfassen:$('#vk-tab-erfassen'), verkaeufe:$('#vk-tab-verkaeufe'), kosten:$('#vk-tab-kosten'), produkte:$('#vk-tab-produkte') };
+  const setTab = (t) => {
+    activeTab = t;
+    Object.keys(tabBtns).forEach(k=>{ tabBtns[k].className = 'btn ' + (k===t?'btn-primary':'btn-ghost'); });
+    drawTab();
+  };
+  Object.keys(tabBtns).forEach(k=>tabBtns[k].onclick=()=>setTab(k));
+
+  function drawTab(){
+    if(activeTab==='erfassen') return drawErfassen();
+    if(activeTab==='verkaeufe') return drawVerkaeufe();
+    if(activeTab==='kosten') return drawKosten();
+    if(activeTab==='produkte') return drawProdukte();
+  }
+
+  /* ---------- Tab: Erfassen (Schnellerfassung) ---------- */
+  function drawErfassen(){
+    const activeProducts = products.filter(p=>p.active).slice().sort((a,b)=>a.sortOrder-b.sortOrder);
+    bodyEl.innerHTML = `
+      <label class="lbl" style="margin-top:0">Datum</label>
+      <input class="inp" id="vk-date" type="date" value="${todayInput()}">
+      <label class="lbl">Kategorie</label>
+      <select class="inp" id="vk-category">
+        ${VERKAUF_CATEGORIES.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+      </select>
+      <label class="lbl">Name (optional)</label>
+      <input class="inp" id="vk-name" type="text" placeholder="z. B. Familie Meyer">
+      <label class="lbl" style="margin-top:1rem">Produkte antippen zum Hochzählen</label>
+      ${activeProducts.length===0 ? '<p class="muted">Keine aktiven Produkte – unter „Produkte" anlegen.</p>' : `
+      <div class="vk-product-grid">
+        ${activeProducts.map(p=>`
+          <div class="vk-product-tile" data-id="${esc(p.id)}">
+            <div class="vk-product-name">${esc(p.name)}</div>
+            <div class="vk-product-price">${fmtEUR(p.price)}</div>
+            <div class="vk-product-qty-row">
+              <button type="button" class="cnt-btn vk-minus" data-id="${esc(p.id)}">−</button>
+              <span class="cnt-val" id="vk-qty-${esc(p.id)}">0</span>
+            </div>
+          </div>`).join('')}
+      </div>`}
+      <label class="lbl" style="margin-top:1rem">Betrag (€)</label>
+      <input class="inp" id="vk-total" type="text" inputmode="decimal" value="0,00">
+      <label class="lbl">Notiz (optional)</label>
+      <input class="inp" id="vk-notes" type="text" placeholder="z. B. Geschenkbox klein">
+      <button class="btn btn-primary" id="vk-save" style="width:100%;margin-top:1rem">Verkauf speichern</button>`;
+
+    const qty = {}; activeProducts.forEach(p=>qty[p.id]=0);
+    let totalManual = false;
+    const totalInput = document.getElementById('vk-total');
+    const recalcTotal = () => {
+      if(totalManual) return;
+      const sum = activeProducts.reduce((s,p)=>s+qty[p.id]*p.price,0);
+      totalInput.value = fmtEUR(sum).replace(' €','');
+    };
+    totalInput.addEventListener('input', ()=>{ totalManual = true; });
+
+    bodyEl.querySelectorAll('.vk-product-tile').forEach(tile=>{
+      const pid = tile.dataset.id;
+      tile.addEventListener('click', (e)=>{
+        if(e.target.closest('.vk-minus')) return;
+        qty[pid]++;
+        document.getElementById('vk-qty-'+pid).textContent = qty[pid];
+        tile.classList.toggle('vk-active', qty[pid]>0);
+        recalcTotal();
+      });
+    });
+    bodyEl.querySelectorAll('.vk-minus').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const pid = btn.dataset.id;
+        if(qty[pid]>0) qty[pid]--;
+        document.getElementById('vk-qty-'+pid).textContent = qty[pid];
+        bodyEl.querySelector(`.vk-product-tile[data-id="${pid}"]`)?.classList.toggle('vk-active', qty[pid]>0);
+        recalcTotal();
+      });
+    });
+
+    document.getElementById('vk-save').onclick = async () => {
+      const items = activeProducts.filter(p=>qty[p.id]>0).map(p=>({productId:p.id, productName:p.name, qty:qty[p.id], unitPrice:p.price}));
+      const total = parseDecimal(totalInput.value) || 0;
+      if(items.length===0 && total<=0) return alert('Bitte mindestens ein Produkt antippen oder einen Betrag eingeben.');
+      const date = document.getElementById('vk-date').value || todayInput();
+      const category = document.getElementById('vk-category').value;
+      const buyerName = document.getElementById('vk-name').value;
+      const notes = document.getElementById('vk-notes').value;
+      const res = await api('POST','./api/honey_sales',{date,category,buyerName,items,total,notes});
+      sales.unshift({id:res.id,date,category,buyerName,items,total,notes,createdAt:new Date().toISOString()});
+      showToast(`✅ Verkauf gespeichert (${fmtEUR(total)})`);
+      drawErfassen();
+    };
+  }
+
+  /* ---------- Tab: Verkäufe ---------- */
+  function drawVerkaeufe(){
+    const wjYears = computeWJYears();
+    if(!wjYears.includes(selectedWJYear)) selectedWJYear = wjYears[0];
+    const wj = wjFromStartYear(selectedWJYear, stichtag);
+    const filtered = sales.filter(s=>inWJ(s.date, wj)).sort((a,b)=> b.date.localeCompare(a.date));
+    const filteredCosts = costs.filter(c=>inWJ(c.date, wj));
+    const revenue = filtered.reduce((s,x)=>s+(parseFloat(x.total)||0),0);
+    const costSum = filteredCosts.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+
+    const nameOrder = {}; products.forEach(p=>{ if(!(p.name in nameOrder)) nameOrder[p.name]=p.sortOrder; });
+    const colSet = new Set();
+    filtered.forEach(s=>s.items.forEach(it=>colSet.add(it.productName)));
+    const cols = [...colSet].sort((a,b)=>(nameOrder[a]??999)-(nameOrder[b]??999) || a.localeCompare(b,'de'));
+    const qtyFor = (s,name) => { const it=s.items.find(i=>i.productName===name); return it?it.qty:null; };
+    const colTotal = (name) => filtered.reduce((s,x)=>{ const it=x.items.find(i=>i.productName===name); return s+(it?it.qty:0); },0);
+
+    const gramsByName = {}; products.forEach(p=>{ gramsByName[p.name]=p.sizeGrams; });
+    let totalGrams = 0;
+    filtered.forEach(s=>s.items.forEach(it=>{ const g=gramsByName[it.productName]; if(g) totalGrams += g*it.qty; }));
+    const perProductSummary = cols.map(c=>gramsByName[c]?`${esc(c)}: ${colTotal(c)}`:null).filter(Boolean).join(' · ');
+
+    bodyEl.innerHTML = `
+      <div class="toolbar" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+        <select class="inp" id="vk-wj-select" style="width:auto">
+          ${wjYears.map(y=>`<option value="${y}" ${y===selectedWJYear?'selected':''}>WJ ${y}/${y+1}</option>`).join('')}
+        </select>
+        <button class="btn btn-ghost btn-sm" id="vk-print-verkaeufe">🖨 Drucken</button>
+      </div>
+      <p class="muted" style="font-size:.85rem">Einnahmen: <strong style="color:var(--ink)">${fmtEUR(revenue)}</strong> · Kosten: <strong style="color:var(--ink)">${fmtEUR(costSum)}</strong> · Gewinn: <strong style="color:var(--ink)">${fmtEUR(revenue-costSum)}</strong></p>
+      ${filtered.length===0 ? emptyState('Keine Verkäufe','Für dieses Wirtschaftsjahr wurden noch keine Verkäufe erfasst.') : `
+      <div class="table-wrap">
+        <table class="data-table data-table-compact">
+          <thead><tr>
+            <th>Datum</th><th>Kategorie</th><th>Name</th>
+            ${cols.map(c=>`<th style="text-align:right">${esc(c)}</th>`).join('')}
+            <th style="text-align:right">Betrag</th><th>Notiz</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${filtered.map(s=>`
+              <tr data-edit="${esc(s.id)}" style="cursor:pointer">
+                <td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td><td>${esc(s.buyerName||'')}</td>
+                ${cols.map(c=>{const q=qtyFor(s,c);return `<td style="text-align:right">${q!=null?q:''}</td>`;}).join('')}
+                <td style="text-align:right">${fmtEUR(s.total)}</td>
+                <td class="ellipsis" title="${esc(s.notes||'')}">${esc(s.notes||'')}</td>
+                <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot><tr>
+            <th colspan="3">Summe</th>
+            ${cols.map(c=>`<th style="text-align:right">${colTotal(c)}</th>`).join('')}
+            <th style="text-align:right">${fmtEUR(revenue)}</th><th colspan="2"></th>
+          </tr></tfoot>
+        </table>
+      </div>
+      ${perProductSummary || totalGrams ? `<p class="muted" style="font-size:.8rem;margin-top:.5rem">${perProductSummary}${perProductSummary&&totalGrams?' · ':''}${totalGrams?`Gesamt in kg: ${fmtNum(totalGrams/1000)}`:''}</p>` : ''}
+      `}`;
+
+    document.getElementById('vk-wj-select').onchange = (e)=>{ selectedWJYear=parseInt(e.target.value); drawVerkaeufe(); };
+    const printBtn = document.getElementById('vk-print-verkaeufe');
+    if(printBtn) printBtn.onclick = () => printVerkaufList(filtered, cols, wj, revenue);
+    bodyEl.querySelectorAll('tr[data-edit]').forEach(tr=>{
+      tr.onclick = (e) => { if(e.target.closest('[data-del]')) return; openSaleEditModal(sales.find(s=>s.id===tr.dataset.edit)); };
+    });
+    bodyEl.querySelectorAll('[data-del]').forEach(btn=>{
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        if(!confirm('Diesen Verkauf wirklich löschen?')) return;
+        await api('DELETE','./api/honey_sales/'+btn.dataset.del);
+        sales = sales.filter(s=>s.id!==btn.dataset.del);
+        drawVerkaeufe();
+      };
+    });
+  }
+
+  function openSaleEditModal(s){
+    if(!s) return;
+    openModal(`Verkauf bearbeiten — ${fmtDate(s.date)}`, `
+      ${field('Datum','date',s.date,true,'date')}
+      ${selectField('Kategorie','category',s.category,VERKAUF_CATEGORIES.map(c=>[c,c]))}
+      <label class="lbl">Name</label>
+      <input class="inp" name="buyerName" type="text" value="${esc(s.buyerName||'')}">
+      <label class="lbl">Betrag (€)</label>
+      <input class="inp" name="total" type="text" inputmode="decimal" value="${fmtNum(s.total)}">
+      <label class="lbl">Notiz</label>
+      <input class="inp" name="notes" type="text" value="${esc(s.notes||'')}">
+      <p class="muted" style="font-size:.8rem;margin-top:.6rem">Produkte: ${s.items.length?s.items.map(it=>`${it.qty}× ${esc(it.productName)}`).join(', '):'–'}</p>
+    `, async(data,close)=>{
+      const total = parseDecimal(data.total)||0;
+      const payload = {date:data.date||s.date, category:data.category, buyerName:data.buyerName, items:s.items, total, notes:data.notes};
+      await api('PUT','./api/honey_sales/'+s.id, payload);
+      Object.assign(s, payload);
+      close(); drawVerkaeufe();
+    }, async(close)=>{
+      if(!confirm('Diesen Verkauf wirklich löschen?')) return;
+      await api('DELETE','./api/honey_sales/'+s.id);
+      sales = sales.filter(x=>x.id!==s.id);
+      close(); drawVerkaeufe();
+    });
+  }
+
+  /* ---------- Tab: Kosten ---------- */
+  function drawKosten(){
+    const wjYears = computeWJYears();
+    if(!wjYears.includes(selectedWJYear)) selectedWJYear = wjYears[0];
+    const wj = wjFromStartYear(selectedWJYear, stichtag);
+    const filtered = costs.filter(c=>inWJ(c.date, wj)).sort((a,b)=>b.date.localeCompare(a.date));
+    const revenue = sales.filter(s=>inWJ(s.date, wj)).reduce((s,x)=>s+(parseFloat(x.total)||0),0);
+    const sum = filtered.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+
+    bodyEl.innerHTML = `
+      <div class="toolbar" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+        <select class="inp" id="vk-wj-select-k" style="width:auto">
+          ${wjYears.map(y=>`<option value="${y}" ${y===selectedWJYear?'selected':''}>WJ ${y}/${y+1}</option>`).join('')}
+        </select>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-ghost btn-sm" id="vk-print-kosten">🖨 Drucken</button>
+          <button class="btn btn-primary btn-sm" id="vk-add-cost">+ Kosten</button>
+        </div>
+      </div>
+      <p class="muted" style="font-size:.85rem">Einnahmen: <strong style="color:var(--ink)">${fmtEUR(revenue)}</strong> · Kosten: <strong style="color:var(--ink)">${fmtEUR(sum)}</strong> · Gewinn: <strong style="color:var(--ink)">${fmtEUR(revenue-sum)}</strong></p>
+      ${filtered.length===0 ? emptyState('Keine Kosten','Für dieses Wirtschaftsjahr wurden noch keine Kosten erfasst.') : `
+      <div class="table-wrap">
+        <table class="data-table data-table-compact">
+          <thead><tr><th>Datum</th><th>Beschreibung</th><th>Lieferant</th><th style="text-align:right">Betrag</th><th>Notiz</th><th></th></tr></thead>
+          <tbody>
+            ${filtered.map(c=>`
+              <tr data-edit="${esc(c.id)}" style="cursor:pointer">
+                <td>${fmtDate(c.date)}</td><td>${esc(c.description||'')}</td><td>${esc(c.supplier||'')}</td>
+                <td style="text-align:right">${fmtEUR(c.amount)}</td>
+                <td class="ellipsis" title="${esc(c.notes||'')}">${esc(c.notes||'')}</td>
+                <td><button class="btn btn-ghost btn-sm" data-del="${esc(c.id)}" title="Löschen">🗑</button></td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot><tr><th colspan="3">Summe</th><th style="text-align:right">${fmtEUR(sum)}</th><th colspan="2"></th></tr></tfoot>
+        </table>
+      </div>`}`;
+
+    document.getElementById('vk-wj-select-k').onchange = (e)=>{ selectedWJYear=parseInt(e.target.value); drawKosten(); };
+    document.getElementById('vk-add-cost').onclick = () => openCostEditModal(null);
+    const printBtn = document.getElementById('vk-print-kosten');
+    if(printBtn) printBtn.onclick = () => printKostenList(filtered, wj, sum);
+    bodyEl.querySelectorAll('tr[data-edit]').forEach(tr=>{
+      tr.onclick = (e)=>{ if(e.target.closest('[data-del]')) return; openCostEditModal(costs.find(c=>c.id===tr.dataset.edit)); };
+    });
+    bodyEl.querySelectorAll('[data-del]').forEach(btn=>{
+      btn.onclick = async(e)=>{
+        e.stopPropagation();
+        if(!confirm('Diesen Kosten-Eintrag wirklich löschen?')) return;
+        await api('DELETE','./api/honey_costs/'+btn.dataset.del);
+        costs = costs.filter(c=>c.id!==btn.dataset.del);
+        drawKosten();
+      };
+    });
+  }
+
+  function openCostEditModal(c){
+    const isNew = !c;
+    openModal(isNew?'Kosten erfassen':'Kosten bearbeiten', `
+      ${field('Datum','date',c?c.date:todayInput(),true,'date')}
+      <label class="lbl">Beschreibung</label>
+      <input class="inp" name="description" type="text" value="${esc(c?c.description:'')}">
+      <label class="lbl">Lieferant</label>
+      <input class="inp" name="supplier" type="text" value="${esc(c?c.supplier:'')}">
+      <label class="lbl">Betrag (€)</label>
+      <input class="inp" name="amount" type="text" inputmode="decimal" value="${c?fmtNum(c.amount):''}">
+      <label class="lbl">Notiz</label>
+      <input class="inp" name="notes" type="text" value="${esc(c?c.notes:'')}">
+    `, async(data,close)=>{
+      const amount = parseDecimal(data.amount)||0;
+      const payload = {date:data.date||todayInput(), description:data.description, supplier:data.supplier, amount, notes:data.notes};
+      if(isNew){
+        const res = await api('POST','./api/honey_costs', payload);
+        costs.unshift({id:res.id, ...payload, createdAt:new Date().toISOString()});
+      } else {
+        await api('PUT','./api/honey_costs/'+c.id, payload);
+        Object.assign(c, payload);
+      }
+      close(); drawKosten();
+    }, isNew?null:async(close)=>{
+      if(!confirm('Diesen Kosten-Eintrag wirklich löschen?')) return;
+      await api('DELETE','./api/honey_costs/'+c.id);
+      costs = costs.filter(x=>x.id!==c.id);
+      close(); drawKosten();
+    });
+  }
+
+  /* ---------- Tab: Produkte ---------- */
+  function drawProdukte(){
+    const [stMM,stDD] = stichtag.split('-');
+    bodyEl.innerHTML = `
+      <div style="border:1px solid var(--line);border-radius:var(--radius);padding:.8rem;margin-bottom:1rem;background:var(--surface)">
+        <label class="lbl" style="margin-top:0">Wirtschaftsjahr beginnt am (Tag.Monat)</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <input class="inp" id="vk-stichtag" type="text" placeholder="01.06." value="${esc(stDD)}.${esc(stMM)}." style="max-width:8rem">
+          <button class="btn btn-ghost btn-sm" id="vk-save-stichtag">Speichern</button>
+        </div>
+      </div>
+      <div class="toolbar" style="justify-content:space-between;align-items:center">
+        <h2 class="section-h" style="margin:0">Produkte</h2>
+        <button class="btn btn-primary btn-sm" id="vk-add-product">+ Produkt</button>
+      </div>
+      <ul class="card-list">
+        ${products.slice().sort((a,b)=>a.sortOrder-b.sortOrder).map(p=>`
+          <li class="card" data-edit="${esc(p.id)}" style="cursor:pointer;opacity:${p.active?1:.5}">
+            <div class="card-main">
+              <div class="card-title">${esc(p.name)}</div>
+              <div class="card-sub">${fmtEUR(p.price)}${p.sizeGrams?' · '+p.sizeGrams+'g':''}${p.active?'':' · ausgeblendet'}</div>
+            </div>
+          </li>`).join('')}
+      </ul>`;
+
+    document.getElementById('vk-save-stichtag').onclick = async () => {
+      const raw = document.getElementById('vk-stichtag').value.trim();
+      const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.?$/);
+      if(!m) return alert('Bitte im Format TT.MM. eingeben, z. B. 01.06.');
+      const dd = m[1].padStart(2,'0'), mm = m[2].padStart(2,'0');
+      await api('POST','./api/settings',{verkaufStichtag: `${mm}-${dd}`});
+      showToast('✅ Stichtag gespeichert');
+      renderVerkauf();
+    };
+    document.getElementById('vk-add-product').onclick = () => openProductEditModal(null);
+    bodyEl.querySelectorAll('[data-edit]').forEach(li=>{
+      li.onclick = () => openProductEditModal(products.find(p=>p.id===li.dataset.edit));
+    });
+  }
+
+  function openProductEditModal(p){
+    const isNew = !p;
+    openModal(isNew?'Produkt anlegen':'Produkt bearbeiten', `
+      <label class="lbl">Name</label>
+      <input class="inp" name="name" type="text" value="${esc(p?p.name:'')}" placeholder="z. B. Frühtracht 500g">
+      <label class="lbl">Preis (€)</label>
+      <input class="inp" name="price" type="text" inputmode="decimal" value="${p?fmtNum(p.price):''}">
+      <label class="lbl">Glasgröße (g, optional)</label>
+      <input class="inp" name="sizeGrams" type="number" min="0" value="${p&&p.sizeGrams?p.sizeGrams:''}">
+      <label class="check-item" style="margin-top:.6rem"><input type="checkbox" id="vk-product-active" ${(!p||p.active)?'checked':''}><span>Aktiv (in der Schnellerfassung anzeigen)</span></label>
+    `, async(data,close)=>{
+      if(!data.name) return alert('Bitte einen Namen eingeben.');
+      const payload = { name:data.name, price:parseDecimal(data.price)||0, sizeGrams:parseInt(data.sizeGrams)||0, active: document.getElementById('vk-product-active').checked };
+      if(isNew){
+        const res = await api('POST','./api/honey_products', payload);
+        products.push({id:res.id, ...payload, sortOrder:products.length, createdAt:new Date().toISOString()});
+      } else {
+        await api('PUT','./api/honey_products/'+p.id, {...p, ...payload});
+        Object.assign(p, payload);
+      }
+      close(); drawProdukte();
+    }, isNew?null:async(close)=>{
+      if(!confirm('Dieses Produkt wirklich löschen? Bereits erfasste Verkäufe bleiben davon unberührt.')) return;
+      await api('DELETE','./api/honey_products/'+p.id);
+      products = products.filter(x=>x.id!==p.id);
+      close(); drawProdukte();
+    });
+  }
+
+  drawTab();
+}
+
+function printVerkaufList(filtered, cols, wj, revenue){
+  const dateStr = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const rowsHtml = filtered.map(s=>{
+    const qtyCells = cols.map(c=>{const it=s.items.find(i=>i.productName===c); return `<td>${it?it.qty:''}</td>`;}).join('');
+    return `<tr><td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td><td>${esc(s.buyerName||'')}</td>${qtyCells}<td>${fmtEUR(s.total)}</td><td>${esc(s.notes||'')}</td></tr>`;
+  }).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Verkäufe ${wj.label}</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:1.5cm;color:#000}
+      h1{font-size:18px;margin:0 0 .2cm 0}
+      .sub{font-size:11px;color:#555;margin-bottom:.5cm}
+      table{width:100%;border-collapse:collapse;font-size:10px}
+      th,td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}
+      th{background:#f0f0f0;font-weight:700}
+    </style></head><body>
+    <h1>Honig-Verkäufe – Wirtschaftsjahr ${wj.label}</h1>
+    <div class="sub">Erstellt: ${dateStr} · Gesamt: ${fmtEUR(revenue)}</div>
+    <table><thead><tr><th>Datum</th><th>Kategorie</th><th>Name</th>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}<th>Betrag</th><th>Notiz</th></tr></thead>
+    <tbody>${rowsHtml}</tbody></table>
+    <script>window.onload=()=>{window.print();}<\/script>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if(!w){ alert('Bitte Pop-ups erlauben, um zu drucken.'); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
+function printKostenList(filtered, wj, sum){
+  const dateStr = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const rowsHtml = filtered.map(c=>`<tr><td>${fmtDate(c.date)}</td><td>${esc(c.description||'')}</td><td>${esc(c.supplier||'')}</td><td>${fmtEUR(c.amount)}</td><td>${esc(c.notes||'')}</td></tr>`).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Kosten ${wj.label}</title>
+    <style>
+      body{font-family:Arial,sans-serif;margin:1.5cm;color:#000}
+      h1{font-size:18px;margin:0 0 .2cm 0}
+      .sub{font-size:11px;color:#555;margin-bottom:.5cm}
+      table{width:100%;border-collapse:collapse;font-size:11px}
+      th,td{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top}
+      th{background:#f0f0f0;font-weight:700}
+    </style></head><body>
+    <h1>Kosten – Wirtschaftsjahr ${wj.label}</h1>
+    <div class="sub">Erstellt: ${dateStr} · Summe: ${fmtEUR(sum)}</div>
+    <table><thead><tr><th>Datum</th><th>Beschreibung</th><th>Lieferant</th><th>Betrag</th><th>Notiz</th></tr></thead>
+    <tbody>${rowsHtml}</tbody></table>
     <script>window.onload=()=>{window.print();}<\/script>
     </body></html>`;
   const w = window.open('', '_blank');
@@ -4116,6 +4629,19 @@ function wireHR(colony) {
   draw();
 }
 
+/* Merkt sich die Werte benannter Formularfelder beim Öffnen, um beim
+   Schließen über X/Hintergrund zu erkennen, ob ungespeichert geändert wurde. */
+function snapshotFormValues(form){
+  const d={};
+  form.querySelectorAll('input[name],select[name],textarea[name]').forEach((el)=>{
+    d[el.name]=(el.type==='checkbox'||el.type==='radio')?el.checked:el.value;
+  });
+  return d;
+}
+function formIsDirty(form,initial){
+  const cur=snapshotFormValues(form);
+  return Object.keys(cur).some(k=>cur[k]!==initial[k]);
+}
 function openModal(title,bodyHTML,onSave,onDelete,noBackdropClose=false){
   const back=document.createElement('div');
   back.className='modal-back';
@@ -4125,10 +4651,15 @@ function openModal(title,bodyHTML,onSave,onDelete,noBackdropClose=false){
     <div class="modal-foot">${onDelete?'<button type="button" class="btn btn-danger btn-sm" id="m-del">Löschen</button>':'<span></span>'}
     <button type="button" class="btn btn-primary" id="m-save">Speichern</button></div></div>`;
   document.body.appendChild(back);
-  const close=()=>back.remove();
-  back.querySelector('.modal-close').onclick=close;
-  if(!noBackdropClose){ back.onclick=(e)=>{if(e.target===back)close();}; }
   const form=back.querySelector('.modal-body');
+  const initialValues=snapshotFormValues(form);
+  const close=()=>back.remove();
+  const closeGuarded=()=>{
+    if(formIsDirty(form,initialValues) && !confirm('Ohne zu speichern schließen?')) return;
+    close();
+  };
+  back.querySelector('.modal-close').onclick=closeGuarded;
+  if(!noBackdropClose){ back.onclick=(e)=>{if(e.target===back)closeGuarded();}; }
   /* Datum-Löschen-Buttons */
   back.querySelectorAll('.date-clear').forEach(b=>b.onclick=()=>{
     const inp=form.querySelector(`input[name="${b.dataset.clear}"]`);
@@ -4150,10 +4681,10 @@ function openModal(title,bodyHTML,onSave,onDelete,noBackdropClose=false){
   };
 }
 /* Kurze Rückmeldung, verschwindet nach ca. 1 Sekunde von selbst */
-function showToast(msg, duration=3000){
+function showToast(msg, duration=3000, isHtml=false){
   const t=document.createElement('div');
   t.className='toast';
-  t.textContent=msg;
+  if(isHtml) t.innerHTML=msg; else t.textContent=msg;
   document.body.appendChild(t);
   setTimeout(()=>t.classList.add('toast-out'), duration);
   setTimeout(()=>t.remove(), duration+300);

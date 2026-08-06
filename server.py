@@ -67,6 +67,18 @@ def landing_port():
 
 os.makedirs(PHOTO_DIR, exist_ok=True)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+# Einmalige Startbelegung fuer honey_products (Name, Preis in Euro, Gewicht in Gramm) -
+# entspricht den in der bisher genutzten Excel-Liste tatsaechlich verwendeten Sorten/Groessen.
+DEFAULT_HONEY_PRODUCTS = [
+    ("Frühtracht 500g", 9.0, 500),
+    ("Frühtracht 250g", 6.0, 250),
+    ("Sommertracht 500g", 9.0, 500),
+    ("Sommertracht 250g", 6.0, 250),
+    ("Raps 500g", 9.0, 500),
+    ("Raps 250g", 6.0, 250),
+    ("Sommertracht flüssig 500g", 9.0, 500),
+    ("Sommertracht flüssig 250g", 6.0, 250),
+]
 
 def now_iso(): return datetime.now(timezone.utc).isoformat()
 def new_id():  return secrets.token_hex(8)
@@ -141,6 +153,15 @@ def init_db():
         CREATE TABLE IF NOT EXISTS honey_stir_entries(
             id TEXT PRIMARY KEY, batchId TEXT, date TEXT, temp TEXT,
             appearance TEXT, photos TEXT, createdAt TEXT);
+        CREATE TABLE IF NOT EXISTS honey_products(
+            id TEXT PRIMARY KEY, name TEXT, price REAL DEFAULT 0, sizeGrams INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1, sortOrder INTEGER DEFAULT 0, createdAt TEXT);
+        CREATE TABLE IF NOT EXISTS honey_sales(
+            id TEXT PRIMARY KEY, date TEXT, category TEXT, buyerName TEXT, items TEXT,
+            total REAL DEFAULT 0, notes TEXT, createdAt TEXT);
+        CREATE TABLE IF NOT EXISTS honey_costs(
+            id TEXT PRIMARY KEY, date TEXT, description TEXT, supplier TEXT, amount REAL DEFAULT 0,
+            notes TEXT, createdAt TEXT);
         CREATE INDEX IF NOT EXISTS idx_col_apiary ON colonies(apiaryId);
         CREATE INDEX IF NOT EXISTS idx_ent_colony ON entries(colonyId);
         CREATE INDEX IF NOT EXISTS idx_stirentry_batch ON honey_stir_entries(batchId);
@@ -195,6 +216,10 @@ def init_db():
     for table, col, sql in migrations:
         if not column_exists(con, table, col):
             con.execute(sql)
+    if con.execute("SELECT COUNT(*) FROM honey_products").fetchone()[0] == 0:
+        for i, (name, price, grams) in enumerate(DEFAULT_HONEY_PRODUCTS):
+            con.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,createdAt) VALUES(?,?,?,?,1,?,?)",
+                (new_id(), name, price, grams, i, now_iso()))
     if column_exists(con,"entries","photoIds"):
         for r in con.execute("SELECT id, photoIds FROM entries WHERE photos IS NULL").fetchall():
             try: ids = json.loads(r["photoIds"] or "[]")
@@ -219,6 +244,12 @@ def parse_stir_entry(r):
     d = dict(r)
     try: d["photos"] = json.loads(d.get("photos") or "[]")
     except Exception: d["photos"] = []
+    return d
+
+def parse_sale(r):
+    d = dict(r)
+    try: d["items"] = json.loads(d.get("items") or "[]")
+    except Exception: d["items"] = []
     return d
 
 def photo_ids(photos):
@@ -433,6 +464,13 @@ class Handler(BaseHTTPRequestHandler):
                 bid=(q.get("batchId") or [""])[0]
                 rs=con.execute("SELECT * FROM honey_stir_entries WHERE batchId=? ORDER BY date DESC",(bid,)).fetchall()
                 return self._json([parse_stir_entry(r) for r in rs])
+            if path=="/api/honey_products":
+                return self._json(rows(con,"SELECT * FROM honey_products ORDER BY sortOrder,name"))
+            if path=="/api/honey_sales":
+                rs=con.execute("SELECT * FROM honey_sales ORDER BY date DESC, createdAt DESC").fetchall()
+                return self._json([parse_sale(r) for r in rs])
+            if path=="/api/honey_costs":
+                return self._json(rows(con,"SELECT * FROM honey_costs ORDER BY date DESC, createdAt DESC"))
             if path=="/api/backup": return self.api_backup(con)
             m=re.match(r"^/api/photos/([^/]+)$",path)
             if m:
@@ -492,6 +530,34 @@ class Handler(BaseHTTPRequestHandler):
                 (id,batchId,date,temp,appearance,photos,createdAt) VALUES(?,?,?,?,?,?,?)""",
                 (rid,body2.get("batchId",""),body2.get("date",""),body2.get("temp",""),
                  body2.get("appearance",""),json.dumps(body2.get("photos",[])),now_iso()))
+            con2.commit(); con2.close()
+            return self._json({"id":rid})
+        if path=="/api/honey_products":
+            body2=self._rjson()
+            rid=new_id()
+            con2=db()
+            maxSort=con2.execute("SELECT COALESCE(MAX(sortOrder),-1)+1 FROM honey_products").fetchone()[0]
+            con2.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,createdAt) VALUES(?,?,?,?,?,?,?)",
+                (rid,body2.get("name",""),float(body2.get("price",0) or 0),int(body2.get("sizeGrams",0) or 0),
+                 1 if body2.get("active",True) else 0,int(maxSort),now_iso()))
+            con2.commit(); con2.close()
+            return self._json({"id":rid})
+        if path=="/api/honey_sales":
+            body2=self._rjson()
+            rid=new_id()
+            con2=db()
+            con2.execute("INSERT INTO honey_sales(id,date,category,buyerName,items,total,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)",
+                (rid,body2.get("date",""),body2.get("category",""),body2.get("buyerName",""),
+                 json.dumps(body2.get("items",[])),float(body2.get("total",0) or 0),body2.get("notes",""),now_iso()))
+            con2.commit(); con2.close()
+            return self._json({"id":rid})
+        if path=="/api/honey_costs":
+            body2=self._rjson()
+            rid=new_id()
+            con2=db()
+            con2.execute("INSERT INTO honey_costs(id,date,description,supplier,amount,notes,createdAt) VALUES(?,?,?,?,?,?,?)",
+                (rid,body2.get("date",""),body2.get("description",""),body2.get("supplier",""),
+                 float(body2.get("amount",0) or 0),body2.get("notes",""),now_iso()))
             con2.commit(); con2.close()
             return self._json({"id":rid})
         if path=="/api/sirup_calc":
@@ -665,7 +731,7 @@ class Handler(BaseHTTPRequestHandler):
         con=db()
         try:
             body=self._rjson()
-            m=re.match(r"^/api/(apiaries|colonies|entries|scales|reminders|honey_harvests|honey_stir_batches|honey_stir_entries)/([^/]+)$",path)
+            m=re.match(r"^/api/(apiaries|colonies|entries|scales|reminders|honey_harvests|honey_stir_batches|honey_stir_entries|honey_products|honey_sales|honey_costs)/([^/]+)$",path)
             if not m: return self._err(404,"Not found")
             kind,rid=m.group(1),m.group(2)
             if not ID_RE.match(rid): return self._err(400,"Bad id")
@@ -729,6 +795,18 @@ class Handler(BaseHTTPRequestHandler):
                 con.execute("UPDATE honey_stir_entries SET date=?,temp=?,appearance=?,photos=? WHERE id=?",
                     (body.get("date",""),body.get("temp",""),body.get("appearance",""),
                      json.dumps(new_photos),rid))
+            elif kind=="honey_products":
+                con.execute("UPDATE honey_products SET name=?,price=?,sizeGrams=?,active=?,sortOrder=? WHERE id=?",
+                    (body.get("name",""),float(body.get("price",0) or 0),int(body.get("sizeGrams",0) or 0),
+                     1 if body.get("active",True) else 0,int(body.get("sortOrder",0) or 0),rid))
+            elif kind=="honey_sales":
+                con.execute("UPDATE honey_sales SET date=?,category=?,buyerName=?,items=?,total=?,notes=? WHERE id=?",
+                    (body.get("date",""),body.get("category",""),body.get("buyerName",""),
+                     json.dumps(body.get("items",[])),float(body.get("total",0) or 0),body.get("notes",""),rid))
+            elif kind=="honey_costs":
+                con.execute("UPDATE honey_costs SET date=?,description=?,supplier=?,amount=?,notes=? WHERE id=?",
+                    (body.get("date",""),body.get("description",""),body.get("supplier",""),
+                     float(body.get("amount",0) or 0),body.get("notes",""),rid))
             con.commit(); self._json({"ok":True})
         finally: con.close()
 
@@ -739,7 +817,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok":True})
         con=db()
         try:
-            m=re.match(r"^/api/(apiaries|colonies|entries|scales|reminders|honey_harvests|sirup_calc|honey_stir_batches|honey_stir_entries)/([^/]+)$",path)
+            m=re.match(r"^/api/(apiaries|colonies|entries|scales|reminders|honey_harvests|sirup_calc|honey_stir_batches|honey_stir_entries|honey_products|honey_sales|honey_costs)/([^/]+)$",path)
             if not m: return self._err(404,"Not found")
             kind,rid=m.group(1),m.group(2)
             if not ID_RE.match(rid): return self._err(400,"Bad id")
@@ -770,13 +848,19 @@ class Handler(BaseHTTPRequestHandler):
                 e=con.execute("SELECT photos FROM honey_stir_entries WHERE id=?",(rid,)).fetchone()
                 if e: delete_photos(photo_ids(json.loads(e["photos"] or "[]")))
                 con.execute("DELETE FROM honey_stir_entries WHERE id=?",(rid,))
+            elif kind=="honey_products":
+                con.execute("DELETE FROM honey_products WHERE id=?",(rid,))
+            elif kind=="honey_sales":
+                con.execute("DELETE FROM honey_sales WHERE id=?",(rid,))
+            elif kind=="honey_costs":
+                con.execute("DELETE FROM honey_costs WHERE id=?",(rid,))
             con.commit(); self._json({"ok":True})
         finally: con.close()
 
     def api_backup(self, con):
         con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('_lastBackupAt',?)",(now_iso(),))
         con.commit()
-        out={"app":"imkerei","version":8,
+        out={"app":"imkerei","version":9,
              "apiaries":rows(con,"SELECT * FROM apiaries"),
              "colonies":rows(con,"SELECT * FROM colonies"),
              "entries":[parse_entry(r) for r in con.execute("SELECT * FROM entries").fetchall()],
@@ -786,6 +870,9 @@ class Handler(BaseHTTPRequestHandler):
              "sirup_calc":rows(con,"SELECT * FROM sirup_calc"),
              "honey_stir_batches":rows(con,"SELECT * FROM honey_stir_batches"),
              "honey_stir_entries":[parse_stir_entry(r) for r in con.execute("SELECT * FROM honey_stir_entries").fetchall()],
+             "honey_products":rows(con,"SELECT * FROM honey_products"),
+             "honey_sales":[parse_sale(r) for r in con.execute("SELECT * FROM honey_sales").fetchall()],
+             "honey_costs":rows(con,"SELECT * FROM honey_costs"),
              "settings":rows(con,"SELECT * FROM settings")}
         body=json.dumps(out).encode()
         self.send_response(200)
@@ -797,7 +884,8 @@ class Handler(BaseHTTPRequestHandler):
     def api_restore(self, con, body):
         if body.get("app")!="imkerei": return self._err(400,"Keine gültige Backup-Datei")
         for t in ("apiaries","colonies","entries","scales","honey_harvests","reminders","sirup_calc",
-                  "honey_stir_batches","honey_stir_entries","settings"): con.execute(f"DELETE FROM {t}")
+                  "honey_stir_batches","honey_stir_entries","honey_products","honey_sales","honey_costs",
+                  "settings"): con.execute(f"DELETE FROM {t}")
         for a in body.get("apiaries",[]):
             con.execute("INSERT INTO apiaries(id,name,location,notes,createdAt) VALUES(?,?,?,?,?)",
                 (a["id"],a.get("name",""),a.get("location",""),a.get("notes",""),a.get("createdAt","")))
@@ -862,6 +950,21 @@ class Handler(BaseHTTPRequestHandler):
                 (id,batchId,date,temp,appearance,photos,createdAt) VALUES(?,?,?,?,?,?,?)""",
                 (e["id"],e.get("batchId",""),e.get("date",""),e.get("temp",""),
                  e.get("appearance",""),json.dumps(e.get("photos",[])),e.get("createdAt","")))
+        for p in body.get("honey_products",[]):
+            con.execute("""INSERT INTO honey_products
+                (id,name,price,sizeGrams,active,sortOrder,createdAt) VALUES(?,?,?,?,?,?,?)""",
+                (p["id"],p.get("name",""),float(p.get("price",0) or 0),int(p.get("sizeGrams",0) or 0),
+                 1 if p.get("active",True) else 0,int(p.get("sortOrder",0) or 0),p.get("createdAt","")))
+        for sa in body.get("honey_sales",[]):
+            con.execute("""INSERT INTO honey_sales
+                (id,date,category,buyerName,items,total,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)""",
+                (sa["id"],sa.get("date",""),sa.get("category",""),sa.get("buyerName",""),
+                 json.dumps(sa.get("items",[])),float(sa.get("total",0) or 0),sa.get("notes",""),sa.get("createdAt","")))
+        for co in body.get("honey_costs",[]):
+            con.execute("""INSERT INTO honey_costs
+                (id,date,description,supplier,amount,notes,createdAt) VALUES(?,?,?,?,?,?,?)""",
+                (co["id"],co.get("date",""),co.get("description",""),co.get("supplier",""),
+                 float(co.get("amount",0) or 0),co.get("notes",""),co.get("createdAt","")))
         for s in body.get("settings",[]):
             con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
                 (s.get("key",""),s.get("value","")))
