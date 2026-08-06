@@ -76,12 +76,20 @@ body{
 .toolbar .btn.hidden{display:none!important}
 
 /* ---------- Startseite: Icon-Kacheln statt unterschiedlich breiter Reihen-Buttons -----------
-   minmax(100px,..) ist bewusst so gewaehlt, dass auf einem Handy (~375px) genau 3 pro Reihe passen. */
-.home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:.5rem}
-.home-btn{flex-direction:column; gap:.3rem; padding:.6rem .3rem; min-height:66px; white-space:normal; line-height:1.2}
-.home-btn-icon{font-size:1.6rem; line-height:1}
+   Groesse ueber CSS-Variablen (aus den Einstellungen, siehe homeBtnSizeVars()) steuerbar;
+   Werte hier sind der "mittel"-Standard-Fallback, falls keine Variablen gesetzt sind.
+   minmax(...) ist bewusst so gewaehlt, dass bei "mittel" auf einem Handy (~375px)
+   genau 3 pro Reihe passen. */
+.home-toolbar{display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--home-tile-min,100px),1fr)); gap:.5rem}
+.home-btn{flex-direction:column; gap:.3rem; padding:.6rem .3rem; min-height:var(--home-btn-h,66px); white-space:normal; line-height:1.2}
+.home-btn-icon{font-size:var(--home-btn-icon,1.6rem); line-height:1}
 .home-btn-icon img{width:26px; height:26px; object-fit:contain}
-.home-btn-label{font-size:.72rem; font-weight:700; text-align:center}
+.home-btn-label{font-size:var(--home-btn-label,.72rem); font-weight:700; text-align:center}
+.home-toolbar-no-text .home-btn-label{display:none}
+.home-toolbar-small{grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); margin-top:.5rem}
+.home-toolbar-small .home-btn{min-height:50px; padding:.5rem .3rem}
+.home-toolbar-small .home-btn-icon{font-size:1.2rem}
+.home-toolbar-small .home-btn-label{font-size:.62rem}
 .search-box{margin-bottom:1rem}
 .search-box .inp{width:100%}
 .search-box-wrap{position:relative}

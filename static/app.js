@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.03';
+const APP_VERSION = 'v2.9.04';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -43,6 +43,9 @@ async function loadSettings() {
     const homeVis = {};
     HOME_BTN_CONFIG.forEach(c => { homeVis[c.key] = (s['homeBtn_'+c.key] !== 'false'); });
     window._homeBtnVis = homeVis;
+    window._homeBtnSize = s.homeBtnSize || 'mittel';
+    window._homeBtnSizePx = s.homeBtnSizePx || '';
+    window._homeBtnShowText = (s.homeBtnShowText !== 'false');
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
   } catch(_) {}
 }
@@ -61,6 +64,20 @@ const HOME_BTN_CONFIG = [
 ];
 function homeBtnHidden(key) {
   return (window._homeBtnVis && window._homeBtnVis[key]===false) ? 'hidden' : '';
+}
+/* Rechnet die Einstellungen Größe (klein/mittel/groß/eigene Pixelzahl) in konkrete
+   CSS-Werte um. "Mittel" entspricht bewusst den bisherigen Werten (Standard). */
+const HOME_BTN_SIZE_PRESETS = { klein: 50, mittel: 66, gross: 84 };
+function homeBtnSizeVars() {
+  const size = window._homeBtnSize || 'mittel';
+  const h = size === 'custom'
+    ? (parseInt(window._homeBtnSizePx) || HOME_BTN_SIZE_PRESETS.mittel)
+    : (HOME_BTN_SIZE_PRESETS[size] || HOME_BTN_SIZE_PRESETS.mittel);
+  const scale = h / HOME_BTN_SIZE_PRESETS.mittel;
+  const iconRem = Math.min(3, Math.max(0.9, 1.6 * scale)).toFixed(2);
+  const labelRem = Math.min(1.1, Math.max(0.55, 0.72 * scale)).toFixed(2);
+  const tileMin = Math.round(h * 1.515);
+  return `--home-btn-h:${h}px;--home-btn-icon:${iconRem}rem;--home-btn-label:${labelRem}rem;--home-tile-min:${tileMin}px`;
 }
 /* Sonderbehandlung von Völkern/Standorten, deren Name mit dem konfigurierbaren
    Präfix beginnt (Standard „BK“); leerer Präfix deaktiviert die Sonderbehandlung. */
@@ -1005,7 +1022,7 @@ async function renderApiaries() {
       </div>
       ${logoHTML ? `<div class="brand-logo-wrap">${logoHTML}</div>` : ''}
     </div>
-    <div class="toolbar home-toolbar">
+    <div class="toolbar home-toolbar${window._homeBtnShowText===false?' home-toolbar-no-text':''}" style="${homeBtnSizeVars()}">
       <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all"><span class="home-btn-icon">🐝</span><span class="home-btn-label">Alle</span></button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('honey')}" id="open-honey"><span class="home-btn-icon">🍯</span><span class="home-btn-label">Ernte</span></button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('honeystir')}" id="open-honeystir"><span class="home-btn-icon"><img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain"></span><span class="home-btn-label">Rühren</span></button>
@@ -1014,6 +1031,8 @@ async function renderApiaries() {
       <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge"><span class="home-btn-icon">🕒</span><span class="home-btn-label">Letzte Einträge</span></button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span><span class="home-btn-label">Varroazählung</span></button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive"><span class="home-btn-icon">📦</span><span class="home-btn-label">Archiv</span></button>
+    </div>
+    <div class="toolbar home-toolbar home-toolbar-small${window._homeBtnShowText===false?' home-toolbar-no-text':''}">
       <button class="btn btn-ghost home-btn" id="open-settings" title="Einstellungen"><span class="home-btn-icon">⚙︎</span><span class="home-btn-label">Einstellungen</span></button>
       ${hilfeLinkHTML}
     </div>
@@ -4235,7 +4254,7 @@ async function renderVerkauf(){
 function printVerkaufList(filtered, cols, wj, revenue, sorten){
   const dateStr = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
   const rowsHtml = filtered.map(s=>{
-    const qtyCells = cols.map(c=>{const it=s.items.find(i=>i.productName===c); return `<td>${it?it.qty:''}</td>`;}).join('');
+    const qtyCells = cols.map(c=>{const it=s.items.find(i=>i.productName===c); return `<td class="qty">${it?it.qty:''}</td>`;}).join('');
     return `<tr><td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td><td>${esc(s.buyerName||'')}</td>${qtyCells}<td>${fmtEUR(s.total)}</td><td>${esc(s.notes||'')}</td></tr>`;
   }).join('');
   const sortenHtml = (sorten||[]).map(s=>`<tr><td>${esc(s.name)}</td><td>${s.qty}</td><td>${s.kg?fmtNum(s.kg):'–'}</td><td>${fmtEUR(s.revenue)}</td></tr>`).join('');
@@ -4249,6 +4268,7 @@ function printVerkaufList(filtered, cols, wj, revenue, sorten){
       th,td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top}
       th{background:#f0f0f0;font-weight:700}
       .vertical{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;text-align:left}
+      td.qty{text-align:center}
     </style></head><body>
     <h1>Honig-Verkäufe – Wirtschaftsjahr ${wj.label}</h1>
     <div class="sub">Erstellt: ${dateStr} · Gesamt: ${fmtEUR(revenue)}</div>
@@ -4394,7 +4414,22 @@ async function renderSettings() {
         ${HOME_BTN_CONFIG.map(c=>`<label class="check-item">
           <input type="checkbox" class="home-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
         </label>`).join('')}
-      </div>`)}
+      </div>
+      <label class="lbl" style="margin-top:1rem">Button-Größe</label>
+      <select class="inp" id="home-btn-size">
+        <option value="klein">Klein</option>
+        <option value="mittel">Mittel (Standard)</option>
+        <option value="gross">Groß</option>
+        <option value="custom">Eigene Größe (Pixel)</option>
+      </select>
+      <div id="home-btn-size-px-row" style="margin-top:.5rem;display:none">
+        <label class="lbl">Höhe in Pixel</label>
+        <input class="inp" id="home-btn-size-px" type="number" min="30" max="200" placeholder="z. B. 70">
+      </div>
+      <p class="muted" style="font-size:.78rem;margin-top:.3rem">„Einstellungen" und „Hilfe" bleiben unabhängig von dieser Auswahl immer klein.</p>
+      <label class="check-item" style="margin-top:.8rem">
+        <input type="checkbox" id="home-btn-show-text" checked><span>Text unter den Icons anzeigen</span>
+      </label>`)}
     ${settingsSection('darstellung','Darstellung',`
       <label class="lbl">Design</label>
       <select class="inp" id="theme-select">
@@ -4600,7 +4635,21 @@ async function renderSettings() {
       const stored=s['homeBtn_'+k];
       chk.checked=(stored!=='false');
     });
+    const sizeSel=document.getElementById('home-btn-size');
+    const sizePxRow=document.getElementById('home-btn-size-px-row');
+    const sizePxInp=document.getElementById('home-btn-size-px');
+    if(sizeSel){
+      sizeSel.value = s.homeBtnSize || 'mittel';
+      if(sizePxInp) sizePxInp.value = s.homeBtnSizePx || '';
+      if(sizePxRow) sizePxRow.style.display = sizeSel.value==='custom' ? '' : 'none';
+    }
+    const showTextChk=document.getElementById('home-btn-show-text');
+    if(showTextChk) showTextChk.checked = (s.homeBtnShowText !== 'false');
   }).catch(()=>{});
+  document.getElementById('home-btn-size')?.addEventListener('change', (e)=>{
+    const row=document.getElementById('home-btn-size-px-row');
+    if(row) row.style.display = e.target.value==='custom' ? '' : 'none';
+  });
   document.getElementById('save-all-settings')?.addEventListener('click', async()=>{
     const payload={};
     // Betriebsname
@@ -4627,6 +4676,12 @@ async function renderSettings() {
     document.querySelectorAll('.home-btn-chk').forEach(chk=>{
       payload['homeBtn_'+chk.dataset.key]=chk.checked?'true':'false';
     });
+    const homeBtnSizeEl=document.getElementById('home-btn-size');
+    if(homeBtnSizeEl) payload.homeBtnSize=homeBtnSizeEl.value;
+    const homeBtnSizePxEl=document.getElementById('home-btn-size-px');
+    if(homeBtnSizePxEl) payload.homeBtnSizePx=homeBtnSizePxEl.value;
+    const homeBtnShowTextEl=document.getElementById('home-btn-show-text');
+    if(homeBtnShowTextEl) payload.homeBtnShowText=homeBtnShowTextEl.checked?'true':'false';
     // HR-Nummern
     const hrNrsToggle=document.getElementById('toggle-hr-nrs');
     if(hrNrsToggle) payload.showHrNrs=hrNrsToggle.checked?'true':'false';
