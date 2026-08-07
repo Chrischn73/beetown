@@ -45,6 +45,25 @@ Installation zu aktualisieren. Für spätere Updates reicht ohnehin der
 danach nur noch laufen, wenn sich an den systemd-Units selbst etwas
 ändert.
 
+Wurde stattdessen der komplette Projekt-Ordner kopiert (nicht nur
+`setup/`), findet sich im Hauptordner zusätzlich ein `install.sh`, das nur
+an `setup/install.sh` weiterleitet – man muss also nicht erst nach
+`setup/` wechseln, um loszulegen:
+
+```bash
+sudo bash install.sh
+```
+
+**Wichtig:** immer mit `sudo bash install.sh` (bzw.
+`sudo bash setup/install.sh`) starten, nicht mit `sudo ./install.sh`.
+Manche Kopierwege – z. B. ein FAT32/exFAT-formatierter USB-Stick – können
+grundsätzlich keine Unix-Ausführungsrechte speichern, das Skript kommt
+dann ohne `+x` an und `./install.sh` scheitert mit „Permission denied“.
+Der Aufruf per `bash install.sh` braucht dagegen nur Leserecht und
+funktioniert immer, unabhängig vom Kopierweg. Fehlt das Ausführungsrecht
+trotzdem einmal störend (z. B. für ein eigenes Skript), hilft einmalig
+`chmod +x install.sh`.
+
 ## Was das Skript macht
 
 - WLAN-Modul vorbereiten (`rfkill unblock wifi`, `nmcli radio wifi on`,
@@ -53,11 +72,16 @@ danach nur noch laufen, wenn sich an den systemd-Units selbst etwas
   Rechte setzen
 - `imkerei.service` installieren und starten (App-Autostart, Neustart bei
   Absturz) – BeeTown läuft auf **Port 8080**
-- `/opt/imkerei-wifi-setup` einrichten: dauerhaftes Setup-Portal auf
-  **Port 80** (Links zu BeeTown, aktuelle IPs, Neustart/Herunterfahren).
-  WLAN-Einstellungen (einrichten/wechseln/trennen) sind eine Unterseite
-  davon (`/wifi`), nur auf einem echten Raspberry Pi sichtbar/erreichbar.
-  Dauerhaft erreichbar, egal ob WLAN verbunden ist oder nicht
+- `/opt/pi-setup-portal` einrichten: dauerhaftes, **App-übergreifendes**
+  Setup-Portal auf **Port 80** (Links zur/den installierten App(s),
+  aktuelle IPs, Neustart/Herunterfahren). Läuft auch das Schwesterprojekt
+  HonigBox auf demselben Pi, teilen sich beide dieses eine Portal – jede
+  App registriert sich dort nur mit einer kleinen Beschreibung
+  (`/opt/pi-setup-portal/apps.d/imkerei.json`), ohne die andere App
+  anzufassen. WLAN-Einstellungen (einrichten/wechseln/trennen) sind eine
+  Unterseite davon (`/wifi`), nur auf einem echten Raspberry Pi
+  sichtbar/erreichbar. Dauerhaft erreichbar, egal ob WLAN verbunden ist
+  oder nicht
 - `/opt/backup-scripts` einrichten: tägliches Backup nach `/opt/backup`
   (03:30 Uhr, max. 20 Archive)
 - Update-Check einrichten: prüft täglich (04:00 Uhr) im Hintergrund gegen
@@ -65,11 +89,14 @@ danach nur noch laufen, wenn sich an den systemd-Units selbst etwas
   erscheint als Badge auf der Startseite, der eigentliche Update-Vorgang
   läuft über den „🔄 Update“-Button dort (siehe unten)
 - `/etc/issue` mit einem Boot-Bildschirm beschreiben: zeigt beim Anschluss
-  eines Monitors direkt die Adressen von Setup-Seite und BeeTown sowie
-  die aktuellen IP-Adressen (Kabel/WLAN) an
+  eines Monitors direkt die Adressen von Setup-Seite und BeeTown (und
+  ggf. HonigBox) sowie die aktuellen IP-Adressen (Kabel/WLAN) an
 - Ordnet Code-Ordner (außer `data/`) dem aufrufenden SSH-Benutzer zu, damit
   künftige Datei-Updates per FTP/SFTP ohne Berechtigungsprobleme klappen
-- Hostname fest auf `beetown` setzen + Neustart (immer, am Ende)
+- Hostname fest auf `beetown` setzen + Neustart (nur beim allerersten Lauf,
+  solange der Pi noch den Werksnamen `raspberrypi` trägt – läuft HonigBox
+  bereits auf demselben Pi und hat den Hostnamen schon geändert, bleibt er
+  unangetastet)
 
 ## Ports im Überblick
 
@@ -89,10 +116,19 @@ angezeigt.
 | `install.sh` | Installationsskript (dieses hier ausführen) |
 | `server.py`, `static/` | Die BeeTown-App selbst (Symlinks auf die Dateien im Hauptordner, siehe unten) |
 | `imkerei.service` | systemd-Unit für die App |
-| `imkerei_wifi_portal.py`, `imkerei-wifi-setup.sh`, `imkerei-wifi-setup.service` | Setup-Seite inkl. WLAN-Einstellungen unter `/wifi` (nur Pi) |
+| `pi_setup_portal.py`, `pi-setup-portal.sh`, `pi-setup-portal.service` | Das gemeinsame, App-übergreifende Setup-Portal (WLAN, Backup, Update, Hilfe unter Port 80) – identischer Code wie im Schwesterprojekt HonigBox, App-spezifisches kommt nur aus `apps.d/imkerei.json` (von `install.sh` erzeugt) |
+| `regen-issue.sh` | Baut `/etc/issue` aus den Boot-Bildschirm-Fragmenten aller registrierten Apps neu zusammen |
 | `imkerei-backup.sh`, `imkerei-backup.service`, `imkerei-backup.timer` | Tägliches Backup |
 | `imkerei-update-check.service`, `imkerei-update-check.timer` | Täglicher Update-Check gegen GitHub (Badge auf der Startseite) |
+| `hilfe-bilder/` | Optionale eigene VPN-Screenshots (siehe `hilfe-bilder/LIESMICH.txt`) |
 | `data/logo.jpg` | Standard-Betriebslogo, wird bei der Ersteinrichtung nach `/opt/imkerei/data/logo.jpg` übernommen (nur falls dort noch keins existiert – ein später über die App-Einstellungen hochgeladenes Logo bleibt bei erneuten Läufen erhalten) |
+
+Läuft HonigBox bereits (oder später) auf demselben Pi, bringt ihr `setup/`-
+Ordner eine **byte-identische Kopie** von `pi_setup_portal.py`/
+`pi-setup-portal.sh`/`pi-setup-portal.service`/`regen-issue.sh` mit – welche
+App zuerst installiert, "gewinnt" die aktuell laufende Version; ein
+Versionsvergleich (`PORTAL_VERSION`) verhindert, dass die zweite App eine
+bereits aktualisierte, neuere Portal-Version versehentlich zurückstuft.
 
 ## Update-Funktion
 
@@ -136,3 +172,13 @@ cp -rL setup /pfad/zum/stick/setup
 `install.sh` selbst kopiert `static/` beim Installieren ebenfalls mit
 `cp -rL`, als zusätzliche Absicherung falls doch mal ein Symlink
 mitkopiert wurde.
+
+`install.sh` sucht `server.py`/`static` zuerst im Projekt-Wurzelordner
+(Layout: kompletter Projekt-Ordner übertragen) und fällt erst danach auf
+`setup/` selbst zurück (Layout: nur `setup/` mit aufgelösten Symlinks
+übertragen) – beide oben beschriebenen Vorgehen funktionieren also, ohne
+dass man vorher wissen muss, welches man gerade verwendet. Fehlen die
+Dateien in BEIDEN Orten (z. B. weil eine SFTP-GUI die Symlinks beim
+Übertragen des kompletten Projekt-Ordners weder auflöst noch mitkopiert),
+bricht das Skript mit einer klaren Fehlermeldung ab, statt mit einem
+kryptischen `cp: fehlt` irgendwo mitten in der Installation zu scheitern.
