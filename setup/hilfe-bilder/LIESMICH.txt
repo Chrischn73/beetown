@@ -15,6 +15,10 @@ Fehlende Bilder werden auf der Seite automatisch ausgeblendet - man kann
 also auch nur einen Teil der Bilder hinzufuegen.
 
 Nach dem Ablegen: ./install.sh erneut ausfuehren, damit die Bilder nach
-/opt/imkerei-wifi-setup/hilfe-bilder/ uebernommen werden. Alternativ direkt
-per SFTP/FileZilla nach /opt/imkerei-wifi-setup/hilfe-bilder/ auf dem
-Server hochladen - dann ist kein install.sh-Lauf noetig.
+/opt/pi-setup-portal/hilfe-bilder/_shared/ uebernommen werden. Alternativ
+direkt per SFTP/FileZilla nach /opt/pi-setup-portal/hilfe-bilder/_shared/
+auf dem Server hochladen - dann ist kein install.sh-Lauf noetig.
+
+("_shared", weil diese Fritzbox/WireGuard-Anleitung unabhaengig davon
+gilt, welche App(s) auf diesem Pi laufen - das gemeinsame Setup-Portal
+zeigt sie fuer HonigBox und die Imker-App gleich an.)
