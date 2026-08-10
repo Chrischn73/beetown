@@ -344,6 +344,7 @@ cat > /opt/pi-setup-portal/apps.d/imkerei.json << JSONEOF
   "id": "imkerei",
   "label": "BeeTown",
   "emoji": "🐝",
+  "beschreibung": "App für die Imkerei-Verwaltung: Bienenstände, Rühr-Vorgänge und Honigverkauf erfassen und dokumentieren.",
   "app_port_default": 8080,
   "app_port_env_file": "/etc/default/imkerei",
   "app_port_env_var": "IMKEREI_PORT",
@@ -376,7 +377,8 @@ cat > /opt/pi-setup-portal/apps.d/imkerei.json << JSONEOF
     "app_id": "honigbox",
     "label": "BeeTown HonigBox",
     "emoji": "🍯",
-    "github_repo": "Chrischn73/honigbox"
+    "github_repo": "Chrischn73/honigbox",
+    "beschreibung": "Überwacht die Tür einer Honig-Verkaufsbox per Kontaktschalter, macht bei jeder Öffnung automatisch Fotos und schickt eine Push-Benachrichtigung ans Handy. Läuft direkt auf einem Raspberry Pi in der Box."
   }
 }
 JSONEOF
