@@ -25,12 +25,13 @@
 # Mehrfach ausfuehrbar (idempotent) - z. B. nach einem Datei-Update einfach
 # erneut laufen lassen.
 #
-# WICHTIG (an KI-Assistenten wie Claude UND Menschen): pi_setup_portal.py
-# in diesem Ordner ist nur eine Deployment-KOPIE, NICHT App-eigener Code -
-# NICHT direkt bearbeiten. Kanonische Quelle (dort bearbeiten, dann
-# ./sync.sh dort ausfuehren):
-#   /media/SSD/Sichern/claude/pi-setup-portal/pi_setup_portal.py
-# Siehe den ausfuehrlichen Warnhinweis am Anfang von pi_setup_portal.py.
+# WICHTIG (an KI-Assistenten wie Claude UND Menschen): das gemeinsame
+# Setup-Portal (WLAN/Backup/Update/Hilfe fuer alle registrierten Apps)
+# ist NICHT mehr Teil dieses Repos - es ist das eigenstaendige GitHub-Repo
+# "Chrischn73/setup-portal" (lokal: /media/SSD/Sichern/claude/setup-portal/).
+# Dieses Skript hier laedt es nur bei Bedarf per Bootstrap herunter (siehe
+# Abschnitt "Gemeinsames Setup-Portal sicherstellen" weiter unten) -
+# Aenderungen am Portal-Code gehoeren dort hin, nicht hierher.
 set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -88,7 +89,6 @@ log() { echo; echo "==> $*"; }
 # ---------------------------------------------------------------------------
 log "Pruefe benoetigte Dateien in $APP_SRC_DIR bzw. $SCRIPT_DIR"
 for f in imkerei.service \
-         pi_setup_portal.py pi-setup-portal.sh pi-setup-portal.service regen-issue.sh \
          imkerei-backup.sh imkerei-backup-rotate.py imkerei-backup.service imkerei-backup.timer \
          imkerei-update-check.service imkerei-update-check.timer; do
     if [ ! -e "$SCRIPT_DIR/$f" ]; then
@@ -203,81 +203,55 @@ fi
 cp "$SCRIPT_DIR/imkerei.service" /etc/systemd/system/imkerei.service
 
 # ---------------------------------------------------------------------------
-log "Gemeinsames Pi-Setup-Portal einrichten (/opt/pi-setup-portal)"
-# Seit Kurzem bringt die Imker-App (BeeTown) keine eigenstaendige Setup-Seite
-# mehr mit, sondern registriert sich nur noch bei einem gemeinsamen Portal,
-# das auch HonigBox mitnutzen kann, falls sie auf demselben Pi installiert
-# ist bzw. wird - siehe apps.d/imkerei.json weiter unten.
-mkdir -p /opt/pi-setup-portal/apps.d /opt/pi-setup-portal/issue.d \
-         /opt/pi-setup-portal/state/imkerei /opt/pi-setup-portal/hilfe-bilder/_shared
-
-# Portal-Code nur aktualisieren, wenn die mitgelieferte Version neuer (oder
-# noch gar nicht installiert) ist - andernfalls koennte ein aelterer
-# Imker-App-Stand eine von HonigBox bereits aktualisierte, neuere
-# Portal-Version wieder zurueckstufen (und umgekehrt).
-BUNDLED_PORTAL_VERSION="$(grep -oP '^PORTAL_VERSION = "\K[^"]+' "$SCRIPT_DIR/pi_setup_portal.py")" || {
-    echo "FEHLER: Konnte PORTAL_VERSION nicht aus $SCRIPT_DIR/pi_setup_portal.py auslesen."
-    exit 1
-}
-INSTALLED_PORTAL_VERSION="$(grep -oP '^PORTAL_VERSION = "\K[^"]+' /opt/pi-setup-portal/pi_setup_portal.py 2>/dev/null || echo "0")"
-# PORTAL_CODE_UPDATED steuert weiter unten, ob pi-setup-portal.service neu
-# gestartet wird. Ein Neustart ist nur bei tatsaechlich neuem Code sinnvoll
-# - dieser Dienst wird von HonigBox mitbenutzt, ein unnoetiger Neustart
-# wuerde deren gerade laufende WLAN-/Backup-/Update-Vorgaenge mitten drin
-# abbrechen. Deshalb bewusst DREI Faelle statt nur zwei: noch nicht
-# installiert (deployen), gleiche Version (nichts tun - sonst wuerde jeder
-# blosse Re-Lauf, auch ohne jede Codeaenderung, staendig neu starten),
-# oder mitgelieferte Version wirklich neuer (deployen) bzw. aeltere
-# installierte Version bereits neuer (nichts tun).
-PORTAL_CODE_UPDATED=0
-if [ ! -e /opt/pi-setup-portal/pi_setup_portal.py ]; then
-    NEED_PORTAL_DEPLOY=1
-elif [ "$INSTALLED_PORTAL_VERSION" = "$BUNDLED_PORTAL_VERSION" ]; then
-    NEED_PORTAL_DEPLOY=0
-elif [ "$(printf '%s\n%s\n' "$INSTALLED_PORTAL_VERSION" "$BUNDLED_PORTAL_VERSION" | sort -V | tail -1)" = "$BUNDLED_PORTAL_VERSION" ]; then
-    NEED_PORTAL_DEPLOY=1
+log "Gemeinsames Setup-Portal sicherstellen (/opt/setup-portal)"
+# Die Imker-App (BeeTown) registriert sich nur noch bei einem gemeinsamen
+# Portal, das auch HonigBox mitnutzen kann, falls sie auf demselben Pi
+# installiert ist bzw. wird - siehe apps.d/imkerei.json weiter unten. Das
+# Portal selbst ist ein eigenstaendiges Repo (Chrischn73/setup-portal,
+# siehe Warnhinweis oben) - existiert es noch nicht, wird hier einmalig
+# dessen neuestes Release geladen und installiert. Ist es schon da,
+# aktualisiert es sich seitdem taeglich selbst - dieses Skript fasst es
+# danach nie wieder an.
+mkdir -p /opt/setup-portal/state/imkerei
+if [ ! -e /etc/systemd/system/setup-portal.service ]; then
+    echo "Portal noch nicht installiert - lade neueste Version von Chrischn73/setup-portal..."
+    PORTAL_BOOTSTRAP_TMP="$(mktemp -d)"
+    curl -fL "https://github.com/Chrischn73/setup-portal/archive/refs/heads/main.tar.gz" \
+        -o "$PORTAL_BOOTSTRAP_TMP/portal.tar.gz"
+    tar xzf "$PORTAL_BOOTSTRAP_TMP/portal.tar.gz" -C "$PORTAL_BOOTSTRAP_TMP"
+    PORTAL_BOOTSTRAP_SRC="$(find "$PORTAL_BOOTSTRAP_TMP" -mindepth 1 -maxdepth 1 -type d | head -1)"
+    bash "$PORTAL_BOOTSTRAP_SRC/install.sh"
+    rm -rf "$PORTAL_BOOTSTRAP_TMP"
 else
-    NEED_PORTAL_DEPLOY=0
+    echo "Portal bereits installiert - aktualisiert sich taeglich selbst."
 fi
-if [ "$NEED_PORTAL_DEPLOY" -eq 1 ]; then
-    cp "$SCRIPT_DIR/pi_setup_portal.py" /opt/pi-setup-portal/pi_setup_portal.py
-    cp "$SCRIPT_DIR/pi-setup-portal.sh" /opt/pi-setup-portal/pi-setup-portal.sh
-    chmod +x /opt/pi-setup-portal/pi-setup-portal.sh
-    cp "$SCRIPT_DIR/pi-setup-portal.service" /etc/systemd/system/pi-setup-portal.service
-    PORTAL_CODE_UPDATED=1
-    echo "Portal-Code auf Version $BUNDLED_PORTAL_VERSION aktualisiert (vorher: $INSTALLED_PORTAL_VERSION)."
-else
-    echo "Portal-Code bereits auf Version $INSTALLED_PORTAL_VERSION (mitgeliefert: $BUNDLED_PORTAL_VERSION) - unveraendert gelassen."
-fi
-cp "$SCRIPT_DIR/regen-issue.sh" /opt/pi-setup-portal/regen-issue.sh
-chmod +x /opt/pi-setup-portal/regen-issue.sh
 
 # Screenshots fuer die VPN-Hilfeseite - legt der Nutzer selbst hier ab (per
 # SFTP/FileZilla direkt auf dem Server, oder vorher in setup/hilfe-bilder/
 # im Projekt, dann kommen sie mit hierher). Komplett optional. Die
 # Fritzbox/WireGuard-Anleitung ist app-unabhaengig, siehe "_shared" im
 # gemeinsamen Portal.
-cp -rn "$SCRIPT_DIR/hilfe-bilder/." /opt/pi-setup-portal/hilfe-bilder/_shared/ 2>/dev/null || true
-[ -n "$OWNER" ] && chown -R "$OWNER:$OWNER" /opt/pi-setup-portal/hilfe-bilder/_shared
+cp -rn "$SCRIPT_DIR/hilfe-bilder/." /opt/setup-portal/hilfe-bilder/_shared/ 2>/dev/null || true
+[ -n "$OWNER" ] && chown -R "$OWNER:$OWNER" /opt/setup-portal/hilfe-bilder/_shared
 
 # Migration: eine von einer frueheren install.sh-Version installierte
 # eigenstaendige BeeTown-Setup-Seite ablösen. Eigene Auto-Update-Einstellung
 # des Nutzers wird dabei uebernommen statt verworfen.
 if [ -e /etc/systemd/system/imkerei-wifi-setup.service ]; then
-    log "Alte eigenstaendige BeeTown-Setup-Seite ablösen (jetzt gemeinsames Pi-Setup-Portal)"
+    log "Alte eigenstaendige BeeTown-Setup-Seite ablösen (jetzt gemeinsames Setup-Portal)"
     systemctl disable --now imkerei-wifi-setup.service 2>/dev/null || true
     rm -f /etc/systemd/system/imkerei-wifi-setup.service /etc/default/imkerei-wifi-setup
 fi
 if [ -f /opt/imkerei-wifi-setup/update.conf ]; then
-    cp -n /opt/imkerei-wifi-setup/update.conf /opt/pi-setup-portal/state/imkerei/update.conf
+    cp -n /opt/imkerei-wifi-setup/update.conf /opt/setup-portal/state/imkerei/update.conf
 fi
 rm -rf /opt/imkerei-wifi-setup
 
 # Auto-Update-Einstellung nur anlegen, falls noch nicht vorhanden - ein
 # spaeter am Update-Schalter geaenderter Wert soll bei einem erneuten
 # install.sh-Lauf nicht ueberschrieben werden. Standard: AN.
-if [ ! -f /opt/pi-setup-portal/state/imkerei/update.conf ]; then
-    echo "AUTO_UPDATE=1" > /opt/pi-setup-portal/state/imkerei/update.conf
+if [ ! -f /opt/setup-portal/state/imkerei/update.conf ]; then
+    echo "AUTO_UPDATE=1" > /opt/setup-portal/state/imkerei/update.conf
 fi
 
 # ---------------------------------------------------------------------------
@@ -297,28 +271,11 @@ cp "$SCRIPT_DIR/imkerei-update-check.service" /etc/systemd/system/imkerei-update
 cp "$SCRIPT_DIR/imkerei-update-check.timer" /etc/systemd/system/imkerei-update-check.timer
 
 # ---------------------------------------------------------------------------
-log "Pruefe Port 80 fuer das gemeinsame Pi-Setup-Portal"
-# Auf einem Linux-Server koennte Port 80 bereits von einem vorhandenen
-# Webserver belegt sein - dann auf einen Ausweich-Port wechseln, statt den
-# Dienststart einfach fehlschlagen zu lassen. Bei jedem Lauf neu anhand der
-# tatsaechlich lauschenden PID pruefen (nicht nur einmalig anhand von
-# "war der Dienst schon aktiviert"), damit sich ein zwischenzeitlich
-# geloester Konflikt auch wieder von selbst korrigiert. Port 80 gehoert
-# jetzt dem gemeinsamen pi-setup-portal.service statt einem BeeTown-eigenen
-# Dienst - dieselbe Pruefung fuehrt HonigBox in ihrem eigenen install.sh
-# aus, falls sie auf demselben Pi installiert ist/wird.
-SETUP_PID="$(systemctl show -p MainPID --value pi-setup-portal.service 2>/dev/null || echo 0)"
-PORT80_PID="$(ss -H -ltnp "sport = :80" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1 || true)"
-
-if [ -z "$PORT80_PID" ] || { [ "$PORT80_PID" = "$SETUP_PID" ] && [ "$SETUP_PID" != "0" ]; }; then
-    LANDING_PORT=80
-    echo "Port 80 ist frei (oder bereits durch das Pi-Setup-Portal selbst belegt) - Portal laeuft dort."
-    rm -f /etc/default/pi-setup-portal
-else
-    LANDING_PORT=8082
-    echo "Port 80 ist von einem anderen Prozess belegt (PID $PORT80_PID) - Pi-Setup-Portal laeuft stattdessen auf Port $LANDING_PORT."
-    echo "PI_SETUP_LANDING_PORT=$LANDING_PORT" > /etc/default/pi-setup-portal
-fi
+log "Ermittle Port des Setup-Portals"
+# Die Port-80-Belegungspruefung macht jetzt das Portal-eigene install.sh
+# selbst (siehe Bootstrap oben) - hier nur noch auslesen, welchen Port es
+# sich dabei ausgesucht hat (Standard: 80).
+LANDING_PORT="$(grep -oP '^SETUP_PORTAL_LANDING_PORT=\K[0-9]+' /etc/default/setup-portal 2>/dev/null || echo 80)"
 
 # ---------------------------------------------------------------------------
 log "Pruefe Port 8080 fuer BeeTown"
@@ -338,8 +295,8 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "BeeTown im gemeinsamen Pi-Setup-Portal registrieren"
-cat > /opt/pi-setup-portal/apps.d/imkerei.json << JSONEOF
+log "BeeTown im gemeinsamen Setup-Portal registrieren"
+cat > /opt/setup-portal/apps.d/imkerei.json << JSONEOF
 {
   "id": "imkerei",
   "label": "BeeTown",
@@ -392,19 +349,9 @@ systemctl enable --now imkerei.service
 # tatsaechlich uebernommen werden - "enable --now" allein wuerde einen
 # bereits laufenden Dienst unveraendert weiterlaufen lassen.
 systemctl restart imkerei.service
-# Type=simple - startet sofort im Hintergrund, blockiert das Skript nicht.
-# Laeuft dauerhaft (nicht nur bis WLAN eingerichtet ist), damit sich WLAN
-# jederzeit spaeter noch einrichten oder wechseln laesst.
-systemctl enable --now pi-setup-portal.service
-# Nur neu starten, wenn oben tatsaechlich neuer Portal-Code deployt wurde -
-# sonst wuerde jeder blosse Re-Lauf von install.sh die von HonigBox
-# mitgenutzte Setup-Seite unnoetig durchstarten (siehe Kommentar beim
-# Versionsvergleich weiter oben). "enable --now" allein startet den Dienst
-# nur, falls er noch gar nicht laeuft - laesst einen bereits laufenden,
-# unveraenderten Dienst in Ruhe.
-if [ "$PORTAL_CODE_UPDATED" -eq 1 ]; then
-    systemctl restart pi-setup-portal.service
-fi
+# setup-portal.service selbst wird nicht mehr hier verwaltet - das
+# erledigt dessen eigenes install.sh beim Bootstrap oben bzw. der
+# taegliche Selbst-Update-Timer des Portals.
 systemctl enable --now imkerei-backup.timer
 systemctl enable --now imkerei-update-check.timer
 # Einmaligen ersten Check gleich jetzt anstossen, damit die Startseite nicht
@@ -424,7 +371,7 @@ log "Status"
 # VOR dem Boot-Bildschirm und den Abschluss-Hinweisen.
 systemctl --no-pager status imkerei.service | head -5 || true
 echo
-systemctl --no-pager status pi-setup-portal.service | head -5 || true
+systemctl --no-pager status setup-portal.service | head -5 || true
 echo
 systemctl list-timers imkerei-backup.timer --no-pager || true
 echo
@@ -463,13 +410,13 @@ if [ "$IS_PI" -eq 1 ]; then
     # $SETUP_URL statt der Werte von VOR der Hostname-Entscheidung. agetty
     # wertet \4{iface} bei jeder Anzeige live aus (siehe regen-issue.sh) -
     # immer aktuelle IP, kein zusaetzlicher Dienst noetig.
-    cat > /opt/pi-setup-portal/issue.d/00-setup-url.txt << EOF
+    cat > /opt/setup-portal/issue.d/00-setup-url.txt << EOF
    Setup / Übersicht:   $SETUP_URL
 EOF
-    cat > /opt/pi-setup-portal/issue.d/20-imkerei.txt << EOF
+    cat > /opt/setup-portal/issue.d/20-imkerei.txt << EOF
    BeeTown:             http://$EFFECTIVE_HOSTNAME.local:$APP_PORT
 EOF
-    /opt/pi-setup-portal/regen-issue.sh
+    /opt/setup-portal/regen-issue.sh
 
     echo
     echo "======================================================================"

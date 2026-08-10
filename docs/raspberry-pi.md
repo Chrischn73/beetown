@@ -72,12 +72,12 @@ trotzdem einmal störend (z. B. für ein eigenes Skript), hilft einmalig
   Rechte setzen
 - `imkerei.service` installieren und starten (App-Autostart, Neustart bei
   Absturz) – BeeTown läuft auf **Port 8080**
-- `/opt/pi-setup-portal` einrichten: dauerhaftes, **App-übergreifendes**
+- `/opt/setup-portal` einrichten: dauerhaftes, **App-übergreifendes**
   Setup-Portal auf **Port 80** (Links zur/den installierten App(s),
   aktuelle IPs, Neustart/Herunterfahren). Läuft auch das Schwesterprojekt
   HonigBox auf demselben Pi, teilen sich beide dieses eine Portal – jede
   App registriert sich dort nur mit einer kleinen Beschreibung
-  (`/opt/pi-setup-portal/apps.d/imkerei.json`), ohne die andere App
+  (`/opt/setup-portal/apps.d/imkerei.json`), ohne die andere App
   anzufassen. WLAN-Einstellungen (einrichten/wechseln/trennen) sind eine
   Unterseite davon (`/wifi`), nur auf einem echten Raspberry Pi
   sichtbar/erreichbar. Dauerhaft erreichbar, egal ob WLAN verbunden ist
@@ -116,19 +116,20 @@ angezeigt.
 | `install.sh` | Installationsskript (dieses hier ausführen) |
 | `server.py`, `static/` | Die BeeTown-App selbst (Symlinks auf die Dateien im Hauptordner, siehe unten) |
 | `imkerei.service` | systemd-Unit für die App |
-| `pi_setup_portal.py`, `pi-setup-portal.sh`, `pi-setup-portal.service` | Das gemeinsame, App-übergreifende Setup-Portal (WLAN, Backup, Update, Hilfe unter Port 80) – identischer Code wie im Schwesterprojekt HonigBox, App-spezifisches kommt nur aus `apps.d/imkerei.json` (von `install.sh` erzeugt) |
-| `regen-issue.sh` | Baut `/etc/issue` aus den Boot-Bildschirm-Fragmenten aller registrierten Apps neu zusammen |
 | `imkerei-backup.sh`, `imkerei-backup.service`, `imkerei-backup.timer` | Tägliches Backup |
 | `imkerei-update-check.service`, `imkerei-update-check.timer` | Täglicher Update-Check gegen GitHub (Badge auf der Startseite) |
 | `hilfe-bilder/` | Optionale eigene VPN-Screenshots (siehe `hilfe-bilder/LIESMICH.txt`) |
 | `data/logo.jpg` | Standard-Betriebslogo, wird bei der Ersteinrichtung nach `/opt/imkerei/data/logo.jpg` übernommen (nur falls dort noch keins existiert – ein später über die App-Einstellungen hochgeladenes Logo bleibt bei erneuten Läufen erhalten) |
 
-Läuft HonigBox bereits (oder später) auf demselben Pi, bringt ihr `setup/`-
-Ordner eine **byte-identische Kopie** von `pi_setup_portal.py`/
-`pi-setup-portal.sh`/`pi-setup-portal.service`/`regen-issue.sh` mit – welche
-App zuerst installiert, "gewinnt" die aktuell laufende Version; ein
-Versionsvergleich (`PORTAL_VERSION`) verhindert, dass die zweite App eine
-bereits aktualisierte, neuere Portal-Version versehentlich zurückstuft.
+Das gemeinsame, App-übergreifende Setup-Portal (WLAN, Backup, Update,
+Hilfe unter Port 80) ist **nicht** Teil dieses Repos, sondern das
+eigenständige Projekt [Chrischn73/setup-portal](https://github.com/Chrischn73/setup-portal).
+`install.sh` lädt es nur bei Bedarf einmalig automatisch herunter (falls
+`/opt/setup-portal` noch nicht existiert – z. B. weil HonigBox es auf
+demselben Pi schon eingerichtet hat, dann übernimmt `install.sh` hier
+einfach die vorhandene Installation). Danach aktualisiert sich das Portal
+über einen eigenen täglichen Timer selbst – kein erneuter `install.sh`-Lauf
+nötig, um eine neue Portal-Version zu bekommen.
 
 ## Update-Funktion
 

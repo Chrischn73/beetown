@@ -22,12 +22,12 @@ DB_PATH    = os.path.join(DATA_DIR, "app.db")
 # gibt, auf die verwiesen werden kann (Backup/Update) - NICHT ob es
 # speziell ein Raspberry Pi ist, dafuer siehe _is_raspberry_pi(). Seit dem
 # Umbau auf das App-uebergreifende, gemeinsame Portal (auch fuer HonigBox
-# nutzbar) liegt das unter /opt/pi-setup-portal (vorher: /opt/imkerei-wifi-setup).
-PI_MARKER_DIR = "/opt/pi-setup-portal"
+# nutzbar) liegt das unter /opt/setup-portal (vorher: /opt/imkerei-wifi-setup).
+PI_MARKER_DIR = "/opt/setup-portal"
 
 
 def _is_raspberry_pi():
-    """Echte Hardware-Erkennung (wie in pi_setup_portal.py) - im
+    """Echte Hardware-Erkennung (wie in setup_portal.py) - im
     Unterschied zu PI_MARKER_DIR (der nur "Setup-Portal installiert"
     bedeutet, auch auf einem Linux-Server). Fuer Pi-spezifische Dinge wie
     die USB-Backup-Warnung (SD-Karten-Ausfallrisiko betrifft nur den Pi)."""
@@ -42,7 +42,7 @@ def _is_raspberry_pi():
 # App-eigenen Unterordner (state/<app-id>/), da das Portal jetzt mehrere
 # Apps (z. B. auch HonigBox) gleichzeitig verwalten kann.
 UPDATE_CHECK_STATE_PATH = os.path.join(PI_MARKER_DIR, "state", "imkerei", "update_check.json")
-# Gleicher Pfad wie BACKUP_DIR im Setup-Portal (pi_setup_portal.py) - der
+# Gleicher Pfad wie BACKUP_DIR im Setup-Portal (setup_portal.py) - der
 # taegliche Backup-Timer legt dort Archive ab, ohne ueber /api/backup zu
 # laufen. Wird hier nur mitgelesen, um "gibt es ein aktuelles Backup?" auch
 # fuer die naechtlichen Pi-Backups zu erkennen (nicht nur JSON-Exports).
@@ -52,17 +52,17 @@ BACKUP_GRACE_DAYS = 3
 USB_MOUNT = "/mnt/backup-usb"
 # install.sh legt diese Datei nur an, wenn Port 80 beim Einrichten schon
 # belegt war und das Setup-Portal stattdessen auf einem Ausweich-Port laeuft
-# (siehe pi-setup-portal.service). Wird hier mitgelesen, damit das Frontend
+# (siehe setup-portal.service). Wird hier mitgelesen, damit das Frontend
 # Links zur Setup-/Backup-Seite mit dem richtigen Port bauen kann - ohne
 # Port 80 fest anzunehmen, laeuft dort sonst ins Leere.
-LANDING_PORT_ENV_PATH = "/etc/default/pi-setup-portal"
+LANDING_PORT_ENV_PATH = "/etc/default/setup-portal"
 
 
 def landing_port():
     try:
         with open(LANDING_PORT_ENV_PATH) as f:
             content = f.read()
-        m = re.search(r"^PI_SETUP_LANDING_PORT=(\d+)", content, re.MULTILINE)
+        m = re.search(r"^SETUP_PORTAL_LANDING_PORT=(\d+)", content, re.MULTILINE)
         if m:
             return int(m.group(1))
     except Exception:

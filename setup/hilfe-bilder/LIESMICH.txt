@@ -15,8 +15,8 @@ Fehlende Bilder werden auf der Seite automatisch ausgeblendet - man kann
 also auch nur einen Teil der Bilder hinzufuegen.
 
 Nach dem Ablegen: ./install.sh erneut ausfuehren, damit die Bilder nach
-/opt/pi-setup-portal/hilfe-bilder/_shared/ uebernommen werden. Alternativ
-direkt per SFTP/FileZilla nach /opt/pi-setup-portal/hilfe-bilder/_shared/
+/opt/setup-portal/hilfe-bilder/_shared/ uebernommen werden. Alternativ
+direkt per SFTP/FileZilla nach /opt/setup-portal/hilfe-bilder/_shared/
 auf dem Server hochladen - dann ist kein install.sh-Lauf noetig.
 
 ("_shared", weil diese Fritzbox/WireGuard-Anleitung unabhaengig davon
