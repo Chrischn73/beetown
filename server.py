@@ -177,7 +177,7 @@ def init_db():
             status TEXT DEFAULT 'active', conclusion TEXT, createdAt TEXT);
         CREATE TABLE IF NOT EXISTS honey_stir_entries(
             id TEXT PRIMARY KEY, batchId TEXT, date TEXT, temp TEXT,
-            appearance TEXT, photos TEXT, createdAt TEXT);
+            appearance TEXT, photos TEXT, notes TEXT, createdAt TEXT);
         CREATE TABLE IF NOT EXISTS honey_products(
             id TEXT PRIMARY KEY, name TEXT, price REAL DEFAULT 0, sizeGrams INTEGER DEFAULT 0,
             active INTEGER DEFAULT 1, sortOrder INTEGER DEFAULT 0, color TEXT DEFAULT '',
@@ -240,6 +240,7 @@ def init_db():
         ("reminders","remindDaysBefore", "ALTER TABLE reminders ADD COLUMN remindDaysBefore INTEGER DEFAULT 0"),
         ("honey_products","color",       "ALTER TABLE honey_products ADD COLUMN color TEXT DEFAULT ''"),
         ("honey_products","kind",        "ALTER TABLE honey_products ADD COLUMN kind TEXT DEFAULT 'sonstige'"),
+        ("honey_stir_entries","notes",    "ALTER TABLE honey_stir_entries ADD COLUMN notes TEXT"),
     ]
     for table, col, sql in migrations:
         if not column_exists(con, table, col):
@@ -566,9 +567,9 @@ class Handler(BaseHTTPRequestHandler):
             rid=new_id()
             con2=db()
             con2.execute("""INSERT INTO honey_stir_entries
-                (id,batchId,date,temp,appearance,photos,createdAt) VALUES(?,?,?,?,?,?,?)""",
+                (id,batchId,date,temp,appearance,photos,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)""",
                 (rid,body2.get("batchId",""),body2.get("date",""),body2.get("temp",""),
-                 body2.get("appearance",""),json.dumps(body2.get("photos",[])),now_iso()))
+                 body2.get("appearance",""),json.dumps(body2.get("photos",[])),body2.get("notes",""),now_iso()))
             con2.commit(); con2.close()
             return self._json({"id":rid})
         if path=="/api/honey_products":
@@ -831,9 +832,9 @@ class Handler(BaseHTTPRequestHandler):
                 old_ids=photo_ids(json.loads(old["photos"] or "[]")) if old else []
                 new_photos=body.get("photos",[])
                 delete_photos([p for p in old_ids if p not in photo_ids(new_photos)])
-                con.execute("UPDATE honey_stir_entries SET date=?,temp=?,appearance=?,photos=? WHERE id=?",
+                con.execute("UPDATE honey_stir_entries SET date=?,temp=?,appearance=?,photos=?,notes=? WHERE id=?",
                     (body.get("date",""),body.get("temp",""),body.get("appearance",""),
-                     json.dumps(new_photos),rid))
+                     json.dumps(new_photos),body.get("notes",""),rid))
             elif kind=="honey_products":
                 con.execute("UPDATE honey_products SET name=?,price=?,sizeGrams=?,active=?,sortOrder=?,color=?,kind=? WHERE id=?",
                     (body.get("name",""),float(body.get("price",0) or 0),int(body.get("sizeGrams",0) or 0),
@@ -986,9 +987,9 @@ class Handler(BaseHTTPRequestHandler):
                  b.get("status","active"),b.get("conclusion",""),b.get("createdAt","")))
         for e in body.get("honey_stir_entries",[]):
             con.execute("""INSERT INTO honey_stir_entries
-                (id,batchId,date,temp,appearance,photos,createdAt) VALUES(?,?,?,?,?,?,?)""",
+                (id,batchId,date,temp,appearance,photos,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)""",
                 (e["id"],e.get("batchId",""),e.get("date",""),e.get("temp",""),
-                 e.get("appearance",""),json.dumps(e.get("photos",[])),e.get("createdAt","")))
+                 e.get("appearance",""),json.dumps(e.get("photos",[])),e.get("notes",""),e.get("createdAt","")))
         for p in body.get("honey_products",[]):
             con.execute("""INSERT INTO honey_products
                 (id,name,price,sizeGrams,active,sortOrder,color,kind,createdAt) VALUES(?,?,?,?,?,?,?,?,?)""",

@@ -2682,6 +2682,7 @@ async function renderHoneyStirBatch() {
       <label class="lbl">Temperatur (°C)</label>
       <input class="inp" name="temp" type="text" inputmode="decimal" value="${existing?esc(existing.temp):''}" placeholder="z. B. 22">
       ${selectField('Aussehen','appearance', existing?existing.appearance:STIR_APPEARANCE_OPTIONS[0], STIR_APPEARANCE_OPTIONS.map(o=>[o,o]))}
+      ${textareaField('Info','notes',existing?.notes)}
       ${photoButtonsHTML('stir-thumbs')}`,
       async (data, close) => {
         data.photos = photos;
@@ -2739,6 +2740,7 @@ async function renderHoneyStirBatch() {
             <div class="card-main" style="width:100%">
               <div class="card-title">${fmtDateTime(e.date)}${e.temp?` · ${esc(e.temp)}°C`:''}</div>
               <div class="card-sub">${esc(e.appearance||'')}</div>
+              ${e.notes?`<div class="entry-notes">${esc(e.notes)}</div>`:''}
               ${e.photos && e.photos.length ? `<div class="photos">${e.photos.map(p=>`<figure class="photo-fig"><img class="thumb" loading="lazy" src="${photoURL(p.id)}" data-full="${photoURL(p.id)}" data-cap=""></figure>`).join('')}</div>` : ''}
             </div>
           </li>`).join('')}
