@@ -375,7 +375,7 @@ cat > /opt/pi-setup-portal/apps.d/imkerei.json << JSONEOF
   },
   "companion": {
     "app_id": "honigbox",
-    "label": "BeeTown HonigBox",
+    "label": "HonigBox",
     "emoji": "🍯",
     "github_repo": "Chrischn73/honigbox",
     "beschreibung": "Überwacht die Tür einer Honig-Verkaufsbox per Kontaktschalter, macht bei jeder Öffnung automatisch Fotos und schickt eine Push-Benachrichtigung ans Handy. Läuft direkt auf einem Raspberry Pi in der Box."
