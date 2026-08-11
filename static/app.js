@@ -4134,19 +4134,35 @@ async function renderVerkauf(){
 
   function openSaleEditModal(s){
     if(!s) return;
+    const items = s.items.map(it=>({...it}));
+    const productOptions = [...products].sort((a,b)=>a.sortOrder-b.sortOrder);
+    const optionsHTML = (currentId, currentName) => {
+      const hasCurrent = productOptions.some(p=>p.id===currentId);
+      const opts = hasCurrent ? productOptions : [{id:currentId||'', name:currentName||'(gelöschtes Produkt)'}, ...productOptions];
+      return opts.map(p=>`<option value="${esc(p.id)}" ${p.id===currentId?'selected':''}>${esc(p.name)}</option>`).join('');
+    };
+    const renderItemsList = () => items.map((it,idx)=>`
+      <div class="sale-item-row" data-idx="${idx}">
+        <select class="inp sale-item-product" data-idx="${idx}">${optionsHTML(it.productId, it.productName)}</select>
+        <input class="inp sale-item-qty" data-idx="${idx}" type="number" min="0" value="${it.qty}">
+        <button type="button" class="btn btn-ghost btn-sm sale-item-del" data-idx="${idx}">✕</button>
+      </div>`).join('');
+
     openModal(`Verkauf bearbeiten — ${fmtDate(s.date)}`, `
       ${field('Datum','date',s.date,true,'date')}
       ${selectField('Kategorie','category',s.category,VERKAUF_CATEGORIES.map(c=>[c,c]))}
       <label class="lbl">Name</label>
       <input class="inp" name="buyerName" type="text" value="${esc(s.buyerName||'')}">
-      <label class="lbl">Betrag (€)</label>
+      <label class="lbl" style="margin-top:.6rem">Produkte</label>
+      <div id="sale-items-list">${renderItemsList()}</div>
+      <button type="button" class="btn btn-ghost btn-sm" id="sale-item-add">+ Produkt</button>
+      <label class="lbl" style="margin-top:.6rem">Betrag (€)</label>
       <input class="inp" name="total" type="text" inputmode="decimal" value="${fmtNum(s.total)}">
       <label class="lbl">Notiz</label>
       <input class="inp" name="notes" type="text" value="${esc(s.notes||'')}">
-      <p class="muted" style="font-size:.8rem;margin-top:.6rem">Produkte: ${s.items.length?s.items.map(it=>`${it.qty}× ${esc(it.productName)}`).join(', '):'–'}</p>
     `, async(data,close)=>{
       const total = parseDecimal(data.total)||0;
-      const payload = {date:data.date||s.date, category:data.category, buyerName:data.buyerName, items:s.items, total, notes:data.notes};
+      const payload = {date:data.date||s.date, category:data.category, buyerName:data.buyerName, items, total, notes:data.notes};
       await api('PUT','./api/honey_sales/'+s.id, payload);
       Object.assign(s, payload);
       close(); drawVerkaeufe();
@@ -4156,6 +4172,35 @@ async function renderVerkauf(){
       sales = sales.filter(x=>x.id!==s.id);
       close(); drawVerkaeufe();
     });
+
+    const itemsListRoot = document.getElementById('sale-items-list');
+    const wireItemRows = () => {
+      itemsListRoot.querySelectorAll('.sale-item-product').forEach(sel=>{
+        sel.onchange = () => {
+          const idx = parseInt(sel.dataset.idx);
+          const prod = productOptions.find(p=>p.id===sel.value);
+          items[idx].productId = sel.value;
+          if(prod){ items[idx].productName = prod.name; items[idx].unitPrice = prod.price; }
+        };
+      });
+      itemsListRoot.querySelectorAll('.sale-item-qty').forEach(inp=>{
+        inp.onchange = () => { items[parseInt(inp.dataset.idx)].qty = parseInt(inp.value)||0; };
+      });
+      itemsListRoot.querySelectorAll('.sale-item-del').forEach(btn=>{
+        btn.onclick = () => {
+          items.splice(parseInt(btn.dataset.idx),1);
+          itemsListRoot.innerHTML = renderItemsList();
+          wireItemRows();
+        };
+      });
+    };
+    wireItemRows();
+    document.getElementById('sale-item-add').onclick = () => {
+      const first = productOptions[0];
+      items.push({productId: first?first.id:'', productName: first?first.name:'', qty:1, unitPrice: first?first.price:0});
+      itemsListRoot.innerHTML = renderItemsList();
+      wireItemRows();
+    };
   }
 
   /* ---------- Tab: Kosten ---------- */
