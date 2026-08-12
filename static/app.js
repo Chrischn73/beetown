@@ -182,6 +182,12 @@ function parseDecimal(str) {
 function fmtNum(n) {
   return (Math.round(n*10)/10).toString().replace('.',',');
 }
+/* kg-Summen aus 250g/500g-Glaesern sind immer ein Vielfaches von 0,25 - eine
+   Nachkommastelle rundet z.B. 7,75 auf 7,8 und sieht dann wie ein Rechenfehler
+   aus, obwohl der Wert stimmt. Deshalb hier zwei Nachkommastellen. */
+function fmtKg(n) {
+  return (Math.round(n*100)/100).toFixed(2).replace('.',',');
+}
 
 /* ---------- Zuckersirup-Rechner ---------- */
 /* Kalibrierungswerte aus der Praxis (nicht die reine Physik-Formel, sondern die vom Nutzer
@@ -4280,8 +4286,8 @@ async function renderVerkauf(){
         </div>
         <div class="vk-summary-box">
           <div class="section-h" style="margin:0 0 .3rem">Je Sorte</div>
-          ${sorten.map(s=>`<div class="vk-summary-row vk-summary-row-strong"><span>${esc(s.name)}</span><span>${s.qty} Stk${s.kg?' · '+fmtNum(s.kg)+' kg':''} · ${fmtEUR(s.revenue)}</span></div>`).join('')}
-          <div class="vk-summary-row vk-summary-row-strong vk-summary-row-total"><span>Gesamt</span><span>${sorten.reduce((a,s)=>a+s.qty,0)} Stk · ${fmtNum(sorten.reduce((a,s)=>a+s.kg,0))} kg · ${fmtEUR(revenue)}</span></div>
+          ${sorten.map(s=>`<div class="vk-summary-row vk-summary-row-strong"><span>${esc(s.name)}</span><span>${s.qty} Stk${s.kg?' · '+fmtKg(s.kg)+' kg':''} · ${fmtEUR(s.revenue)}</span></div>`).join('')}
+          <div class="vk-summary-row vk-summary-row-strong vk-summary-row-total"><span>Gesamt</span><span>${sorten.reduce((a,s)=>a+s.qty,0)} Stk · ${fmtKg(sorten.reduce((a,s)=>a+s.kg,0))} kg · ${fmtEUR(revenue)}</span></div>
         </div>
       </div>
       `}`;
@@ -4576,7 +4582,7 @@ function printVerkaufList(filtered, cols, wj, revenue, sorten){
     }).join('');
     return `<tr><td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td>${qtyCells}<td>${fmtEUR(s.total)}</td><td>${esc(s.buyerName||'')}</td><td>${esc(s.notes||'')}</td></tr>`;
   }).join('');
-  const sortenHtml = (sorten||[]).map(s=>`<tr><td>${esc(s.name)}</td><td>${s.qty}</td><td>${s.kg?fmtNum(s.kg):'–'}</td><td>${fmtEUR(s.revenue)}</td></tr>`).join('');
+  const sortenHtml = (sorten||[]).map(s=>`<tr><td>${esc(s.name)}</td><td>${s.qty}</td><td>${s.kg?fmtKg(s.kg):'–'}</td><td>${fmtEUR(s.revenue)}</td></tr>`).join('');
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Verkäufe ${wj.label}</title>
     <style>
       body{font-family:Arial,sans-serif;margin:1.5cm;color:#000}
