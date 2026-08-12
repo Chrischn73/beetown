@@ -3831,11 +3831,15 @@ function printGewichtList(all, fmtKg) {
 /* ---------- Honig-Verkauf ---------- */
 function fmtEUR(n){ return (Math.round(((parseFloat(n)||0)+Number.EPSILON)*100)/100).toFixed(2).replace('.',',')+' €'; }
 /* Wird aufgerufen, wenn beim Erfassen der Betrag manuell vom automatisch berechneten
-   Wert abweicht (z.B. Rabatt/Geschenk). Verteilt die Differenz nicht gleichmaessig auf
-   alle angetippten Glaeser, sondern faengt bei der ERSTEN Position an und "verbraucht"
-   den Rabatt dort, bevor die naechste Position angefasst wird - damit bleiben unrabattierte
-   Glaeser zum vollen Preis stehen, wie beim manuellen Vergeben eines einzelnen Rabatt-Glases
-   erwartet. Menge (Stueck) bleibt in jedem Fall unangetastet.*/
+   Wert abweicht. Zwei Faelle, bewusst unterschiedlich behandelt:
+   - Rabatt (Betrag niedriger, z.B. Geschenk): betrifft typischerweise ein einzelnes
+     Glas, daher wird die Differenz nicht gleichmaessig verteilt, sondern faengt bei der
+     ERSTEN Position an und "verbraucht" den Rabatt dort, bevor die naechste Position
+     angefasst wird - unrabattierte Glaeser bleiben zum vollen Preis stehen.
+   - Aufpreis (Betrag hoeher, z.B. allgemeine Preiserhoehung): betrifft typischerweise
+     ALLE verkauften Glaeser gleichermassen, daher wird die Differenz proportional auf
+     alle Positionen verteilt statt auf eine einzelne gepackt.
+   Menge (Stueck) bleibt in jedem Fall unangetastet.*/
 function applyManualTotalAdjustment(items, total){
   const nominal = items.reduce((s,it)=>s+it.qty*it.unitPrice, 0);
   const diff = Math.round((nominal-total)*100)/100; // >0 = Rabatt, <0 = Aufpreis
@@ -3851,7 +3855,16 @@ function applyManualTotalAdjustment(items, total){
       remaining = Math.round((remaining-take)*100)/100;
     }
   } else {
-    slots[slots.length-1].price = Math.round((slots[slots.length-1].price + (-diff))*100)/100;
+    const scale = total / nominal;
+    let running = 0;
+    slots.forEach((slot, idx) => {
+      if(idx === slots.length-1){
+        slot.price = Math.round((total-running)*100)/100;
+      } else {
+        slot.price = Math.round(slot.price*scale*100)/100;
+        running = Math.round((running+slot.price)*100)/100;
+      }
+    });
   }
   const grouped = [];
   slots.forEach(slot=>{
