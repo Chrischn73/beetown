@@ -56,6 +56,7 @@ async function loadSettings() {
     window._homeBtnHeight = homeHeight;
     window._homeBtnShowText = homeShowText;
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
+    window._vkTilesPerRow = s.vkTilesPerRow || 'auto';
   } catch(_) {}
 }
 /* Buttons auf der Startseite - einzeln in den Einstellungen ausblendbar.
@@ -3967,6 +3968,8 @@ async function renderVerkauf(){
               <span class="cnt-val" id="vk-qty-${esc(p.id)}">0</span>
             </div>
           </div>`;
+    const tilesPerRow = window._vkTilesPerRow || 'auto';
+    const gridStyleAttr = tilesPerRow==='auto' ? '' : ` style="grid-template-columns:repeat(${parseInt(tilesPerRow)},1fr)"`;
     const nameLastDate = {};
     sales.forEach(s=>{ if(s.buyerName && s.date && (!nameLastDate[s.buyerName] || s.date>nameLastDate[s.buyerName])) nameLastDate[s.buyerName]=s.date; });
     const nameCutoff = addDays(todayInput(), -365);
@@ -3986,12 +3989,12 @@ async function renderVerkauf(){
       </div>
       <label class="lbl" style="margin-top:1rem">Produkte antippen zum Hochzählen</label>
       ${activeProducts.length===0 ? '<p class="muted">Keine aktiven Produkte – unter „Produkte" anlegen.</p>' : `
-      <div class="vk-product-grid">
+      <div class="vk-product-grid"${gridStyleAttr}>
         ${honigProducts.map(tileHTML).join('')}
       </div>
       ${sonstigeProducts.length?`
       <div class="section-h" style="margin:.9rem 0 .3rem">Weitere Produkte</div>
-      <div class="vk-product-grid">
+      <div class="vk-product-grid"${gridStyleAttr}>
         ${sonstigeProducts.map(tileHTML).join('')}
       </div>`:''}`}
       <div id="vk-selection-summary" class="muted" style="font-size:1rem;margin-top:1rem;padding-top:.6rem;border-top:1px solid var(--line);display:none"></div>
@@ -4173,28 +4176,58 @@ async function renderVerkauf(){
         fmtEUR(s.total), s.notes||''].join(' ').toLowerCase();
       return hay.includes(term);
     };
-    const wireRowEvents = () => {
-      bodyEl.querySelectorAll('tr[data-edit]').forEach(tr=>{
-        tr.onclick = (e) => { if(e.target.closest('[data-del]')) return; openSaleEditModal(sales.find(s=>s.id===tr.dataset.edit)); };
+    const tableHeadHTML = `<th>Datum</th><th>Kategorie</th>
+      ${cols.map(c=>`<th class="vk-th-vertical"><span>${esc(c)}</span></th>`).join('')}
+      <th style="text-align:right">Betrag</th><th>Name</th><th>Notiz</th><th></th>`;
+    const tableFootHTML = `<th colspan="2">Summe</th>
+      ${cols.map(c=>`<th style="text-align:right">${colTotal(c)}</th>`).join('')}
+      <th style="text-align:right">${fmtEUR(revenue)}</th><th colspan="3"></th>`;
+
+    const openFullscreenTable = () => {
+      const back = document.createElement('div');
+      back.className = 'vk-fullscreen-back';
+      back.innerHTML = `
+        <div class="vk-fullscreen-head">
+          <input class="inp" id="vk-search-fs" type="text" placeholder="🔍 Tabelle durchsuchen …">
+          <button type="button" class="btn btn-ghost" id="vk-fullscreen-close" aria-label="Schließen">✕</button>
+        </div>
+        <div class="vk-fullscreen-body">
+          <table class="data-table data-table-compact">
+            <thead><tr>${tableHeadHTML}</tr></thead>
+            <tbody id="vk-fs-table-body">${filtered.map(rowHTML).join('')}</tbody>
+            <tfoot><tr>${tableFootHTML}</tr></tfoot>
+          </table>
+        </div>`;
+      document.body.appendChild(back);
+      const closeFs = () => back.remove();
+      back.querySelector('#vk-fullscreen-close').onclick = closeFs;
+      const wireFsRows = () => {
+        back.querySelectorAll('tr[data-edit]').forEach(tr=>{
+          tr.onclick = (e) => {
+            if(e.target.closest('[data-del]')) return;
+            closeFs(); openSaleEditModal(sales.find(s=>s.id===tr.dataset.edit));
+          };
+        });
+        back.querySelectorAll('[data-del]').forEach(btn=>{
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            if(!confirm('Diesen Verkauf wirklich löschen?')) return;
+            await api('DELETE','./api/honey_sales/'+btn.dataset.del);
+            sales = sales.filter(s=>s.id!==btn.dataset.del);
+            closeFs(); drawVerkaeufe();
+          };
+        });
+      };
+      const searchFs = back.querySelector('#vk-search-fs');
+      searchFs.addEventListener('input', ()=>{
+        const t = searchFs.value.trim().toLowerCase();
+        const rows = !t ? filtered : filtered.filter(s=>rowMatches(s,t));
+        const tbody = back.querySelector('#vk-fs-table-body');
+        tbody.innerHTML = rows.length ? rows.map(rowHTML).join('')
+          : `<tr><td colspan="${colCount}" class="muted" style="text-align:center;padding:1rem">Keine Treffer</td></tr>`;
+        wireFsRows();
       });
-      bodyEl.querySelectorAll('[data-del]').forEach(btn=>{
-        btn.onclick = async (e) => {
-          e.stopPropagation();
-          if(!confirm('Diesen Verkauf wirklich löschen?')) return;
-          await api('DELETE','./api/honey_sales/'+btn.dataset.del);
-          sales = sales.filter(s=>s.id!==btn.dataset.del);
-          drawVerkaeufe();
-        };
-      });
-    };
-    const renderRows = (term) => {
-      const t = (term||'').trim().toLowerCase();
-      const rows = !t ? filtered : filtered.filter(s=>rowMatches(s,t));
-      const tbody = document.getElementById('vk-table-body');
-      if(!tbody) return;
-      tbody.innerHTML = rows.length ? rows.map(rowHTML).join('')
-        : `<tr><td colspan="${colCount}" class="muted" style="text-align:center;padding:1rem">Keine Treffer</td></tr>`;
-      wireRowEvents();
+      wireFsRows();
     };
 
     bodyEl.innerHTML = `
@@ -4206,22 +4239,7 @@ async function renderVerkauf(){
       </div>
       <p class="muted" style="font-size:.85rem">Einnahmen: <strong style="color:var(--ink)">${fmtEUR(revenue)}</strong> · Kosten: <strong style="color:var(--ink)">${fmtEUR(costSum)}</strong> · Gewinn: <strong style="color:var(--ink)">${fmtEUR(revenue-costSum)}</strong></p>
       ${filtered.length===0 ? emptyState('Keine Verkäufe','Für dieses Wirtschaftsjahr wurden noch keine Verkäufe erfasst.') : `
-      <input class="inp" id="vk-search" type="text" placeholder="🔍 Tabelle durchsuchen …" style="margin-bottom:.6rem">
-      <div class="table-wrap">
-        <table class="data-table data-table-compact">
-          <thead><tr>
-            <th>Datum</th><th>Kategorie</th>
-            ${cols.map(c=>`<th class="vk-th-vertical"><span>${esc(c)}</span></th>`).join('')}
-            <th style="text-align:right">Betrag</th><th>Name</th><th>Notiz</th><th></th>
-          </tr></thead>
-          <tbody id="vk-table-body">${filtered.map(rowHTML).join('')}</tbody>
-          <tfoot><tr>
-            <th colspan="2">Summe</th>
-            ${cols.map(c=>`<th style="text-align:right">${colTotal(c)}</th>`).join('')}
-            <th style="text-align:right">${fmtEUR(revenue)}</th><th colspan="3"></th>
-          </tr></tfoot>
-        </table>
-      </div>
+      <button class="btn btn-primary" id="vk-open-fullscreen" style="width:100%;margin-bottom:.8rem">⛶ Tabelle Vollbild öffnen (${filtered.length})</button>
       <div class="vk-summary-grid">
         <div class="vk-summary-box">
           <div class="section-h" style="margin:0 0 .3rem">Je Produkt</div>
@@ -4238,9 +4256,8 @@ async function renderVerkauf(){
     document.getElementById('vk-wj-select').onchange = (e)=>{ selectedWJYear=parseInt(e.target.value); drawVerkaeufe(); };
     const printBtn = document.getElementById('vk-print-verkaeufe');
     if(printBtn) printBtn.onclick = () => printVerkaufList(filtered, cols, wj, revenue, sorten);
-    const searchInput = document.getElementById('vk-search');
-    if(searchInput) searchInput.addEventListener('input', ()=>renderRows(searchInput.value));
-    wireRowEvents();
+    const fsBtn = document.getElementById('vk-open-fullscreen');
+    if(fsBtn) fsBtn.onclick = openFullscreenTable;
   }
 
   function openSaleEditModal(s){
@@ -4664,6 +4681,14 @@ async function renderSettings() {
       abzuschalten.</p>
       <label class="lbl">Präfix</label>
       <input class="inp" id="bk-prefix" type="text" maxlength="10" placeholder="BK">`)}
+    ${settingsSection('verkaufErfassen','Verkauf – Erfassen',`
+      <p class="muted">Wie viele Produkt-Kacheln sollen pro Zeile angezeigt werden?</p>
+      <select class="inp" id="vk-tiles-per-row">
+        <option value="auto">Automatisch (je nach Bildschirmbreite)</option>
+        <option value="2">2 pro Zeile</option>
+        <option value="3">3 pro Zeile</option>
+        <option value="4">4 pro Zeile</option>
+      </select>`)}
     ${settingsSection('standorte','Standorte',`
       <button class="btn btn-primary block" id="add-apiary">+ Neuen Standort anlegen</button>`)}
     ${settingsSection('waagen','Stockwaagen',`
@@ -4839,6 +4864,8 @@ async function renderSettings() {
     if(obg) obg.value = s.oxalBlockGapDays || '4';
     const bkP = document.getElementById('bk-prefix');
     if(bkP) bkP.value = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
+    const vktpr = document.getElementById('vk-tiles-per-row');
+    if(vktpr) vktpr.value = s.vkTilesPerRow || 'auto';
   }).catch(()=>{});
 
   const nameInp = document.getElementById('apiary-name-input');
@@ -4936,6 +4963,8 @@ async function renderSettings() {
     if(obg) payload.oxalBlockGapDays=obg;
     const bkPEl=document.getElementById('bk-prefix');
     if(bkPEl) payload.bkPrefix=bkPEl.value.trim();
+    const vktprEl=document.getElementById('vk-tiles-per-row');
+    if(vktprEl) payload.vkTilesPerRow=vktprEl.value;
     // Alle-Spalten
     document.querySelectorAll('.all-col-chk').forEach(chk=>{
       payload['allCol_'+chk.dataset.key]=chk.checked?'true':'false';

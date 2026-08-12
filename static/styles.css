@@ -482,6 +482,15 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 .data-table tbody tr:last-child td{border-bottom:none}
 .data-table-compact th,.data-table-compact td{padding:.25rem .5rem}
 
+/* ---------- Verkauf: Tabelle im Vollbild (bessere Handhabung/Zoom auf dem Handy) ---------- */
+.vk-fullscreen-back{position:fixed; inset:0; z-index:70; background:var(--bg);
+  display:flex; flex-direction:column}
+.vk-fullscreen-head{display:flex; align-items:center; gap:.5rem;
+  padding:calc(.6rem + var(--safe-top)) .8rem .6rem; border-bottom:1px solid var(--line); background:var(--surface)}
+.vk-fullscreen-head .inp{flex:1}
+.vk-fullscreen-body{flex:1; overflow:auto; padding:.6rem .8rem calc(.8rem + var(--safe-bottom))}
+.vk-fullscreen-body .data-table thead th{position:sticky; top:0}
+
 /* Aktions-Buttons im Eintrag */
 .action-btns{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem}
 
