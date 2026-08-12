@@ -4070,7 +4070,7 @@ async function renderVerkauf(){
       if(items.length && totalManual){
         const adj = applyManualTotalAdjustment(items, total);
         items = adj.items;
-        if(adj.note) notes = notes ? `${notes} — ${adj.note}` : adj.note;
+        if(adj.note) notes = notes ? `${notes}\n${adj.note}` : adj.note;
       }
       const res = await api('POST','./api/honey_sales',{date,category,buyerName,items,total,notes});
       sales.unshift({id:res.id,date,category,buyerName,items,total,notes,createdAt:new Date().toISOString()});
@@ -4143,7 +4143,7 @@ async function renderVerkauf(){
                 <td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td><td>${esc(s.buyerName||'')}</td>
                 ${cols.map(c=>{const q=qtyFor(s,c);return `<td style="text-align:right">${q!=null?q:''}</td>`;}).join('')}
                 <td style="text-align:right">${fmtEUR(s.total)}</td>
-                <td style="white-space:normal; min-width:12rem">${esc(s.notes||'')}</td>
+                <td style="white-space:pre-wrap; min-width:12rem">${esc(s.notes||'')}</td>
                 <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
               </tr>`).join('')}
           </tbody>
@@ -4211,8 +4211,7 @@ async function renderVerkauf(){
       <button type="button" class="btn btn-ghost btn-sm" id="sale-item-add">+ Produkt</button>
       <label class="lbl" style="margin-top:.6rem">Betrag (€)</label>
       <input class="inp" name="total" type="text" inputmode="decimal" value="${fmtNum(s.total)}">
-      <label class="lbl">Notiz</label>
-      <input class="inp" name="notes" type="text" value="${esc(s.notes||'')}">
+      ${textareaField('Notiz','notes',s.notes)}
     `, async(data,close)=>{
       const total = parseDecimal(data.total)||0;
       const payload = {date:data.date||s.date, category:data.category, buyerName:data.buyerName, items, total, notes:data.notes};
