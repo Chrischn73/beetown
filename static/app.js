@@ -4150,13 +4150,26 @@ async function renderVerkauf(){
     const colRevenue = (name) => filtered.reduce((s,x)=>s+x.items.filter(i=>i.productName===name).reduce((a,i)=>a+i.qty*i.unitPrice,0),0);
     const colCount = 2 + cols.length + 3 + 1; // Datum,Kategorie + Sorten + Betrag,Name,Notiz + Löschen
 
+    /* Glasgroesse je Spalte ueber die (umbenennungsstabile) productId aufloesen, nicht ueber
+       den aktuellen Produktnamen - sonst verlieren Alt-Verkaufszeilen, deren gespeicherter
+       productName nach einer Produkt-Umbenennung nicht mehr zum aktuellen Namen passt, ihren
+       kg-Beitrag (Stk/Betrag bleiben korrekt, da die unabhaengig von der Produktliste sind).
+       Name-Lookup nur noch als Fallback fuer inzwischen geloeschte Produkte. */
+    const gramsById = {}; products.forEach(p=>{ gramsById[p.id]=p.sizeGrams; });
     const gramsByName = {}; products.forEach(p=>{ gramsByName[p.name]=p.sizeGrams; });
+    const gramsForCol = (c) => {
+      for(const s of filtered){
+        const it = s.items.find(i=>i.productName===c);
+        if(it) return gramsById[it.productId] ?? gramsByName[c] ?? 0;
+      }
+      return 0;
+    };
     /* Sorte = Produktname ohne die abschliessende Glasgroesse ("Frühtracht 500g" -> "Frühtracht"),
        damit sich Glasgroessen derselben Sorte zu einer Zeile zusammenfassen lassen. */
     const productBase = (name) => name.replace(/\s*\d+\s*g\s*$/i,'').trim() || name;
     const sortenMap = new Map();
     cols.forEach(c => {
-      const base = productBase(c), qty = colTotal(c), grams = gramsByName[c]||0;
+      const base = productBase(c), qty = colTotal(c), grams = gramsForCol(c);
       const s = sortenMap.get(base) || {name:base, qty:0, revenue:0, kg:0};
       s.qty += qty; s.revenue += colRevenue(c); s.kg += grams ? (grams*qty)/1000 : 0;
       sortenMap.set(base, s);
