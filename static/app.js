@@ -3879,6 +3879,7 @@ function applyManualTotalAdjustment(items, total){
   return {items: grouped, note};
 }
 const VERKAUF_CATEGORIES = ['Box','Familie','Nachbarn','Freunde','Firma'];
+const FS_ZOOM_LEVELS = [1, 0.85, 0.7, 0.55]; // Zoomstufen im Vollbild der Verkäufe-Tabelle
 /* Schwarz oder Weiß je nach Helligkeit der Hintergrundfarbe, damit der Produkt-Kachel-Text
    bei beliebig gewählten Farben lesbar bleibt. */
 function readableTextColor(hex){
@@ -3924,6 +3925,7 @@ async function renderVerkauf(){
     return [...set].sort((a,b)=>b-a);
   };
   let selectedWJYear = currentWJ.startYear;
+  let fsZoomIdx = 0; // Zoomstufe im Vollbild der Verkäufe-Tabelle, siehe FS_ZOOM_LEVELS
   let activeTab = 'erfassen';
 
   app.innerHTML = `
@@ -4189,6 +4191,11 @@ async function renderVerkauf(){
       back.innerHTML = `
         <div class="vk-fullscreen-head">
           <input class="inp" id="vk-search-fs" type="text" placeholder="🔍 Tabelle durchsuchen …">
+          <div class="vk-fs-zoom-controls">
+            <button type="button" class="btn btn-ghost btn-sm" id="vk-fs-zoom-out" aria-label="Verkleinern">−</button>
+            <span id="vk-fs-zoom-label" class="muted" style="font-size:.8rem;min-width:2.6rem;text-align:center"></span>
+            <button type="button" class="btn btn-ghost btn-sm" id="vk-fs-zoom-in" aria-label="Vergrößern">+</button>
+          </div>
           <button type="button" class="btn btn-ghost" id="vk-fullscreen-close" aria-label="Schließen">✕</button>
         </div>
         <div class="vk-fullscreen-body">
@@ -4201,6 +4208,19 @@ async function renderVerkauf(){
       document.body.appendChild(back);
       const closeFs = () => back.remove();
       back.querySelector('#vk-fullscreen-close').onclick = closeFs;
+      const fsBody = back.querySelector('.vk-fullscreen-body');
+      const zoomOutBtn = back.querySelector('#vk-fs-zoom-out');
+      const zoomInBtn = back.querySelector('#vk-fs-zoom-in');
+      const zoomLabel = back.querySelector('#vk-fs-zoom-label');
+      const applyZoom = () => {
+        fsBody.style.zoom = FS_ZOOM_LEVELS[fsZoomIdx];
+        zoomLabel.textContent = Math.round(FS_ZOOM_LEVELS[fsZoomIdx]*100)+'%';
+        zoomOutBtn.disabled = fsZoomIdx >= FS_ZOOM_LEVELS.length-1;
+        zoomInBtn.disabled = fsZoomIdx <= 0;
+      };
+      zoomOutBtn.onclick = () => { if(fsZoomIdx < FS_ZOOM_LEVELS.length-1){ fsZoomIdx++; applyZoom(); } };
+      zoomInBtn.onclick = () => { if(fsZoomIdx > 0){ fsZoomIdx--; applyZoom(); } };
+      applyZoom();
       const wireFsRows = () => {
         back.querySelectorAll('tr[data-edit]').forEach(tr=>{
           tr.onclick = (e) => {
