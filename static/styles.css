@@ -321,7 +321,8 @@ textarea.inp{resize:vertical}
 .vk-summary-row-total{border-top:1px solid var(--line); margin-top:.3rem; padding-top:.4rem}
 .sale-item-row{display:flex; gap:.4rem; align-items:center; margin-bottom:.4rem}
 .sale-item-row .sale-item-product{flex:1; min-width:0}
-.sale-item-row .sale-item-qty{width:4.5rem; flex:none}
+.sale-item-row .sale-item-qty{width:3.6rem; flex:none}
+.sale-item-row .sale-item-price{width:4.2rem; flex:none}
 
 /* ---------- Gewicht: Rundgang-Modus (noch nicht gewogene Voelker hervorheben) ---------- */
 .gewicht-item-open{background:rgba(240,140,0,.15)}

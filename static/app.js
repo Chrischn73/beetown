@@ -4144,7 +4144,8 @@ async function renderVerkauf(){
     const renderItemsList = () => items.map((it,idx)=>`
       <div class="sale-item-row" data-idx="${idx}">
         <select class="inp sale-item-product" data-idx="${idx}">${optionsHTML(it.productId, it.productName)}</select>
-        <input class="inp sale-item-qty" data-idx="${idx}" type="number" min="0" value="${it.qty}">
+        <input class="inp sale-item-qty" data-idx="${idx}" type="number" min="0" value="${it.qty}" title="Menge">
+        <input class="inp sale-item-price" data-idx="${idx}" type="text" inputmode="decimal" value="${fmtNum(it.unitPrice)}" title="Einzelpreis (€)">
         <button type="button" class="btn btn-ghost btn-sm sale-item-del" data-idx="${idx}">✕</button>
       </div>`).join('');
 
@@ -4181,10 +4182,15 @@ async function renderVerkauf(){
           const prod = productOptions.find(p=>p.id===sel.value);
           items[idx].productId = sel.value;
           if(prod){ items[idx].productName = prod.name; items[idx].unitPrice = prod.price; }
+          itemsListRoot.innerHTML = renderItemsList();
+          wireItemRows();
         };
       });
       itemsListRoot.querySelectorAll('.sale-item-qty').forEach(inp=>{
         inp.onchange = () => { items[parseInt(inp.dataset.idx)].qty = parseInt(inp.value)||0; };
+      });
+      itemsListRoot.querySelectorAll('.sale-item-price').forEach(inp=>{
+        inp.onchange = () => { items[parseInt(inp.dataset.idx)].unitPrice = parseDecimal(inp.value)||0; };
       });
       itemsListRoot.querySelectorAll('.sale-item-del').forEach(btn=>{
         btn.onclick = () => {
