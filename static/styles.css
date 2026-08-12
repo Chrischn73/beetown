@@ -468,7 +468,7 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 .entry-badge-oxblock{background:#e0e7ff;color:#3730a3;border-color:#a5b4fc}
 .entry-badge-varroacount{background:#ffe8e8;color:#9c2626;border-color:#f3a5a5}
 
-.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--line);margin-top:.6rem}
+.table-wrap{overflow:auto;max-height:70vh;border-radius:var(--radius);border:1px solid var(--line);margin-top:.6rem}
 .data-table{width:100%;border-collapse:collapse;font-size:.85rem;background:var(--surface)}
 .data-table th,.data-table td{padding:.5rem .6rem;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 .data-table th{background:var(--bg);color:var(--ink-soft);font-weight:700;font-size:.78rem}
