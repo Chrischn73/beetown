@@ -4091,7 +4091,7 @@ async function renderVerkauf(){
                 <td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td><td>${esc(s.buyerName||'')}</td>
                 ${cols.map(c=>{const q=qtyFor(s,c);return `<td style="text-align:right">${q!=null?q:''}</td>`;}).join('')}
                 <td style="text-align:right">${fmtEUR(s.total)}</td>
-                <td class="ellipsis" title="${esc(s.notes||'')}">${esc(s.notes||'')}</td>
+                <td style="white-space:normal; min-width:12rem">${esc(s.notes||'')}</td>
                 <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
               </tr>`).join('')}
           </tbody>
