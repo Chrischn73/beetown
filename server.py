@@ -181,7 +181,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS honey_products(
             id TEXT PRIMARY KEY, name TEXT, price REAL DEFAULT 0, sizeGrams INTEGER DEFAULT 0,
             active INTEGER DEFAULT 1, sortOrder INTEGER DEFAULT 0, color TEXT DEFAULT '',
-            kind TEXT DEFAULT 'sonstige', createdAt TEXT);
+            kind TEXT DEFAULT 'sonstige', giftSetVarieties INTEGER DEFAULT 0,
+            giftSetProductIds TEXT DEFAULT '[]', createdAt TEXT);
         CREATE TABLE IF NOT EXISTS honey_sales(
             id TEXT PRIMARY KEY, date TEXT, category TEXT, buyerName TEXT, items TEXT,
             total REAL DEFAULT 0, notes TEXT, createdAt TEXT);
@@ -240,6 +241,8 @@ def init_db():
         ("reminders","remindDaysBefore", "ALTER TABLE reminders ADD COLUMN remindDaysBefore INTEGER DEFAULT 0"),
         ("honey_products","color",       "ALTER TABLE honey_products ADD COLUMN color TEXT DEFAULT ''"),
         ("honey_products","kind",        "ALTER TABLE honey_products ADD COLUMN kind TEXT DEFAULT 'sonstige'"),
+        ("honey_products","giftSetVarieties",  "ALTER TABLE honey_products ADD COLUMN giftSetVarieties INTEGER DEFAULT 0"),
+        ("honey_products","giftSetProductIds", "ALTER TABLE honey_products ADD COLUMN giftSetProductIds TEXT DEFAULT '[]'"),
         ("honey_stir_entries","notes",    "ALTER TABLE honey_stir_entries ADD COLUMN notes TEXT"),
     ]
     for table, col, sql in migrations:
@@ -290,6 +293,12 @@ def parse_sale(r):
     d = dict(r)
     try: d["items"] = json.loads(d.get("items") or "[]")
     except Exception: d["items"] = []
+    return d
+
+def parse_product(r):
+    d = dict(r)
+    try: d["giftSetProductIds"] = json.loads(d.get("giftSetProductIds") or "[]")
+    except Exception: d["giftSetProductIds"] = []
     return d
 
 def photo_ids(photos):
@@ -505,7 +514,7 @@ class Handler(BaseHTTPRequestHandler):
                 rs=con.execute("SELECT * FROM honey_stir_entries WHERE batchId=? ORDER BY date DESC",(bid,)).fetchall()
                 return self._json([parse_stir_entry(r) for r in rs])
             if path=="/api/honey_products":
-                return self._json(rows(con,"SELECT * FROM honey_products ORDER BY sortOrder,name"))
+                return self._json([parse_product(r) for r in con.execute("SELECT * FROM honey_products ORDER BY sortOrder,name").fetchall()])
             if path=="/api/honey_sales":
                 rs=con.execute("SELECT * FROM honey_sales ORDER BY date DESC, createdAt DESC").fetchall()
                 return self._json([parse_sale(r) for r in rs])
@@ -577,9 +586,10 @@ class Handler(BaseHTTPRequestHandler):
             rid=new_id()
             con2=db()
             maxSort=con2.execute("SELECT COALESCE(MAX(sortOrder),-1)+1 FROM honey_products").fetchone()[0]
-            con2.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,kind,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
+            con2.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,kind,giftSetVarieties,giftSetProductIds,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (rid,body2.get("name",""),float(body2.get("price",0) or 0),int(body2.get("sizeGrams",0) or 0),
-                 1 if body2.get("active",True) else 0,int(maxSort),body2.get("color",""),body2.get("kind","sonstige"),now_iso()))
+                 1 if body2.get("active",True) else 0,int(maxSort),body2.get("color",""),body2.get("kind","sonstige"),
+                 int(body2.get("giftSetVarieties",0) or 0),json.dumps(body2.get("giftSetProductIds",[])),now_iso()))
             con2.commit(); con2.close()
             return self._json({"id":rid})
         if path=="/api/honey_sales":
@@ -836,9 +846,10 @@ class Handler(BaseHTTPRequestHandler):
                     (body.get("date",""),body.get("temp",""),body.get("appearance",""),
                      json.dumps(new_photos),body.get("notes",""),rid))
             elif kind=="honey_products":
-                con.execute("UPDATE honey_products SET name=?,price=?,sizeGrams=?,active=?,sortOrder=?,color=?,kind=? WHERE id=?",
+                con.execute("UPDATE honey_products SET name=?,price=?,sizeGrams=?,active=?,sortOrder=?,color=?,kind=?,giftSetVarieties=?,giftSetProductIds=? WHERE id=?",
                     (body.get("name",""),float(body.get("price",0) or 0),int(body.get("sizeGrams",0) or 0),
-                     1 if body.get("active",True) else 0,int(body.get("sortOrder",0) or 0),body.get("color",""),body.get("kind","sonstige"),rid))
+                     1 if body.get("active",True) else 0,int(body.get("sortOrder",0) or 0),body.get("color",""),body.get("kind","sonstige"),
+                     int(body.get("giftSetVarieties",0) or 0),json.dumps(body.get("giftSetProductIds",[])),rid))
             elif kind=="honey_sales":
                 con.execute("UPDATE honey_sales SET date=?,category=?,buyerName=?,items=?,total=?,notes=? WHERE id=?",
                     (body.get("date",""),body.get("category",""),body.get("buyerName",""),
@@ -910,7 +921,7 @@ class Handler(BaseHTTPRequestHandler):
              "sirup_calc":rows(con,"SELECT * FROM sirup_calc"),
              "honey_stir_batches":rows(con,"SELECT * FROM honey_stir_batches"),
              "honey_stir_entries":[parse_stir_entry(r) for r in con.execute("SELECT * FROM honey_stir_entries").fetchall()],
-             "honey_products":rows(con,"SELECT * FROM honey_products"),
+             "honey_products":[parse_product(r) for r in con.execute("SELECT * FROM honey_products").fetchall()],
              "honey_sales":[parse_sale(r) for r in con.execute("SELECT * FROM honey_sales").fetchall()],
              "honey_costs":rows(con,"SELECT * FROM honey_costs"),
              "settings":rows(con,"SELECT * FROM settings")}
@@ -992,10 +1003,11 @@ class Handler(BaseHTTPRequestHandler):
                  e.get("appearance",""),json.dumps(e.get("photos",[])),e.get("notes",""),e.get("createdAt","")))
         for p in body.get("honey_products",[]):
             con.execute("""INSERT INTO honey_products
-                (id,name,price,sizeGrams,active,sortOrder,color,kind,createdAt) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (id,name,price,sizeGrams,active,sortOrder,color,kind,giftSetVarieties,giftSetProductIds,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                 (p["id"],p.get("name",""),float(p.get("price",0) or 0),int(p.get("sizeGrams",0) or 0),
                  1 if p.get("active",True) else 0,int(p.get("sortOrder",0) or 0),p.get("color",""),
-                 p.get("kind","sonstige"),p.get("createdAt","")))
+                 p.get("kind","sonstige"),int(p.get("giftSetVarieties",0) or 0),
+                 json.dumps(p.get("giftSetProductIds",[])),p.get("createdAt","")))
         for sa in body.get("honey_sales",[]):
             con.execute("""INSERT INTO honey_sales
                 (id,date,category,buyerName,items,total,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)""",

@@ -3967,7 +3967,11 @@ async function renderVerkauf(){
               <span class="cnt-val" id="vk-qty-${esc(p.id)}">0</span>
             </div>
           </div>`;
-    const nameSuggestions = [...new Set(sales.map(s=>s.buyerName).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
+    const nameLastDate = {};
+    sales.forEach(s=>{ if(s.buyerName && s.date && (!nameLastDate[s.buyerName] || s.date>nameLastDate[s.buyerName])) nameLastDate[s.buyerName]=s.date; });
+    const nameCutoff = addDays(todayInput(), -365);
+    let nameSuggestions = Object.keys(nameLastDate).filter(n=>nameLastDate[n]>=nameCutoff).sort((a,b)=>a.localeCompare(b,'de'));
+    if(nameSuggestions.length===0) nameSuggestions = Object.keys(nameLastDate).sort((a,b)=>a.localeCompare(b,'de'));
     bodyEl.innerHTML = `
       <label class="lbl" style="margin-top:0">Datum</label>
       <input class="inp" id="vk-date" type="date" value="${todayInput()}">
@@ -4036,15 +4040,41 @@ async function renderVerkauf(){
       hideNameSuggestions();
     });
 
+    const incQty = (pid) => {
+      qty[pid] = (qty[pid]||0) + 1;
+      const qtyEl = document.getElementById('vk-qty-'+pid);
+      if(qtyEl) qtyEl.textContent = qty[pid];
+      bodyEl.querySelector(`.vk-product-tile[data-id="${pid}"]`)?.classList.toggle('vk-active', qty[pid]>0);
+      recalcTotal();
+      updateSummary();
+    };
+    const openGiftSetPicker = (p) => {
+      const count = p.giftSetVarieties || 2;
+      const allowedIds = p.giftSetProductIds || [];
+      const allowed = activeProducts.filter(x=>allowedIds.includes(x.id));
+      if(allowed.length===0){
+        alert(`Für "${p.name}" sind noch keine Sorten konfiguriert (Produkte → ${p.name} bearbeiten → Geschenkset).`);
+        return;
+      }
+      const optsHTML = allowed.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+      const rows = Array.from({length:count}, (_,i)=>`
+        <label class="lbl" style="margin-top:${i===0?0:'.6rem'}">Sorte ${i+1}</label>
+        <select class="inp" name="gs${i}"><option value="">–</option>${optsHTML}</select>`).join('');
+      openModal(`${esc(p.name)} – Sorten wählen`, rows, async (data, close) => {
+        const chosen = Array.from({length:count}, (_,i)=>data['gs'+i]).filter(Boolean);
+        if(chosen.length < count){ alert('Bitte für jede Position eine Sorte auswählen.'); return; }
+        chosen.forEach(incQty);
+        incQty(p.id);
+        close();
+      });
+    };
     bodyEl.querySelectorAll('.vk-product-tile').forEach(tile=>{
       const pid = tile.dataset.id;
       tile.addEventListener('click', (e)=>{
         if(e.target.closest('.vk-minus')) return;
-        qty[pid]++;
-        document.getElementById('vk-qty-'+pid).textContent = qty[pid];
-        tile.classList.toggle('vk-active', qty[pid]>0);
-        recalcTotal();
-        updateSummary();
+        const p = activeProducts.find(x=>x.id===pid);
+        if(p && p.giftSetVarieties){ openGiftSetPicker(p); return; }
+        incQty(pid);
       });
     });
     bodyEl.querySelectorAll('.vk-minus').forEach(btn=>{
@@ -4074,7 +4104,13 @@ async function renderVerkauf(){
       }
       const res = await api('POST','./api/honey_sales',{date,category,buyerName,items,total,notes});
       sales.unshift({id:res.id,date,category,buyerName,items,total,notes,createdAt:new Date().toISOString()});
-      showToast(`✅ Verkauf gespeichert (${fmtEUR(total)})`);
+      const groups = {};
+      items.forEach(it=>{
+        const g = groups[it.productName] || (groups[it.productName] = {qty:0, sum:0});
+        g.qty += it.qty; g.sum += it.qty*it.unitPrice;
+      });
+      const lines = Object.entries(groups).map(([name,g])=>`<div>${g.qty}× ${esc(name)} — ${fmtEUR(g.sum)}</div>`).join('');
+      showToast(`✅ Verkauf gespeichert<div style="margin-top:.3rem">${lines}</div><div style="margin-top:.3rem"><strong>Gesamt: ${fmtEUR(total)}</strong></div>`, 6000, true);
       drawErfassen();
     };
 
@@ -4095,7 +4131,7 @@ async function renderVerkauf(){
     const wjYears = computeWJYears();
     if(!wjYears.includes(selectedWJYear)) selectedWJYear = wjYears[0];
     const wj = wjFromStartYear(selectedWJYear, stichtag);
-    const filtered = sales.filter(s=>inWJ(s.date, wj)).sort((a,b)=> a.date.localeCompare(b.date));
+    const filtered = sales.filter(s=>inWJ(s.date, wj)).sort((a,b)=> b.date.localeCompare(a.date));
     const filteredCosts = costs.filter(c=>inWJ(c.date, wj));
     const revenue = filtered.reduce((s,x)=>s+(parseFloat(x.total)||0),0);
     const costSum = filteredCosts.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
@@ -4104,9 +4140,10 @@ async function renderVerkauf(){
     const colSet = new Set();
     filtered.forEach(s=>s.items.forEach(it=>colSet.add(it.productName)));
     const cols = [...colSet].sort((a,b)=>(nameOrder[a]??999)-(nameOrder[b]??999) || a.localeCompare(b,'de'));
-    const qtyFor = (s,name) => { const it=s.items.find(i=>i.productName===name); return it?it.qty:null; };
-    const colTotal = (name) => filtered.reduce((s,x)=>{ const it=x.items.find(i=>i.productName===name); return s+(it?it.qty:0); },0);
-    const colRevenue = (name) => filtered.reduce((s,x)=>{ const it=x.items.find(i=>i.productName===name); return s+(it?it.qty*it.unitPrice:0); },0);
+    const qtyFor = (s,name) => { const items=s.items.filter(i=>i.productName===name); return items.length ? items.reduce((a,i)=>a+i.qty,0) : null; };
+    const colTotal = (name) => filtered.reduce((s,x)=>s+x.items.filter(i=>i.productName===name).reduce((a,i)=>a+i.qty,0),0);
+    const colRevenue = (name) => filtered.reduce((s,x)=>s+x.items.filter(i=>i.productName===name).reduce((a,i)=>a+i.qty*i.unitPrice,0),0);
+    const colCount = 2 + cols.length + 3 + 1; // Datum,Kategorie + Sorten + Betrag,Name,Notiz + Löschen
 
     const gramsByName = {}; products.forEach(p=>{ gramsByName[p.name]=p.sizeGrams; });
     /* Sorte = Produktname ohne die abschliessende Glasgroesse ("Frühtracht 500g" -> "Frühtracht"),
@@ -4121,6 +4158,45 @@ async function renderVerkauf(){
     });
     const sorten = [...sortenMap.values()];
 
+    const rowHTML = (s) => `
+      <tr data-edit="${esc(s.id)}" style="cursor:pointer">
+        <td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td>
+        ${cols.map(c=>{const q=qtyFor(s,c);return `<td style="text-align:right">${q!=null?q:''}</td>`;}).join('')}
+        <td style="text-align:right">${fmtEUR(s.total)}</td>
+        <td>${esc(s.buyerName||'')}</td>
+        <td style="white-space:pre-wrap; min-width:12rem">${esc(s.notes||'')}</td>
+        <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
+      </tr>`;
+    const rowMatches = (s, term) => {
+      const hay = [fmtDate(s.date), s.category||'', s.buyerName||'',
+        ...cols.map(c=>{const q=qtyFor(s,c); return q!=null?String(q):'';}),
+        fmtEUR(s.total), s.notes||''].join(' ').toLowerCase();
+      return hay.includes(term);
+    };
+    const wireRowEvents = () => {
+      bodyEl.querySelectorAll('tr[data-edit]').forEach(tr=>{
+        tr.onclick = (e) => { if(e.target.closest('[data-del]')) return; openSaleEditModal(sales.find(s=>s.id===tr.dataset.edit)); };
+      });
+      bodyEl.querySelectorAll('[data-del]').forEach(btn=>{
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          if(!confirm('Diesen Verkauf wirklich löschen?')) return;
+          await api('DELETE','./api/honey_sales/'+btn.dataset.del);
+          sales = sales.filter(s=>s.id!==btn.dataset.del);
+          drawVerkaeufe();
+        };
+      });
+    };
+    const renderRows = (term) => {
+      const t = (term||'').trim().toLowerCase();
+      const rows = !t ? filtered : filtered.filter(s=>rowMatches(s,t));
+      const tbody = document.getElementById('vk-table-body');
+      if(!tbody) return;
+      tbody.innerHTML = rows.length ? rows.map(rowHTML).join('')
+        : `<tr><td colspan="${colCount}" class="muted" style="text-align:center;padding:1rem">Keine Treffer</td></tr>`;
+      wireRowEvents();
+    };
+
     bodyEl.innerHTML = `
       <div class="toolbar" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
         <select class="inp" id="vk-wj-select" style="width:auto">
@@ -4130,27 +4206,19 @@ async function renderVerkauf(){
       </div>
       <p class="muted" style="font-size:.85rem">Einnahmen: <strong style="color:var(--ink)">${fmtEUR(revenue)}</strong> · Kosten: <strong style="color:var(--ink)">${fmtEUR(costSum)}</strong> · Gewinn: <strong style="color:var(--ink)">${fmtEUR(revenue-costSum)}</strong></p>
       ${filtered.length===0 ? emptyState('Keine Verkäufe','Für dieses Wirtschaftsjahr wurden noch keine Verkäufe erfasst.') : `
+      <input class="inp" id="vk-search" type="text" placeholder="🔍 Tabelle durchsuchen …" style="margin-bottom:.6rem">
       <div class="table-wrap">
         <table class="data-table data-table-compact">
           <thead><tr>
-            <th>Datum</th><th>Kategorie</th><th>Name</th>
+            <th>Datum</th><th>Kategorie</th>
             ${cols.map(c=>`<th class="vk-th-vertical"><span>${esc(c)}</span></th>`).join('')}
-            <th style="text-align:right">Betrag</th><th>Notiz</th><th></th>
+            <th style="text-align:right">Betrag</th><th>Name</th><th>Notiz</th><th></th>
           </tr></thead>
-          <tbody>
-            ${filtered.map(s=>`
-              <tr data-edit="${esc(s.id)}" style="cursor:pointer">
-                <td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td><td>${esc(s.buyerName||'')}</td>
-                ${cols.map(c=>{const q=qtyFor(s,c);return `<td style="text-align:right">${q!=null?q:''}</td>`;}).join('')}
-                <td style="text-align:right">${fmtEUR(s.total)}</td>
-                <td style="white-space:pre-wrap; min-width:12rem">${esc(s.notes||'')}</td>
-                <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
-              </tr>`).join('')}
-          </tbody>
+          <tbody id="vk-table-body">${filtered.map(rowHTML).join('')}</tbody>
           <tfoot><tr>
-            <th colspan="3">Summe</th>
+            <th colspan="2">Summe</th>
             ${cols.map(c=>`<th style="text-align:right">${colTotal(c)}</th>`).join('')}
-            <th style="text-align:right">${fmtEUR(revenue)}</th><th colspan="2"></th>
+            <th style="text-align:right">${fmtEUR(revenue)}</th><th colspan="3"></th>
           </tr></tfoot>
         </table>
       </div>
@@ -4170,18 +4238,9 @@ async function renderVerkauf(){
     document.getElementById('vk-wj-select').onchange = (e)=>{ selectedWJYear=parseInt(e.target.value); drawVerkaeufe(); };
     const printBtn = document.getElementById('vk-print-verkaeufe');
     if(printBtn) printBtn.onclick = () => printVerkaufList(filtered, cols, wj, revenue, sorten);
-    bodyEl.querySelectorAll('tr[data-edit]').forEach(tr=>{
-      tr.onclick = (e) => { if(e.target.closest('[data-del]')) return; openSaleEditModal(sales.find(s=>s.id===tr.dataset.edit)); };
-    });
-    bodyEl.querySelectorAll('[data-del]').forEach(btn=>{
-      btn.onclick = async (e) => {
-        e.stopPropagation();
-        if(!confirm('Diesen Verkauf wirklich löschen?')) return;
-        await api('DELETE','./api/honey_sales/'+btn.dataset.del);
-        sales = sales.filter(s=>s.id!==btn.dataset.del);
-        drawVerkaeufe();
-      };
-    });
+    const searchInput = document.getElementById('vk-search');
+    if(searchInput) searchInput.addEventListener('input', ()=>renderRows(searchInput.value));
+    wireRowEvents();
   }
 
   function openSaleEditModal(s){
@@ -4394,6 +4453,8 @@ async function renderVerkauf(){
 
   function openProductEditModal(p){
     const isNew = !p;
+    const giftCandidates = products.filter(x=>x.active && (!p || x.id!==p.id));
+    const giftChecked = new Set(p&&p.giftSetProductIds||[]);
     openModal(isNew?'Produkt anlegen':'Produkt bearbeiten', `
       <label class="lbl">Name</label>
       <input class="inp" name="name" type="text" value="${esc(p?p.name:'')}" placeholder="z. B. Frühtracht 500g">
@@ -4411,12 +4472,25 @@ async function renderVerkauf(){
       <div id="vk-product-color-row" style="margin-top:.4rem${p&&p.color?'':';display:none'}">
         <input class="inp" id="vk-product-color-input" type="color" value="${p&&p.color?esc(p.color):'#ffd43b'}" style="width:4rem;height:2.6rem;padding:.2rem">
       </div>
+      <label class="lbl" style="margin-top:.6rem">Geschenkset</label>
+      <select class="inp" id="vk-product-giftset">
+        <option value="0" ${(!p||!p.giftSetVarieties)?'selected':''}>Nein</option>
+        <option value="2" ${p&&p.giftSetVarieties===2?'selected':''}>Ja – 2 Sorten wählbar</option>
+        <option value="3" ${p&&p.giftSetVarieties===3?'selected':''}>Ja – 3 Sorten wählbar</option>
+      </select>
+      <div id="vk-product-giftset-products" style="margin-top:.4rem${p&&p.giftSetVarieties?'':';display:none'}">
+        <div class="muted" style="font-size:.85rem;margin-bottom:.3rem">Welche Produkte dürfen für dieses Geschenkset gewählt werden?</div>
+        ${giftCandidates.map(c=>`<label class="check-item"><input type="checkbox" value="${esc(c.id)}" ${giftChecked.has(c.id)?'checked':''}><span>${esc(c.name)}</span></label>`).join('')}
+      </div>
     `, async(data,close)=>{
       if(!data.name) return alert('Bitte einen Namen eingeben.');
       const colorEnabled = document.getElementById('vk-product-color-enabled').checked;
       const color = colorEnabled ? document.getElementById('vk-product-color-input').value : '';
       const kindVal = document.getElementById('vk-product-kind').value;
-      const payload = { name:data.name, price:parseDecimal(data.price)||0, sizeGrams:parseInt(data.sizeGrams)||0, active: document.getElementById('vk-product-active').checked, color, kind: kindVal };
+      const giftSetVarieties = parseInt(document.getElementById('vk-product-giftset').value)||0;
+      const giftSetProductIds = giftSetVarieties ? [...document.querySelectorAll('#vk-product-giftset-products input[type=checkbox]:checked')].map(el=>el.value) : [];
+      if(giftSetVarieties && giftSetProductIds.length===0) return alert('Bitte mindestens ein Produkt für das Geschenkset auswählen.');
+      const payload = { name:data.name, price:parseDecimal(data.price)||0, sizeGrams:parseInt(data.sizeGrams)||0, active: document.getElementById('vk-product-active').checked, color, kind: kindVal, giftSetVarieties, giftSetProductIds };
       if(isNew){
         const res = await api('POST','./api/honey_products', payload);
         products.push({id:res.id, ...payload, sortOrder:products.length, createdAt:new Date().toISOString()});
@@ -4434,6 +4508,9 @@ async function renderVerkauf(){
     document.getElementById('vk-product-color-enabled').onchange = (e) => {
       document.getElementById('vk-product-color-row').style.display = e.target.checked ? '' : 'none';
     };
+    document.getElementById('vk-product-giftset').onchange = (e) => {
+      document.getElementById('vk-product-giftset-products').style.display = e.target.value!=='0' ? '' : 'none';
+    };
   }
 
   drawTab();
@@ -4442,8 +4519,12 @@ async function renderVerkauf(){
 function printVerkaufList(filtered, cols, wj, revenue, sorten){
   const dateStr = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
   const rowsHtml = filtered.map(s=>{
-    const qtyCells = cols.map(c=>{const it=s.items.find(i=>i.productName===c); return `<td class="qty">${it?it.qty:''}</td>`;}).join('');
-    return `<tr><td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td><td>${esc(s.buyerName||'')}</td>${qtyCells}<td>${fmtEUR(s.total)}</td><td>${esc(s.notes||'')}</td></tr>`;
+    const qtyCells = cols.map(c=>{
+      const items=s.items.filter(i=>i.productName===c);
+      const q=items.reduce((a,i)=>a+i.qty,0);
+      return `<td class="qty">${items.length?q:''}</td>`;
+    }).join('');
+    return `<tr><td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td>${qtyCells}<td>${fmtEUR(s.total)}</td><td>${esc(s.buyerName||'')}</td><td>${esc(s.notes||'')}</td></tr>`;
   }).join('');
   const sortenHtml = (sorten||[]).map(s=>`<tr><td>${esc(s.name)}</td><td>${s.qty}</td><td>${s.kg?fmtNum(s.kg):'–'}</td><td>${fmtEUR(s.revenue)}</td></tr>`).join('');
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Verkäufe ${wj.label}</title>
@@ -4460,7 +4541,7 @@ function printVerkaufList(filtered, cols, wj, revenue, sorten){
     </style></head><body>
     <h1>Honig-Verkäufe – Wirtschaftsjahr ${wj.label}</h1>
     <div class="sub">Erstellt: ${dateStr} · Gesamt: ${fmtEUR(revenue)}</div>
-    <table><thead><tr><th>Datum</th><th>Kategorie</th><th>Name</th>${cols.map(c=>`<th class="vertical">${esc(c)}</th>`).join('')}<th>Betrag</th><th>Notiz</th></tr></thead>
+    <table><thead><tr><th>Datum</th><th>Kategorie</th>${cols.map(c=>`<th class="vertical">${esc(c)}</th>`).join('')}<th>Betrag</th><th>Name</th><th>Notiz</th></tr></thead>
     <tbody>${rowsHtml}</tbody></table>
     <h2>Je Sorte</h2>
     <table><thead><tr><th>Sorte</th><th>Stück</th><th>kg</th><th>Betrag</th></tr></thead>
