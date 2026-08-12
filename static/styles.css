@@ -472,6 +472,7 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 .data-table{width:100%;border-collapse:collapse;font-size:.85rem;background:var(--surface)}
 .data-table th,.data-table td{padding:.5rem .6rem;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
 .data-table th{background:var(--bg);color:var(--ink-soft);font-weight:700;font-size:.78rem}
+.data-table thead th{position:sticky; top:0; z-index:5}
 .data-table td.wrap{white-space:normal}
 .data-table td.ellipsis{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:520px){

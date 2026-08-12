@@ -4095,7 +4095,7 @@ async function renderVerkauf(){
     const wjYears = computeWJYears();
     if(!wjYears.includes(selectedWJYear)) selectedWJYear = wjYears[0];
     const wj = wjFromStartYear(selectedWJYear, stichtag);
-    const filtered = sales.filter(s=>inWJ(s.date, wj)).sort((a,b)=> b.date.localeCompare(a.date));
+    const filtered = sales.filter(s=>inWJ(s.date, wj)).sort((a,b)=> a.date.localeCompare(b.date));
     const filteredCosts = costs.filter(c=>inWJ(c.date, wj));
     const revenue = filtered.reduce((s,x)=>s+(parseFloat(x.total)||0),0);
     const costSum = filteredCosts.reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
@@ -4369,10 +4369,12 @@ async function renderVerkauf(){
               <div class="card-sub">${fmtEUR(p.price)}${p.sizeGrams?' · '+p.sizeGrams+'g':''}${p.active?'':' · ausgeblendet'}</div>
             </div>
           </li>`;
-        const honigList = products.filter(p=>p.kind!=='sonstige').sort((a,b)=>a.sortOrder-b.sortOrder);
-        const sonstigeList = products.filter(p=>p.kind==='sonstige').sort((a,b)=>a.sortOrder-b.sortOrder);
+        const honigList = products.filter(p=>p.active && p.kind!=='sonstige').sort((a,b)=>a.sortOrder-b.sortOrder);
+        const sonstigeList = products.filter(p=>p.active && p.kind==='sonstige').sort((a,b)=>a.sortOrder-b.sortOrder);
+        const inactiveList = products.filter(p=>!p.active).sort((a,b)=>a.sortOrder-b.sortOrder);
         return `<ul class="card-list">${honigList.map(li).join('')}</ul>`
-          + (sonstigeList.length?`<div class="section-h" style="margin:.9rem 0 .3rem">Weitere Produkte</div><ul class="card-list">${sonstigeList.map(li).join('')}</ul>`:'');
+          + (sonstigeList.length?`<div class="section-h" style="margin:.9rem 0 .3rem">Weitere Produkte</div><ul class="card-list">${sonstigeList.map(li).join('')}</ul>`:'')
+          + (inactiveList.length?`<div class="section-h" style="margin:.9rem 0 .3rem">Deaktivierte Produkte</div><ul class="card-list">${inactiveList.map(li).join('')}</ul>`:'');
       })()}`;
 
     document.getElementById('vk-save-stichtag').onclick = async () => {
