@@ -4281,12 +4281,8 @@ async function renderVerkauf(){
       <button class="btn btn-primary" id="vk-open-fullscreen" style="width:100%;margin-bottom:.8rem">⛶ Tabelle Vollbild öffnen (${filtered.length})</button>
       <div class="vk-summary-grid">
         <div class="vk-summary-box">
-          <div class="section-h" style="margin:0 0 .3rem">Je Produkt</div>
+          <div class="section-h" style="margin:0 0 .3rem">Gesamtmengen</div>
           ${cols.map(c=>`<div class="vk-summary-row"><span>${esc(c)}</span><span>${colTotal(c)} Stk · ${fmtEUR(colRevenue(c))}</span></div>`).join('')}
-        </div>
-        <div class="vk-summary-box">
-          <div class="section-h" style="margin:0 0 .3rem">Je Sorte</div>
-          ${sorten.map(s=>`<div class="vk-summary-row vk-summary-row-strong"><span>${esc(s.name)}</span><span>${s.qty} Stk${s.kg?' · '+fmtKg(s.kg)+' kg':''} · ${fmtEUR(s.revenue)}</span></div>`).join('')}
           <div class="vk-summary-row vk-summary-row-strong vk-summary-row-total"><span>Gesamt</span><span>${sorten.reduce((a,s)=>a+s.qty,0)} Stk · ${fmtKg(sorten.reduce((a,s)=>a+s.kg,0))} kg · ${fmtEUR(revenue)}</span></div>
         </div>
       </div>
