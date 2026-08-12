@@ -5027,4 +5027,14 @@ function openLightbox(url,caption){
 }
 
 if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{})); }
+/* Breite Tabellen (z.B. Verkauf-Übersicht mit vielen Sorten-Spalten) per
+   normalem Mausrad horizontal scrollbar machen - sonst erreicht man die
+   Scrollleiste nur ganz unten am Ende der (oft langen) Tabelle. */
+document.addEventListener('wheel', (e) => {
+  const wrap = e.target.closest('.table-wrap');
+  if(!wrap || wrap.scrollWidth <= wrap.clientWidth) return;
+  if(Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+  wrap.scrollLeft += e.deltaY;
+  e.preventDefault();
+}, {passive:false});
 render().then(()=>checkDueReminders());
