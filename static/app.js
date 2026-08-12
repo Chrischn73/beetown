@@ -3830,7 +3830,7 @@ function printGewichtList(all, fmtKg) {
 
 /* ---------- Honig-Verkauf ---------- */
 function fmtEUR(n){ return (Math.round(((parseFloat(n)||0)+Number.EPSILON)*100)/100).toFixed(2).replace('.',',')+' €'; }
-const VERKAUF_CATEGORIES = ['Box','Familie','Nachbarn','Freunde','Firma','Weihnachten'];
+const VERKAUF_CATEGORIES = ['Box','Familie','Nachbarn','Freunde','Firma'];
 /* Schwarz oder Weiß je nach Helligkeit der Hintergrundfarbe, damit der Produkt-Kachel-Text
    bei beliebig gewählten Farben lesbar bleibt. */
 function readableTextColor(hex){
