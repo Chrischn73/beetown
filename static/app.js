@@ -3830,6 +3830,40 @@ function printGewichtList(all, fmtKg) {
 
 /* ---------- Honig-Verkauf ---------- */
 function fmtEUR(n){ return (Math.round(((parseFloat(n)||0)+Number.EPSILON)*100)/100).toFixed(2).replace('.',',')+' €'; }
+/* Wird aufgerufen, wenn beim Erfassen der Betrag manuell vom automatisch berechneten
+   Wert abweicht (z.B. Rabatt/Geschenk). Verteilt die Differenz nicht gleichmaessig auf
+   alle angetippten Glaeser, sondern faengt bei der ERSTEN Position an und "verbraucht"
+   den Rabatt dort, bevor die naechste Position angefasst wird - damit bleiben unrabattierte
+   Glaeser zum vollen Preis stehen, wie beim manuellen Vergeben eines einzelnen Rabatt-Glases
+   erwartet. Menge (Stueck) bleibt in jedem Fall unangetastet.*/
+function applyManualTotalAdjustment(items, total){
+  const nominal = items.reduce((s,it)=>s+it.qty*it.unitPrice, 0);
+  const diff = Math.round((nominal-total)*100)/100; // >0 = Rabatt, <0 = Aufpreis
+  if(Math.abs(diff) < 0.005) return {items, note:''};
+  const slots = [];
+  items.forEach(it=>{ for(let i=0;i<it.qty;i++) slots.push({productId:it.productId, productName:it.productName, price:it.unitPrice}); });
+  if(diff > 0){
+    let remaining = diff;
+    for(const slot of slots){
+      if(remaining <= 0.001) break;
+      const take = Math.min(slot.price, remaining);
+      slot.price = Math.round((slot.price-take)*100)/100;
+      remaining = Math.round((remaining-take)*100)/100;
+    }
+  } else {
+    slots[slots.length-1].price = Math.round((slots[slots.length-1].price + (-diff))*100)/100;
+  }
+  const grouped = [];
+  slots.forEach(slot=>{
+    const last = grouped[grouped.length-1];
+    if(last && last.productId===slot.productId && last.unitPrice.toFixed(2)===slot.price.toFixed(2)) last.qty += 1;
+    else grouped.push({productId:slot.productId, productName:slot.productName, qty:1, unitPrice:slot.price});
+  });
+  const note = diff > 0
+    ? `Rabatt: ${fmtEUR(diff)} (${fmtEUR(nominal)} → ${fmtEUR(total)})`
+    : `Aufpreis: ${fmtEUR(-diff)} (${fmtEUR(nominal)} → ${fmtEUR(total)})`;
+  return {items: grouped, note};
+}
 const VERKAUF_CATEGORIES = ['Box','Familie','Nachbarn','Freunde','Firma'];
 /* Schwarz oder Weiß je nach Helligkeit der Hintergrundfarbe, damit der Produkt-Kachel-Text
    bei beliebig gewählten Farben lesbar bleibt. */
@@ -4013,13 +4047,18 @@ async function renderVerkauf(){
     });
 
     document.getElementById('vk-save').onclick = async () => {
-      const items = activeProducts.filter(p=>qty[p.id]>0).map(p=>({productId:p.id, productName:p.name, qty:qty[p.id], unitPrice:p.price}));
+      let items = activeProducts.filter(p=>qty[p.id]>0).map(p=>({productId:p.id, productName:p.name, qty:qty[p.id], unitPrice:p.price}));
       const total = parseDecimal(totalInput.value) || 0;
       if(items.length===0 && total<=0) return alert('Bitte mindestens ein Produkt antippen oder einen Betrag eingeben.');
       const date = document.getElementById('vk-date').value || todayInput();
       const category = document.getElementById('vk-category').value;
       const buyerName = document.getElementById('vk-name').value;
-      const notes = document.getElementById('vk-notes').value;
+      let notes = document.getElementById('vk-notes').value;
+      if(items.length && totalManual){
+        const adj = applyManualTotalAdjustment(items, total);
+        items = adj.items;
+        if(adj.note) notes = notes ? `${notes} — ${adj.note}` : adj.note;
+      }
       const res = await api('POST','./api/honey_sales',{date,category,buyerName,items,total,notes});
       sales.unshift({id:res.id,date,category,buyerName,items,total,notes,createdAt:new Date().toISOString()});
       showToast(`✅ Verkauf gespeichert (${fmtEUR(total)})`);
