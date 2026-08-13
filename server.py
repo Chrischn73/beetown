@@ -185,10 +185,10 @@ def init_db():
             giftSetProductIds TEXT DEFAULT '[]', createdAt TEXT);
         CREATE TABLE IF NOT EXISTS honey_sales(
             id TEXT PRIMARY KEY, date TEXT, category TEXT, buyerName TEXT, items TEXT,
-            total REAL DEFAULT 0, notes TEXT, createdAt TEXT);
+            total REAL DEFAULT 0, notes TEXT, createdAt TEXT, updatedAt TEXT);
         CREATE TABLE IF NOT EXISTS honey_costs(
             id TEXT PRIMARY KEY, date TEXT, description TEXT, supplier TEXT, amount REAL DEFAULT 0,
-            notes TEXT, createdAt TEXT);
+            notes TEXT, createdAt TEXT, updatedAt TEXT);
         CREATE INDEX IF NOT EXISTS idx_col_apiary ON colonies(apiaryId);
         CREATE INDEX IF NOT EXISTS idx_ent_colony ON entries(colonyId);
         CREATE INDEX IF NOT EXISTS idx_stirentry_batch ON honey_stir_entries(batchId);
@@ -243,11 +243,17 @@ def init_db():
         ("honey_products","kind",        "ALTER TABLE honey_products ADD COLUMN kind TEXT DEFAULT 'sonstige'"),
         ("honey_products","giftSetVarieties",  "ALTER TABLE honey_products ADD COLUMN giftSetVarieties INTEGER DEFAULT 0"),
         ("honey_products","giftSetProductIds", "ALTER TABLE honey_products ADD COLUMN giftSetProductIds TEXT DEFAULT '[]'"),
+        ("honey_sales","updatedAt",  "ALTER TABLE honey_sales ADD COLUMN updatedAt TEXT"),
+        ("honey_costs","updatedAt",  "ALTER TABLE honey_costs ADD COLUMN updatedAt TEXT"),
         ("honey_stir_entries","notes",    "ALTER TABLE honey_stir_entries ADD COLUMN notes TEXT"),
     ]
     for table, col, sql in migrations:
         if not column_exists(con, table, col):
             con.execute(sql)
+    # Bestehende Zeilen ohne updatedAt (vor Einfuehrung dieser Spalte) auf ihr createdAt setzen,
+    # damit die "Geaendert"-Spalte nicht leer bleibt.
+    con.execute("UPDATE honey_sales SET updatedAt=createdAt WHERE updatedAt IS NULL")
+    con.execute("UPDATE honey_costs SET updatedAt=createdAt WHERE updatedAt IS NULL")
     if con.execute("SELECT COUNT(*) FROM honey_products").fetchone()[0] == 0:
         for i, (name, price, grams, color) in enumerate(DEFAULT_HONEY_PRODUCTS):
             con.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,kind,createdAt) VALUES(?,?,?,?,1,?,?,'honig',?)",
@@ -596,18 +602,20 @@ class Handler(BaseHTTPRequestHandler):
             body2=self._rjson()
             rid=new_id()
             con2=db()
-            con2.execute("INSERT INTO honey_sales(id,date,category,buyerName,items,total,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)",
+            ts=now_iso()
+            con2.execute("INSERT INTO honey_sales(id,date,category,buyerName,items,total,notes,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?)",
                 (rid,body2.get("date",""),body2.get("category",""),body2.get("buyerName",""),
-                 json.dumps(body2.get("items",[])),float(body2.get("total",0) or 0),body2.get("notes",""),now_iso()))
+                 json.dumps(body2.get("items",[])),float(body2.get("total",0) or 0),body2.get("notes",""),ts,ts))
             con2.commit(); con2.close()
             return self._json({"id":rid})
         if path=="/api/honey_costs":
             body2=self._rjson()
             rid=new_id()
             con2=db()
-            con2.execute("INSERT INTO honey_costs(id,date,description,supplier,amount,notes,createdAt) VALUES(?,?,?,?,?,?,?)",
+            ts=now_iso()
+            con2.execute("INSERT INTO honey_costs(id,date,description,supplier,amount,notes,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?)",
                 (rid,body2.get("date",""),body2.get("description",""),body2.get("supplier",""),
-                 float(body2.get("amount",0) or 0),body2.get("notes",""),now_iso()))
+                 float(body2.get("amount",0) or 0),body2.get("notes",""),ts,ts))
             con2.commit(); con2.close()
             return self._json({"id":rid})
         if path=="/api/sirup_calc":
@@ -851,13 +859,13 @@ class Handler(BaseHTTPRequestHandler):
                      1 if body.get("active",True) else 0,int(body.get("sortOrder",0) or 0),body.get("color",""),body.get("kind","sonstige"),
                      int(body.get("giftSetVarieties",0) or 0),json.dumps(body.get("giftSetProductIds",[])),rid))
             elif kind=="honey_sales":
-                con.execute("UPDATE honey_sales SET date=?,category=?,buyerName=?,items=?,total=?,notes=? WHERE id=?",
+                con.execute("UPDATE honey_sales SET date=?,category=?,buyerName=?,items=?,total=?,notes=?,updatedAt=? WHERE id=?",
                     (body.get("date",""),body.get("category",""),body.get("buyerName",""),
-                     json.dumps(body.get("items",[])),float(body.get("total",0) or 0),body.get("notes",""),rid))
+                     json.dumps(body.get("items",[])),float(body.get("total",0) or 0),body.get("notes",""),now_iso(),rid))
             elif kind=="honey_costs":
-                con.execute("UPDATE honey_costs SET date=?,description=?,supplier=?,amount=?,notes=? WHERE id=?",
+                con.execute("UPDATE honey_costs SET date=?,description=?,supplier=?,amount=?,notes=?,updatedAt=? WHERE id=?",
                     (body.get("date",""),body.get("description",""),body.get("supplier",""),
-                     float(body.get("amount",0) or 0),body.get("notes",""),rid))
+                     float(body.get("amount",0) or 0),body.get("notes",""),now_iso(),rid))
             con.commit(); self._json({"ok":True})
         finally: con.close()
 
@@ -1010,14 +1018,16 @@ class Handler(BaseHTTPRequestHandler):
                  json.dumps(p.get("giftSetProductIds",[])),p.get("createdAt","")))
         for sa in body.get("honey_sales",[]):
             con.execute("""INSERT INTO honey_sales
-                (id,date,category,buyerName,items,total,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)""",
+                (id,date,category,buyerName,items,total,notes,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?)""",
                 (sa["id"],sa.get("date",""),sa.get("category",""),sa.get("buyerName",""),
-                 json.dumps(sa.get("items",[])),float(sa.get("total",0) or 0),sa.get("notes",""),sa.get("createdAt","")))
+                 json.dumps(sa.get("items",[])),float(sa.get("total",0) or 0),sa.get("notes",""),
+                 sa.get("createdAt",""),sa.get("updatedAt") or sa.get("createdAt","")))
         for co in body.get("honey_costs",[]):
             con.execute("""INSERT INTO honey_costs
-                (id,date,description,supplier,amount,notes,createdAt) VALUES(?,?,?,?,?,?,?)""",
+                (id,date,description,supplier,amount,notes,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?)""",
                 (co["id"],co.get("date",""),co.get("description",""),co.get("supplier",""),
-                 float(co.get("amount",0) or 0),co.get("notes",""),co.get("createdAt","")))
+                 float(co.get("amount",0) or 0),co.get("notes",""),
+                 co.get("createdAt",""),co.get("updatedAt") or co.get("createdAt","")))
         for s in body.get("settings",[]):
             con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
                 (s.get("key",""),s.get("value","")))

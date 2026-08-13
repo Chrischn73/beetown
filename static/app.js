@@ -3937,7 +3937,7 @@ async function renderVerkauf(){
   app.innerHTML = `
     <div class="toolbar" style="margin-bottom:.8rem">
       <button class="btn btn-primary" id="vk-tab-erfassen">Erfassen</button>
-      <button class="btn btn-ghost" id="vk-tab-verkaeufe">Verkäufe</button>
+      <button class="btn btn-ghost" id="vk-tab-verkaeufe">Einnahmen</button>
       <button class="btn btn-ghost" id="vk-tab-kosten">Kosten</button>
       <button class="btn btn-ghost" id="vk-tab-produkte">Produkte</button>
     </div>
@@ -4114,7 +4114,7 @@ async function renderVerkauf(){
         if(adj.note) notes = notes ? `${notes}\n${adj.note}` : adj.note;
       }
       const res = await api('POST','./api/honey_sales',{date,category,buyerName,items,total,notes});
-      sales.unshift({id:res.id,date,category,buyerName,items,total,notes,createdAt:new Date().toISOString()});
+      sales.unshift({id:res.id,date,category,buyerName,items,total,notes,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
       const groups = {};
       items.forEach(it=>{
         const g = groups[it.productName] || (groups[it.productName] = {qty:0, sum:0});
@@ -4154,7 +4154,7 @@ async function renderVerkauf(){
     const qtyFor = (s,name) => { const items=s.items.filter(i=>i.productName===name); return items.length ? items.reduce((a,i)=>a+i.qty,0) : null; };
     const colTotal = (name) => filtered.reduce((s,x)=>s+x.items.filter(i=>i.productName===name).reduce((a,i)=>a+i.qty,0),0);
     const colRevenue = (name) => filtered.reduce((s,x)=>s+x.items.filter(i=>i.productName===name).reduce((a,i)=>a+i.qty*i.unitPrice,0),0);
-    const colCount = 2 + cols.length + 3 + 1; // Datum,Kategorie + Sorten + Betrag,Name,Notiz + Löschen
+    const colCount = 2 + cols.length + 3 + 2; // Datum,Kategorie + Sorten + Betrag,Name,Notiz + Löschen,Geändert
 
     /* Glasgroesse je Spalte ueber die (umbenennungsstabile) productId aufloesen, nicht ueber
        den aktuellen Produktnamen - sonst verlieren Alt-Verkaufszeilen, deren gespeicherter
@@ -4204,6 +4204,7 @@ async function renderVerkauf(){
         <td>${esc(s.buyerName||'')}</td>
         <td style="white-space:pre-wrap; min-width:12rem">${esc(s.notes||'')}</td>
         <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
+        <td class="muted">${fmtDate(s.updatedAt||s.createdAt)}</td>
       </tr>`;
     const rowMatches = (s, term) => {
       const hay = [fmtDate(s.date), s.category||'', s.buyerName||'',
@@ -4213,10 +4214,10 @@ async function renderVerkauf(){
     };
     const tableHeadHTML = `<th>Datum</th><th>Kategorie</th>
       ${cols.map(c=>`<th class="vk-th-vertical"><span>${esc(c)}</span></th>`).join('')}
-      <th style="text-align:right">Betrag</th><th>Name</th><th>Notiz</th><th></th>`;
+      <th style="text-align:right">Betrag</th><th>Name</th><th>Notiz</th><th></th><th>Geändert</th>`;
     const tableFootHTML = `<th colspan="2">Summe</th>
       ${cols.map(c=>`<th style="text-align:right">${colTotal(c)}</th>`).join('')}
-      <th style="text-align:right">${fmtEUR(revenue)}</th><th colspan="3"></th>`;
+      <th style="text-align:right">${fmtEUR(revenue)}</th><th colspan="4"></th>`;
 
     const openFullscreenTable = () => {
       const back = document.createElement('div');
@@ -4291,7 +4292,7 @@ async function renderVerkauf(){
         <button class="btn btn-ghost btn-sm" id="vk-print-verkaeufe">🖨 Drucken</button>
       </div>
       <p class="muted" style="font-size:.85rem">Einnahmen: <strong style="color:var(--ink)">${fmtEUR(revenue)}</strong> · Kosten: <strong style="color:var(--ink)">${fmtEUR(costSum)}</strong> · Gewinn: <strong style="color:var(--ink)">${fmtEUR(revenue-costSum)}</strong></p>
-      ${filtered.length===0 ? emptyState('Keine Verkäufe','Für dieses Wirtschaftsjahr wurden noch keine Verkäufe erfasst.') : `
+      ${filtered.length===0 ? emptyState('Keine Einnahmen','Für dieses Wirtschaftsjahr wurden noch keine Einnahmen erfasst.') : `
       <button class="btn btn-primary" id="vk-open-fullscreen" style="width:100%;margin-bottom:.8rem">⛶ Tabelle Vollbild öffnen (${filtered.length})</button>
       <div class="vk-summary-grid">
         <div class="vk-summary-box">
@@ -4353,14 +4354,14 @@ async function renderVerkauf(){
       const total = parseDecimal(data.total)||0;
       const payload = {date:data.date||s.date, category:data.category, buyerName:data.buyerName, items: items.filter(it=>it.productId), total, notes:data.notes};
       await api('PUT','./api/honey_sales/'+s.id, payload);
-      Object.assign(s, payload);
+      Object.assign(s, payload, {updatedAt:new Date().toISOString()});
       close(); drawVerkaeufe();
     }, async(close)=>{
       if(!confirm('Diesen Verkauf wirklich löschen?')) return;
       await api('DELETE','./api/honey_sales/'+s.id);
       sales = sales.filter(x=>x.id!==s.id);
       close(); drawVerkaeufe();
-    });
+    }, true);
 
     const itemsListRoot = document.getElementById('sale-items-list');
     /* Betrag-Feld live um die Differenz aus einer Positions-Aenderung verschieben - Basis ist
@@ -4443,7 +4444,7 @@ async function renderVerkauf(){
       ${filtered.length===0 ? emptyState('Keine Kosten','Für dieses Wirtschaftsjahr wurden noch keine Kosten erfasst.') : `
       <div class="table-wrap">
         <table class="data-table data-table-compact">
-          <thead><tr><th>Datum</th><th>Beschreibung</th><th>Lieferant</th><th style="text-align:right">Betrag</th><th>Notiz</th><th></th></tr></thead>
+          <thead><tr><th>Datum</th><th>Beschreibung</th><th>Lieferant</th><th style="text-align:right">Betrag</th><th>Notiz</th><th></th><th>Geändert</th></tr></thead>
           <tbody>
             ${filtered.map(c=>`
               <tr data-edit="${esc(c.id)}" style="cursor:pointer">
@@ -4451,9 +4452,10 @@ async function renderVerkauf(){
                 <td style="text-align:right">${fmtEUR(c.amount)}</td>
                 <td class="ellipsis" title="${esc(c.notes||'')}">${esc(c.notes||'')}</td>
                 <td><button class="btn btn-ghost btn-sm" data-del="${esc(c.id)}" title="Löschen">🗑</button></td>
+                <td class="muted">${fmtDate(c.updatedAt||c.createdAt)}</td>
               </tr>`).join('')}
           </tbody>
-          <tfoot><tr><th colspan="3">Summe</th><th style="text-align:right">${fmtEUR(sum)}</th><th colspan="2"></th></tr></tfoot>
+          <tfoot><tr><th colspan="3">Summe</th><th style="text-align:right">${fmtEUR(sum)}</th><th colspan="3"></th></tr></tfoot>
         </table>
       </div>`}`;
 
@@ -4492,10 +4494,10 @@ async function renderVerkauf(){
       const payload = {date:data.date||todayInput(), description:data.description, supplier:data.supplier, amount, notes:data.notes};
       if(isNew){
         const res = await api('POST','./api/honey_costs', payload);
-        costs.unshift({id:res.id, ...payload, createdAt:new Date().toISOString()});
+        costs.unshift({id:res.id, ...payload, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()});
       } else {
         await api('PUT','./api/honey_costs/'+c.id, payload);
-        Object.assign(c, payload);
+        Object.assign(c, payload, {updatedAt:new Date().toISOString()});
       }
       close(); drawKosten();
     }, isNew?null:async(close)=>{
@@ -4601,7 +4603,7 @@ async function renderVerkauf(){
       }
       close(); drawProdukte();
     }, isNew?null:async(close)=>{
-      if(!confirm('Dieses Produkt wirklich löschen? Bereits erfasste Verkäufe bleiben davon unberührt.')) return;
+      if(!confirm('Dieses Produkt wirklich löschen? Bereits erfasste Einnahmen bleiben davon unberührt.')) return;
       await api('DELETE','./api/honey_products/'+p.id);
       products = products.filter(x=>x.id!==p.id);
       close(); drawProdukte();
@@ -4628,7 +4630,7 @@ function printVerkaufList(filtered, cols, wj, revenue, sorten){
     return `<tr><td>${fmtDate(s.date)}</td><td>${esc(s.category||'')}</td>${qtyCells}<td>${fmtEUR(s.total)}</td><td>${esc(s.buyerName||'')}</td><td>${esc(s.notes||'')}</td></tr>`;
   }).join('');
   const sortenHtml = (sorten||[]).map(s=>`<tr><td>${esc(s.name)}</td><td>${s.qty}</td><td>${s.kg?fmtKg(s.kg):'–'}</td><td>${fmtEUR(s.revenue)}</td></tr>`).join('');
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Verkäufe ${wj.label}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Einnahmen ${wj.label}</title>
     <style>
       body{font-family:Arial,sans-serif;margin:1.5cm;color:#000}
       h1{font-size:18px;margin:0 0 .2cm 0}
@@ -4640,7 +4642,7 @@ function printVerkaufList(filtered, cols, wj, revenue, sorten){
       .vertical{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;text-align:left}
       td.qty{text-align:center}
     </style></head><body>
-    <h1>Honig-Verkäufe – Wirtschaftsjahr ${wj.label}</h1>
+    <h1>Honig-Einnahmen – Wirtschaftsjahr ${wj.label}</h1>
     <div class="sub">Erstellt: ${dateStr} · Gesamt: ${fmtEUR(revenue)}</div>
     <table><thead><tr><th>Datum</th><th>Kategorie</th>${cols.map(c=>`<th class="vertical">${esc(c)}</th>`).join('')}<th>Betrag</th><th>Name</th><th>Notiz</th></tr></thead>
     <tbody>${rowsHtml}</tbody></table>
