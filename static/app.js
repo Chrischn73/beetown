@@ -4170,6 +4170,20 @@ async function renderVerkauf(){
       }
       return 0;
     };
+    /* Gleiches Prinzip wie bei gramsForCol: Kategorie (Honig/Sonstiges) ueber die
+       productId aufloesen, nicht ueber den aktuellen Namen - "Sonstiges" (z. B.
+       Geschenkset) soll unten getrennt vom Honig aufgefuehrt werden. */
+    const kindById = {}; products.forEach(p=>{ kindById[p.id]=p.kind; });
+    const kindByName = {}; products.forEach(p=>{ kindByName[p.name]=p.kind; });
+    const kindForCol = (c) => {
+      for(const s of filtered){
+        const it = s.items.find(i=>i.productName===c);
+        if(it) return kindById[it.productId] ?? kindByName[c] ?? 'sonstige';
+      }
+      return 'sonstige';
+    };
+    const honigCols = cols.filter(c=>kindForCol(c)!=='sonstige');
+    const sonstigeCols = cols.filter(c=>kindForCol(c)==='sonstige');
     /* Sorte = Produktname ohne die abschliessende Glasgroesse ("Frühtracht 500g" -> "Frühtracht"),
        damit sich Glasgroessen derselben Sorte zu einer Zeile zusammenfassen lassen. */
     const productBase = (name) => name.replace(/\s*\d+\s*g\s*$/i,'').trim() || name;
@@ -4282,8 +4296,19 @@ async function renderVerkauf(){
       <div class="vk-summary-grid">
         <div class="vk-summary-box">
           <div class="section-h" style="margin:0 0 .3rem">Gesamtmengen</div>
-          ${cols.map(c=>`<div class="vk-summary-row"><span>${esc(c)}</span><span>${colTotal(c)} Stk · ${fmtEUR(colRevenue(c))}</span></div>`).join('')}
-          <div class="vk-summary-row vk-summary-row-strong vk-summary-row-total"><span>Gesamt</span><span>${sorten.reduce((a,s)=>a+s.qty,0)} Stk · ${fmtKg(sorten.reduce((a,s)=>a+s.kg,0))} kg · ${fmtEUR(revenue)}</span></div>
+          <table class="vk-summary-table">
+            <tbody>
+              ${honigCols.map(c=>`<tr><td>${esc(c)}</td><td class="num">${colTotal(c)} Stk</td><td class="num">${fmtKg((gramsForCol(c)*colTotal(c))/1000)} kg</td><td class="num">${fmtEUR(colRevenue(c))}</td></tr>`).join('')}
+              <tr class="vk-summary-total-row"><td>Gesamt</td><td class="num">${honigCols.reduce((a,c)=>a+colTotal(c),0)} Stk</td><td class="num">${fmtKg(honigCols.reduce((a,c)=>a+(gramsForCol(c)*colTotal(c))/1000,0))} kg</td><td class="num">${fmtEUR(honigCols.reduce((a,c)=>a+colRevenue(c),0))}</td></tr>
+            </tbody>
+          </table>
+          ${sonstigeCols.length ? `
+          <div class="section-h" style="margin:.7rem 0 .3rem">Sonstiges</div>
+          <table class="vk-summary-table">
+            <tbody>
+              ${sonstigeCols.map(c=>`<tr><td>${esc(c)}</td><td class="num">${colTotal(c)} Stk</td><td class="num"></td><td class="num">${fmtEUR(colRevenue(c))}</td></tr>`).join('')}
+            </tbody>
+          </table>` : ''}
         </div>
       </div>
       `}`;
