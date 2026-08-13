@@ -4326,7 +4326,8 @@ async function renderVerkauf(){
     const productOptions = [...products].sort((a,b)=>a.sortOrder-b.sortOrder);
     const optionsHTML = (currentId, currentName) => {
       const hasCurrent = productOptions.some(p=>p.id===currentId);
-      const opts = hasCurrent ? productOptions : [{id:currentId||'', name:currentName||'(gelöschtes Produkt)'}, ...productOptions];
+      const placeholderLabel = currentId ? '(gelöschtes Produkt)' : '–';
+      const opts = hasCurrent ? productOptions : [{id:currentId||'', name:currentName||placeholderLabel}, ...productOptions];
       return opts.map(p=>`<option value="${esc(p.id)}" ${p.id===currentId?'selected':''}>${esc(p.name)}</option>`).join('');
     };
     const renderItemsList = () => items.map((it,idx)=>`
@@ -4346,11 +4347,11 @@ async function renderVerkauf(){
       <div id="sale-items-list">${renderItemsList()}</div>
       <button type="button" class="btn btn-ghost btn-sm" id="sale-item-add">+ Produkt</button>
       <label class="lbl" style="margin-top:.6rem">Betrag (€)</label>
-      <input class="inp" name="total" type="text" inputmode="decimal" value="${fmtNum(s.total)}">
+      <input class="inp" id="sale-edit-total" name="total" type="text" inputmode="decimal" value="${fmtNum(s.total)}">
       ${textareaField('Notiz','notes',s.notes)}
     `, async(data,close)=>{
       const total = parseDecimal(data.total)||0;
-      const payload = {date:data.date||s.date, category:data.category, buyerName:data.buyerName, items, total, notes:data.notes};
+      const payload = {date:data.date||s.date, category:data.category, buyerName:data.buyerName, items: items.filter(it=>it.productId), total, notes:data.notes};
       await api('PUT','./api/honey_sales/'+s.id, payload);
       Object.assign(s, payload);
       close(); drawVerkaeufe();
@@ -4362,26 +4363,50 @@ async function renderVerkauf(){
     });
 
     const itemsListRoot = document.getElementById('sale-items-list');
+    /* Betrag-Feld live um die Differenz aus einer Positions-Aenderung verschieben - Basis ist
+       immer der Wert, der aktuell im Feld steht (auch wenn der Nutzer ihn manuell angepasst hat). */
+    const adjustTotal = (delta) => {
+      if(!delta) return;
+      const el = document.getElementById('sale-edit-total');
+      if(!el) return;
+      el.value = fmtNum((parseDecimal(el.value)||0) + delta);
+    };
     const wireItemRows = () => {
       itemsListRoot.querySelectorAll('.sale-item-product').forEach(sel=>{
         sel.onchange = () => {
           const idx = parseInt(sel.dataset.idx);
+          const before = items[idx].qty*items[idx].unitPrice;
           const prod = productOptions.find(p=>p.id===sel.value);
           items[idx].productId = sel.value;
-          if(prod){ items[idx].productName = prod.name; items[idx].unitPrice = prod.price; }
+          items[idx].productName = prod ? prod.name : '';
+          items[idx].unitPrice = prod ? prod.price : 0;
+          adjustTotal(items[idx].qty*items[idx].unitPrice - before);
           itemsListRoot.innerHTML = renderItemsList();
           wireItemRows();
         };
       });
       itemsListRoot.querySelectorAll('.sale-item-qty').forEach(inp=>{
-        inp.onchange = () => { items[parseInt(inp.dataset.idx)].qty = parseInt(inp.value)||0; };
+        inp.onchange = () => {
+          const idx = parseInt(inp.dataset.idx);
+          const before = items[idx].qty*items[idx].unitPrice;
+          items[idx].qty = parseInt(inp.value)||0;
+          adjustTotal(items[idx].qty*items[idx].unitPrice - before);
+        };
       });
       itemsListRoot.querySelectorAll('.sale-item-price').forEach(inp=>{
-        inp.onchange = () => { items[parseInt(inp.dataset.idx)].unitPrice = parseDecimal(inp.value)||0; };
+        inp.onchange = () => {
+          const idx = parseInt(inp.dataset.idx);
+          const before = items[idx].qty*items[idx].unitPrice;
+          items[idx].unitPrice = parseDecimal(inp.value)||0;
+          adjustTotal(items[idx].qty*items[idx].unitPrice - before);
+        };
       });
       itemsListRoot.querySelectorAll('.sale-item-del').forEach(btn=>{
         btn.onclick = () => {
-          items.splice(parseInt(btn.dataset.idx),1);
+          const idx = parseInt(btn.dataset.idx);
+          const before = items[idx].qty*items[idx].unitPrice;
+          items.splice(idx,1);
+          adjustTotal(-before);
           itemsListRoot.innerHTML = renderItemsList();
           wireItemRows();
         };
@@ -4389,8 +4414,7 @@ async function renderVerkauf(){
     };
     wireItemRows();
     document.getElementById('sale-item-add').onclick = () => {
-      const first = productOptions[0];
-      items.push({productId: first?first.id:'', productName: first?first.name:'', qty:1, unitPrice: first?first.price:0});
+      items.push({productId:'', productName:'', qty:1, unitPrice:0});
       itemsListRoot.innerHTML = renderItemsList();
       wireItemRows();
     };
