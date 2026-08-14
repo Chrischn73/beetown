@@ -4954,13 +4954,23 @@ async function renderSettings() {
       </div>`)}
     ${settingsSection('homebtns','Startseite – Angezeigte Buttons',`
       <p class="muted">Welche Buttons sollen erscheinen, wie groß, mit oder ohne Text? Jeder Button einzeln einstellbar.</p>
+      <div class="home-btn-bulk-row">
+        <input type="color" id="home-btn-bulk-color" value="#ffd43b" title="Sammel-Farbe">
+        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-selectall">Alle markieren</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-apply">Für markierte übernehmen</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-reset">Markierte zurücksetzen</button>
+      </div>
+      <p class="muted" style="font-size:.8rem;margin-top:.2rem">Buttons unten markieren (Kästchen links), dann Farbe wählen und übernehmen - für alle auf einmal oder nur bestimmte.</p>
       <div id="home-btns-cfg">
         ${HOME_BTN_SIZE_CONFIG.map(c=>`
         <div class="home-btn-cfg-row" data-key="${c.key}">
-          ${c.noHide ? `<div class="home-btn-cfg-name">${esc(c.label)}</div>` : `
-          <label class="check-item" style="padding:0">
-            <input type="checkbox" class="home-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
-          </label>`}
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <input type="checkbox" class="home-btn-bulk-chk" data-key="${c.key}" title="Für Sammel-Farbe markieren">
+            ${c.noHide ? `<div class="home-btn-cfg-name">${esc(c.label)}</div>` : `
+            <label class="check-item" style="padding:0">
+              <input type="checkbox" class="home-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
+            </label>`}
+          </div>
           <div class="home-btn-cfg-controls">
             <select class="inp home-btn-size-sel" data-key="${c.key}">
               <option value="klein">Klein (4/Reihe)</option>
@@ -5211,6 +5221,37 @@ async function renderSettings() {
       const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${chk.dataset.key}"]`);
       if(colorInp) colorInp.style.display=chk.checked?'':'none';
     };
+  });
+  /* Sammel-Farbe: fuer alle per Kaestchen markierten Buttons auf einmal setzen bzw.
+     zuruecksetzen, statt jeden Button einzeln umzustellen. Wirkt nur auf die Formularfelder -
+     gespeichert wird wie gewohnt erst ueber den normalen "Speichern"-Button unten. */
+  document.getElementById('home-btn-bulk-selectall')?.addEventListener('click', ()=>{
+    const chks=[...document.querySelectorAll('.home-btn-bulk-chk')];
+    const allChecked=chks.every(c=>c.checked);
+    chks.forEach(c=>{ c.checked=!allChecked; });
+  });
+  document.getElementById('home-btn-bulk-apply')?.addEventListener('click', ()=>{
+    const color=document.getElementById('home-btn-bulk-color').value;
+    const marked=[...document.querySelectorAll('.home-btn-bulk-chk:checked')];
+    if(!marked.length) return alert('Bitte zuerst mindestens einen Button markieren.');
+    marked.forEach(chk=>{
+      const k=chk.dataset.key;
+      const colorChk=document.querySelector(`.home-btn-color-chk[data-key="${k}"]`);
+      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
+      if(colorChk) colorChk.checked=true;
+      if(colorInp){ colorInp.value=color; colorInp.style.display=''; }
+    });
+  });
+  document.getElementById('home-btn-bulk-reset')?.addEventListener('click', ()=>{
+    const marked=[...document.querySelectorAll('.home-btn-bulk-chk:checked')];
+    if(!marked.length) return alert('Bitte zuerst mindestens einen Button markieren.');
+    marked.forEach(chk=>{
+      const k=chk.dataset.key;
+      const colorChk=document.querySelector(`.home-btn-color-chk[data-key="${k}"]`);
+      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
+      if(colorChk) colorChk.checked=false;
+      if(colorInp) colorInp.style.display='none';
+    });
   });
   document.getElementById('save-all-settings')?.addEventListener('click', async()=>{
     const payload={};

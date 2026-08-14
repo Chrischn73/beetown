@@ -210,6 +210,9 @@ body{
 .home-btn-text-label span{font-size:.85rem}
 .home-btn-color-label{padding:0; gap:.3rem; border:none; background:none}
 .home-btn-color-label span{font-size:.85rem}
+.home-btn-bulk-row{display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin-top:.4rem}
+.home-btn-bulk-row input[type="color"]{width:2.4rem; height:2.2rem; padding:.15rem}
+.home-btn-bulk-chk{margin:0; flex-shrink:0}
 
 /* ---------- Wabe: Typ je Position ---------- */
 .wabe-pos-grid{display:flex; flex-direction:column; gap:.4rem; margin:.2rem 0 .3rem}
