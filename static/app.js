@@ -46,15 +46,17 @@ async function loadSettings() {
     const homeVis = {};
     HOME_BTN_CONFIG.forEach(c => { homeVis[c.key] = (s['homeBtn_'+c.key] !== 'false'); });
     window._homeBtnVis = homeVis;
-    const homeSize = {}, homeHeight = {}, homeShowText = {};
+    const homeSize = {}, homeHeight = {}, homeShowText = {}, homeColor = {};
     HOME_BTN_SIZE_CONFIG.forEach(c => {
       homeSize[c.key] = s['homeBtnSize_'+c.key] || c.defaultSize;
       homeHeight[c.key] = parseInt(s['homeBtnHeight_'+c.key]) || c.defaultHeight;
       homeShowText[c.key] = (s['homeBtnShowText_'+c.key] !== 'false');
+      homeColor[c.key] = s['homeBtnColor_'+c.key] || '';
     });
     window._homeBtnSize = homeSize;
     window._homeBtnHeight = homeHeight;
     window._homeBtnShowText = homeShowText;
+    window._homeBtnColor = homeColor;
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
     window._vkTilesPerRow = s.vkTilesPerRow || 'auto';
   } catch(_) {}
@@ -98,7 +100,11 @@ function homeBtnSizeVars(key) {
   const scale = h / HOME_BTN_HEIGHT_BASE;
   const iconRem = Math.min(2.6, Math.max(0.75, 1.3 * scale)).toFixed(2);
   const labelRem = Math.min(1.1, Math.max(0.55, 0.8 * scale)).toFixed(2);
-  return `--home-btn-h:${h}px;--home-btn-icon:${iconRem}rem;--home-btn-label:${labelRem}rem;grid-column:span ${span}`;
+  return `--home-btn-h:${h}px;--home-btn-icon:${iconRem}rem;--home-btn-label:${labelRem}rem;grid-column:span ${span};`;
+}
+function homeBtnColorStyle(key) {
+  const c = window._homeBtnColor && window._homeBtnColor[key];
+  return c ? `background:${c};color:${readableTextColor(c)};border-color:${c};` : '';
 }
 function homeBtnTextHidden(key) {
   return (window._homeBtnShowText && window._homeBtnShowText[key]===false);
@@ -999,7 +1005,7 @@ async function renderApiaries() {
     const pr=await fetch('./api/platform');
     const pd=await pr.json();
     if(pd && pd.setupPortal){
-      hilfeLinkHTML=`<button class="btn btn-ghost home-btn" id="open-hilfe" title="Hilfe" style="${homeBtnSizeVars('hilfe')}"><span class="home-btn-icon">❓</span>${homeBtnLabelHTML('hilfe','Hilfe')}</button>`;
+      hilfeLinkHTML=`<button class="btn btn-ghost home-btn" id="open-hilfe" title="Hilfe" style="${homeBtnSizeVars('hilfe')}${homeBtnColorStyle('hilfe')}"><span class="home-btn-icon">❓</span>${homeBtnLabelHTML('hilfe','Hilfe')}</button>`;
     }
     if(pd && pd.pi && pd.usbBackupMissing){
       usbWarningHTML=`<div class="banner-error" style="margin-bottom:1rem">
@@ -1058,15 +1064,15 @@ async function renderApiaries() {
       ${logoHTML ? `<div class="brand-logo-wrap">${logoHTML}</div>` : ''}
     </div>
     <div class="toolbar home-toolbar">
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all" style="${homeBtnSizeVars('all')}"><span class="home-btn-icon">🐝</span>${homeBtnLabelHTML('all','Alle')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('honey')}" id="open-honey" style="${homeBtnSizeVars('honey')}"><span class="home-btn-icon">🍯</span>${homeBtnLabelHTML('honey','Ernte')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('honeystir')}" id="open-honeystir" style="${homeBtnSizeVars('honeystir')}"><span class="home-btn-icon"><img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('honeystir','Rühren')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('verkauf')}" id="open-verkauf" style="${homeBtnSizeVars('verkauf')}"><span class="home-btn-icon">💰</span>${homeBtnLabelHTML('verkauf','Verkauf')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('fuetterung')}" id="open-fuetterung" style="${homeBtnSizeVars('fuetterung')}"><span class="home-btn-icon">🍬</span>${homeBtnLabelHTML('fuetterung','Fütterung')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge" style="${homeBtnSizeVars('lastentries')}"><span class="home-btn-icon">🕒</span>${homeBtnLabelHTML('lastentries','Letzte Einträge')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="${homeBtnSizeVars('varroacount')}"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('varroacount','Varroazählung')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive" style="${homeBtnSizeVars('archive')}"><span class="home-btn-icon">📦</span>${homeBtnLabelHTML('archive','Archiv')}</button>
-      <button class="btn btn-ghost home-btn" id="open-settings" title="Einstellungen" style="${homeBtnSizeVars('settings')}"><span class="home-btn-icon">⚙︎</span>${homeBtnLabelHTML('settings','Einstellungen')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all" style="${homeBtnSizeVars('all')}${homeBtnColorStyle('all')}"><span class="home-btn-icon">🐝</span>${homeBtnLabelHTML('all','Alle')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('honey')}" id="open-honey" style="${homeBtnSizeVars('honey')}${homeBtnColorStyle('honey')}"><span class="home-btn-icon">🍯</span>${homeBtnLabelHTML('honey','Ernte')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('honeystir')}" id="open-honeystir" style="${homeBtnSizeVars('honeystir')}${homeBtnColorStyle('honeystir')}"><span class="home-btn-icon"><img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('honeystir','Rühren')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('verkauf')}" id="open-verkauf" style="${homeBtnSizeVars('verkauf')}${homeBtnColorStyle('verkauf')}"><span class="home-btn-icon">💰</span>${homeBtnLabelHTML('verkauf','Verkauf')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('fuetterung')}" id="open-fuetterung" style="${homeBtnSizeVars('fuetterung')}${homeBtnColorStyle('fuetterung')}"><span class="home-btn-icon">🍬</span>${homeBtnLabelHTML('fuetterung','Fütterung')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge" style="${homeBtnSizeVars('lastentries')}${homeBtnColorStyle('lastentries')}"><span class="home-btn-icon">🕒</span>${homeBtnLabelHTML('lastentries','Letzte Einträge')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="${homeBtnSizeVars('varroacount')}${homeBtnColorStyle('varroacount')}"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('varroacount','Varroazählung')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive" style="${homeBtnSizeVars('archive')}${homeBtnColorStyle('archive')}"><span class="home-btn-icon">📦</span>${homeBtnLabelHTML('archive','Archiv')}</button>
+      <button class="btn btn-ghost home-btn" id="open-settings" title="Einstellungen" style="${homeBtnSizeVars('settings')}${homeBtnColorStyle('settings')}"><span class="home-btn-icon">⚙︎</span>${homeBtnLabelHTML('settings','Einstellungen')}</button>
       ${hilfeLinkHTML}
     </div>
     ${window._showSearch!==false?`
@@ -4203,8 +4209,8 @@ async function renderVerkauf(){
         <td style="text-align:right">${fmtEUR(s.total)}</td>
         <td>${esc(s.buyerName||'')}</td>
         <td style="white-space:pre-wrap; min-width:12rem">${esc(s.notes||'')}</td>
-        <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
         <td class="muted">${fmtDate(s.updatedAt||s.createdAt)}</td>
+        <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
       </tr>`;
     const rowMatches = (s, term) => {
       const hay = [fmtDate(s.date), s.category||'', s.buyerName||'',
@@ -4214,10 +4220,21 @@ async function renderVerkauf(){
     };
     const tableHeadHTML = `<th>Datum</th><th>Kategorie</th>
       ${cols.map(c=>`<th class="vk-th-vertical"><span>${esc(c)}</span></th>`).join('')}
-      <th style="text-align:right">Betrag</th><th>Name</th><th>Notiz</th><th></th><th>Geändert</th>`;
+      <th style="text-align:right">Betrag</th><th>Name</th><th>Notiz</th><th>Geändert</th><th></th>`;
     const tableFootHTML = `<th colspan="2">Summe</th>
       ${cols.map(c=>`<th style="text-align:right">${colTotal(c)}</th>`).join('')}
       <th style="text-align:right">${fmtEUR(revenue)}</th><th colspan="4"></th>`;
+
+    const allProductsText = (s) => s.items.map(it=>`${it.qty}× ${it.productName}`).join(', ');
+    const miniRowHTML = (s) => `
+      <tr data-edit="${esc(s.id)}" style="cursor:pointer">
+        <td>${fmtDate(s.date)}</td>
+        <td style="white-space:normal; min-width:10rem">${esc(allProductsText(s))}</td>
+        <td style="text-align:right">${fmtEUR(s.total)}</td>
+        <td>${esc(s.buyerName||'')}</td>
+        <td><button class="btn btn-ghost btn-sm" data-del="${esc(s.id)}" title="Löschen">🗑</button></td>
+        <td class="muted">${fmtDate(s.updatedAt||s.createdAt)}</td>
+      </tr>`;
 
     const openFullscreenTable = () => {
       const back = document.createElement('div');
@@ -4294,6 +4311,12 @@ async function renderVerkauf(){
       <p class="muted" style="font-size:.85rem">Einnahmen: <strong style="color:var(--ink)">${fmtEUR(revenue)}</strong> · Kosten: <strong style="color:var(--ink)">${fmtEUR(costSum)}</strong> · Gewinn: <strong style="color:var(--ink)">${fmtEUR(revenue-costSum)}</strong></p>
       ${filtered.length===0 ? emptyState('Keine Einnahmen','Für dieses Wirtschaftsjahr wurden noch keine Einnahmen erfasst.') : `
       <button class="btn btn-primary" id="vk-open-fullscreen" style="width:100%;margin-bottom:.8rem">⛶ Tabelle Vollbild öffnen (${filtered.length})</button>
+      <div class="table-wrap" style="margin-bottom:.8rem">
+        <table class="data-table data-table-compact">
+          <thead><tr><th>Datum</th><th>Alle Produkte</th><th style="text-align:right">Betrag</th><th>Name</th><th></th><th>Geändert</th></tr></thead>
+          <tbody>${filtered.map(miniRowHTML).join('')}</tbody>
+        </table>
+      </div>
       <div class="vk-summary-grid">
         <div class="vk-summary-box">
           <div class="section-h" style="margin:0 0 .3rem">Gesamtmengen</div>
@@ -4319,6 +4342,18 @@ async function renderVerkauf(){
     if(printBtn) printBtn.onclick = () => printVerkaufList(filtered, cols, wj, revenue, sorten);
     const fsBtn = document.getElementById('vk-open-fullscreen');
     if(fsBtn) fsBtn.onclick = openFullscreenTable;
+    bodyEl.querySelectorAll('tr[data-edit]').forEach(tr=>{
+      tr.onclick = (e) => { if(e.target.closest('[data-del]')) return; openSaleEditModal(sales.find(s=>s.id===tr.dataset.edit)); };
+    });
+    bodyEl.querySelectorAll('[data-del]').forEach(btn=>{
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        if(!confirm('Diesen Verkauf wirklich löschen?')) return;
+        await api('DELETE','./api/honey_sales/'+btn.dataset.del);
+        sales = sales.filter(s=>s.id!==btn.dataset.del);
+        drawVerkaeufe();
+      };
+    });
   }
 
   function openSaleEditModal(s){
@@ -4807,6 +4842,10 @@ async function renderSettings() {
             <label class="check-item home-btn-text-label">
               <input type="checkbox" class="home-btn-text-chk" data-key="${c.key}" checked><span>Text</span>
             </label>
+            <label class="check-item home-btn-color-label">
+              <input type="checkbox" class="home-btn-color-chk" data-key="${c.key}"><span>Farbe</span>
+            </label>
+            <input class="inp home-btn-color-inp" data-key="${c.key}" type="color" value="#ffd43b" style="width:2.4rem;height:2.2rem;padding:.15rem;display:none">
           </div>
         </div>`).join('')}
       </div>`)}
@@ -5030,7 +5069,20 @@ async function renderSettings() {
     document.querySelectorAll('.home-btn-text-chk').forEach(chk=>{
       chk.checked = (s['homeBtnShowText_'+chk.dataset.key] !== 'false');
     });
+    document.querySelectorAll('.home-btn-color-chk').forEach(chk=>{
+      const k=chk.dataset.key;
+      const stored=s['homeBtnColor_'+k];
+      chk.checked=!!stored;
+      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
+      if(colorInp){ colorInp.value=stored||'#ffd43b'; colorInp.style.display=stored?'':'none'; }
+    });
   }).catch(()=>{});
+  document.querySelectorAll('.home-btn-color-chk').forEach(chk=>{
+    chk.onchange=()=>{
+      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${chk.dataset.key}"]`);
+      if(colorInp) colorInp.style.display=chk.checked?'':'none';
+    };
+  });
   document.getElementById('save-all-settings')?.addEventListener('click', async()=>{
     const payload={};
     // Betriebsname
@@ -5067,6 +5119,11 @@ async function renderSettings() {
     });
     document.querySelectorAll('.home-btn-text-chk').forEach(chk=>{
       payload['homeBtnShowText_'+chk.dataset.key]=chk.checked?'true':'false';
+    });
+    document.querySelectorAll('.home-btn-color-chk').forEach(chk=>{
+      const k=chk.dataset.key;
+      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
+      payload['homeBtnColor_'+k]=(chk.checked && colorInp)?colorInp.value:'';
     });
     // HR-Nummern
     const hrNrsToggle=document.getElementById('toggle-hr-nrs');

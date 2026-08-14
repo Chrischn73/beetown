@@ -208,6 +208,8 @@ body{
 .home-btn-cfg-controls input[type="number"].inp{width:4.5rem; font-size:.85rem; padding:.35rem .5rem; min-height:auto}
 .home-btn-text-label{padding:0; gap:.3rem; border:none; background:none}
 .home-btn-text-label span{font-size:.85rem}
+.home-btn-color-label{padding:0; gap:.3rem; border:none; background:none}
+.home-btn-color-label span{font-size:.85rem}
 
 /* ---------- Wabe: Typ je Position ---------- */
 .wabe-pos-grid{display:flex; flex-direction:column; gap:.4rem; margin:.2rem 0 .3rem}
