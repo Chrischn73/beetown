@@ -1094,7 +1094,7 @@ async function renderApiaries() {
             <div class="card-title">${esc(a.name)}</div>
             <div class="card-sub">${esc(a.location||'–')}</div>
           </div>
-          <div class="badge">${isBkName(a.name) ? `${bkCounts[a.id]} ${esc(window._bkPrefix||'BK')}s` : `${counts[a.id]} Völker`}</div>
+          <div class="badge">${isBkName(a.name) ? `${bkCounts[a.id]} ${esc(window._bkPrefix||'BK')}s` : `${counts[a.id]} ${counts[a.id]===1?'Volk':'Völker'}`}</div>
         </li>`).join('')}
     </ul>`}
     <div class="reminders-section">
@@ -1118,15 +1118,17 @@ async function renderApiaries() {
               <ul class="reminder-list">
                 ${groups[k].map(r=>{
                   const due=isReminderDue(r) && !isReminderSnoozed(r);
+                  const rs=repeatSummary(r);
                   const dateInfo = r.dueDate
-                    ? `Fällig: ${fmtDate(r.dueDate)}${parseInt(r.remindDaysBefore)>0?' · ab '+parseInt(r.remindDaysBefore)+' Tagen vorher':''}`
+                    ? `Fällig: ${fmtDate(r.dueDate)}${parseInt(r.remindDaysBefore)>0?' · ab '+parseInt(r.remindDaysBefore)+' Tagen vorher':''}${rs?' · '+rs:''}`
                     : `Angelegt: ${fmtDateTime(r.createdAt)}`;
                   return `
                   <li class="reminder-item${due?' reminder-item-due':''}">
                     <div class="reminder-body">
                       <div class="reminder-text">${due?'🔔 ':''}${esc(r.text)}</div>
                       <div class="reminder-date">${dateInfo}</div>
-                      ${due?`<div style="display:flex;gap:.4rem;margin-top:.35rem">
+                      ${due?`<div style="display:flex;gap:.4rem;margin-top:.35rem;flex-wrap:wrap">
+                        <button type="button" class="btn btn-primary btn-sm reminder-done-btn" data-id="${r.id}">✅ Erledigt</button>
                         <button type="button" class="btn btn-ghost btn-sm reminder-mute-btn" data-id="${r.id}" data-hours="24">Stumm 24h</button>
                         <button type="button" class="btn btn-ghost btn-sm reminder-mute-btn" data-id="${r.id}" data-hours="3">Stumm 3h</button>
                       </div>`:''}
@@ -1220,6 +1222,11 @@ async function renderApiaries() {
   });
   document.querySelectorAll('.reminder-mute-btn').forEach(b=>b.onclick=()=>{
     snoozeReminder(b.dataset.id, parseInt(b.dataset.hours));
+    renderApiaries();
+  });
+  document.querySelectorAll('.reminder-done-btn').forEach(b=>b.onclick=async()=>{
+    const r = reminders.find(x=>x.id===b.dataset.id);
+    if(r) await markReminderDone(r);
     renderApiaries();
   });
 }
@@ -1383,23 +1390,87 @@ function isReminderDue(r) {
   const days = parseInt(r.remindDaysBefore)||0;
   return todayInput() >= addDays(r.dueDate, -days);
 }
+/* Wochentag-Index 0=Montag..6=Sonntag (deutsche Konvention), JS Date.getDay() liefert
+   0=Sonntag..6=Samstag - daher die (+6)%7-Umrechnung. */
+const WEEKDAY_LABELS = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+function repeatSummary(r) {
+  if(r.repeatMode==='weekday' && (r.repeatWeekdays||[]).length)
+    return '🔁 '+[...r.repeatWeekdays].sort((a,b)=>a-b).map(i=>WEEKDAY_LABELS[i]).join(', ');
+  if(r.repeatMode==='interval' && r.repeatIntervalWeeks>0)
+    return `🔁 alle ${r.repeatIntervalWeeks} Woche${r.repeatIntervalWeeks===1?'':'n'}`;
+  if(r.repeatMode==='monthday' && r.repeatMonthDay>0)
+    return `🔁 am ${r.repeatMonthDay}. des Monats`;
+  return '';
+}
+/* Naechstes Faelligkeitsdatum ausgehend vom aktuellen dueDate (bzw. heute, falls keins
+   gesetzt ist) berechnen. Gibt null zurueck, wenn keine Wiederholung eingestellt ist -
+   dann wird die Erinnerung beim Erledigen geloescht statt neu terminiert. */
+function computeNextDueDate(r) {
+  const base = r.dueDate || todayInput();
+  if(r.repeatMode==='weekday' && (r.repeatWeekdays||[]).length){
+    const wanted = new Set(r.repeatWeekdays.map(Number));
+    for(let i=1; i<=14; i++){
+      const candidate = addDays(base, i);
+      const wd = (new Date(candidate).getDay()+6)%7;
+      if(wanted.has(wd)) return candidate;
+    }
+    return null;
+  }
+  if(r.repeatMode==='interval' && r.repeatIntervalWeeks>0){
+    return addDays(base, r.repeatIntervalWeeks*7);
+  }
+  if(r.repeatMode==='monthday' && r.repeatMonthDay>0){
+    const [y,m] = base.split('-').map(Number); // m: 1-12
+    let ny=y, nm=m+1;
+    if(nm>12){ nm=1; ny+=1; }
+    const daysInNextMonth = new Date(ny, nm, 0).getDate(); // letzter Tag von Monat nm
+    const day = Math.min(r.repeatMonthDay, daysInNextMonth); // z.B. "31." im Februar -> letzter Tag statt Ueberlauf in den Folgemonat
+    return `${String(ny).padStart(4,'0')}-${String(nm).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
+  return null;
+}
+async function markReminderDone(r) {
+  const next = computeNextDueDate(r);
+  if(next) await api('PUT','./api/reminders/'+r.id, {...r, dueDate: next});
+  else await api('DELETE','./api/reminders/'+r.id);
+}
 function reminderForm(existing, apiaries, after) {
   const done = after || (()=>renderApiaries());
+  const repeatMode = existing?.repeatMode || 'none';
+  const repeatWeekdays = new Set((existing?.repeatWeekdays||[]).map(Number));
   openModal(existing?'Erinnerung bearbeiten':'Erinnerung',`
     ${selectField('Standort','apiaryId',existing?.apiaryId||'',
       [['','— kein Standort —'], ...apiaries.map(a=>[a.id, a.name])])}
     ${textareaField('Text','text',existing?.text||'')}
     ${field('Datum','dueDate',existing?.dueDate||'','','date')}
-    ${field('Erinnere Tage vorher','remindDaysBefore',existing?.remindDaysBefore||0,'','number')}`,
+    ${field('Erinnere Tage vorher','remindDaysBefore',existing?.remindDaysBefore||0,'','number')}
+    <label class="lbl" style="margin-top:.8rem">Wiederholung</label>
+    <select class="inp" name="repeatMode" id="reminder-repeat-mode">
+      <option value="none" ${repeatMode==='none'?'selected':''}>Keine</option>
+      <option value="weekday" ${repeatMode==='weekday'?'selected':''}>Bestimmte Wochentage</option>
+      <option value="interval" ${repeatMode==='interval'?'selected':''}>Alle X Wochen</option>
+      <option value="monthday" ${repeatMode==='monthday'?'selected':''}>Am X. Tag des Monats</option>
+    </select>
+    <div id="reminder-repeat-weekday" class="check-list" style="margin-top:.4rem${repeatMode==='weekday'?'':';display:none'}">
+      ${WEEKDAY_LABELS.map((label,i)=>`<label class="check-item"><input type="checkbox" class="reminder-weekday-chk" value="${i}" ${repeatWeekdays.has(i)?'checked':''}><span>${label}</span></label>`).join('')}
+    </div>
+    <input class="inp" name="repeatIntervalWeeks" id="reminder-repeat-interval" type="number" min="1" placeholder="Alle wie viele Wochen?" value="${existing?.repeatIntervalWeeks||''}" style="margin-top:.4rem${repeatMode==='interval'?'':';display:none'}">
+    <input class="inp" name="repeatMonthDay" id="reminder-repeat-monthday" type="number" min="1" max="31" placeholder="Tag im Monat (1-31)" value="${existing?.repeatMonthDay||''}" style="margin-top:.4rem${repeatMode==='monthday'?'':';display:none'}">`,
     async(data,close)=>{
       if(!data.text.trim()) return alert('Bitte einen Text eingeben.');
       const apiary = apiaries.find(a=>a.id===data.apiaryId);
+      const chosenWeekdays = [...document.querySelectorAll('.reminder-weekday-chk:checked')].map(el=>parseInt(el.value));
+      if(data.repeatMode==='weekday' && chosenWeekdays.length===0) return alert('Bitte mindestens einen Wochentag auswählen.');
       const payload = {
         text: data.text.trim(),
         apiaryId: data.apiaryId||'',
         apiaryName: apiary ? apiary.name : '',
         dueDate: data.dueDate||'',
         remindDaysBefore: parseInt(data.remindDaysBefore)||0,
+        repeatMode: data.repeatMode||'none',
+        repeatWeekdays: chosenWeekdays,
+        repeatIntervalWeeks: parseInt(data.repeatIntervalWeeks)||0,
+        repeatMonthDay: parseInt(data.repeatMonthDay)||0,
       };
       if(existing) await api('PUT','./api/reminders/'+existing.id, payload);
       else await api('POST','./api/reminders',{...payload, createdAt:new Date().toISOString()});
@@ -1410,6 +1481,12 @@ function reminderForm(existing, apiaries, after) {
       await api('DELETE','./api/reminders/'+existing.id);
       close(); done();
     } : null);
+  document.getElementById('reminder-repeat-mode').onchange = (e)=>{
+    const mode = e.target.value;
+    document.getElementById('reminder-repeat-weekday').style.display = mode==='weekday' ? '' : 'none';
+    document.getElementById('reminder-repeat-interval').style.display = mode==='interval' ? '' : 'none';
+    document.getElementById('reminder-repeat-monthday').style.display = mode==='monthday' ? '' : 'none';
+  };
 }
 /* Snooze: pro Gerät (localStorage), damit ein Handy das andere nicht stummschaltet.
    Speichert einen Unix-Zeitstempel (ms), damit auch stundenweises Stummschalten (3h) geht -
@@ -1437,12 +1514,13 @@ async function checkDueReminders() {
           <div class="reminder-date">${r.apiaryName?'📍 '+esc(r.apiaryName)+' · ':''}Fällig: ${fmtDate(r.dueDate)}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:.2rem;flex-shrink:0">
+          <button type="button" class="btn btn-primary btn-sm reminder-done-popup-btn" data-id="${r.id}">✅ Erledigt</button>
           <button type="button" class="btn btn-ghost btn-sm reminder-snooze-btn" data-id="${r.id}" data-hours="24" title="24 Stunden stummschalten">Stumm 24h</button>
           <button type="button" class="btn btn-ghost btn-sm reminder-snooze-btn" data-id="${r.id}" data-hours="3" title="3 Stunden stummschalten">Stumm 3h</button>
         </div>
       </li>`).join('')}
     </ul>
-    <p class="muted">Antippen, um die Erinnerung zu öffnen. Mit "Stumm" vorübergehend stummschalten.</p>`,
+    <p class="muted">Antippen, um die Erinnerung zu öffnen. Mit "Erledigt" abschließen (wiederkehrende springen zum nächsten Termin) oder "Stumm" vorübergehend stummschalten.</p>`,
     async(data,close)=>{ close(); },
     null);
   document.querySelector('.modal-back .modal-foot')?.style.setProperty('display','none');
@@ -1460,6 +1538,18 @@ async function checkDueReminders() {
     btn.onclick=(e)=>{
       e.stopPropagation();
       snoozeReminder(btn.dataset.id, parseInt(btn.dataset.hours));
+      const li=btn.closest('li');
+      li?.remove();
+      if(!document.querySelectorAll('.reminder-due-popup-item').length){
+        document.querySelector('.modal-back')?.remove();
+      }
+    };
+  });
+  document.querySelectorAll('.reminder-done-popup-btn').forEach(btn=>{
+    btn.onclick=async(e)=>{
+      e.stopPropagation();
+      const r = due.find(x=>x.id===btn.dataset.id);
+      if(r) await markReminderDone(r);
       const li=btn.closest('li');
       li?.remove();
       if(!document.querySelectorAll('.reminder-due-popup-item').length){

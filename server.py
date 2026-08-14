@@ -165,7 +165,9 @@ def init_db():
             key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS reminders(
             id TEXT PRIMARY KEY, text TEXT, apiaryId TEXT, apiaryName TEXT, createdAt TEXT,
-            dueDate TEXT, remindDaysBefore INTEGER DEFAULT 0);
+            dueDate TEXT, remindDaysBefore INTEGER DEFAULT 0, repeatMode TEXT DEFAULT 'none',
+            repeatWeekdays TEXT DEFAULT '[]', repeatIntervalWeeks INTEGER DEFAULT 0,
+            repeatMonthDay INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS honey_harvests(
             id TEXT PRIMARY KEY, year INTEGER, tracht TEXT, menge REAL, notizen TEXT, apiaryId TEXT, apiaryName TEXT, anzahlVoelker INTEGER DEFAULT 0, createdAt TEXT);
         CREATE TABLE IF NOT EXISTS sirup_calc(
@@ -239,6 +241,10 @@ def init_db():
         ("entries","varroaAnts",         "ALTER TABLE entries ADD COLUMN varroaAnts INTEGER DEFAULT 0"),
         ("reminders","dueDate",          "ALTER TABLE reminders ADD COLUMN dueDate TEXT"),
         ("reminders","remindDaysBefore", "ALTER TABLE reminders ADD COLUMN remindDaysBefore INTEGER DEFAULT 0"),
+        ("reminders","repeatMode",          "ALTER TABLE reminders ADD COLUMN repeatMode TEXT DEFAULT 'none'"),
+        ("reminders","repeatWeekdays",      "ALTER TABLE reminders ADD COLUMN repeatWeekdays TEXT DEFAULT '[]'"),
+        ("reminders","repeatIntervalWeeks", "ALTER TABLE reminders ADD COLUMN repeatIntervalWeeks INTEGER DEFAULT 0"),
+        ("reminders","repeatMonthDay",      "ALTER TABLE reminders ADD COLUMN repeatMonthDay INTEGER DEFAULT 0"),
         ("honey_products","color",       "ALTER TABLE honey_products ADD COLUMN color TEXT DEFAULT ''"),
         ("honey_products","kind",        "ALTER TABLE honey_products ADD COLUMN kind TEXT DEFAULT 'sonstige'"),
         ("honey_products","giftSetVarieties",  "ALTER TABLE honey_products ADD COLUMN giftSetVarieties INTEGER DEFAULT 0"),
@@ -305,6 +311,12 @@ def parse_product(r):
     d = dict(r)
     try: d["giftSetProductIds"] = json.loads(d.get("giftSetProductIds") or "[]")
     except Exception: d["giftSetProductIds"] = []
+    return d
+
+def parse_reminder(r):
+    d = dict(r)
+    try: d["repeatWeekdays"] = json.loads(d.get("repeatWeekdays") or "[]")
+    except Exception: d["repeatWeekdays"] = []
     return d
 
 def photo_ids(photos):
@@ -508,7 +520,7 @@ class Handler(BaseHTTPRequestHandler):
                 r=con.execute("SELECT key,value FROM settings").fetchall()
                 return self._json({row[0]:row[1] for row in r})
             if path=="/api/reminders":
-                return self._json(rows(con,"SELECT * FROM reminders ORDER BY createdAt DESC"))
+                return self._json([parse_reminder(r) for r in con.execute("SELECT * FROM reminders ORDER BY createdAt DESC").fetchall()])
             if path=="/api/honey_harvests":
                 return self._json(rows(con,"SELECT * FROM honey_harvests ORDER BY year DESC, createdAt DESC"))
             if path=="/api/sirup_calc":
@@ -553,7 +565,10 @@ class Handler(BaseHTTPRequestHandler):
             body2=self._rjson()
             rid=new_id()
             con2=db()
-            con2.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore) VALUES(?,?,?,?,?,?,?)",(rid,body2.get("text",""),body2.get("apiaryId",""),body2.get("apiaryName",""),body2.get("createdAt",""),body2.get("dueDate",""),int(body2.get("remindDaysBefore",0) or 0)))
+            con2.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore,repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (rid,body2.get("text",""),body2.get("apiaryId",""),body2.get("apiaryName",""),body2.get("createdAt",""),body2.get("dueDate",""),
+                 int(body2.get("remindDaysBefore",0) or 0),body2.get("repeatMode","none"),json.dumps(body2.get("repeatWeekdays",[])),
+                 int(body2.get("repeatIntervalWeeks",0) or 0),int(body2.get("repeatMonthDay",0) or 0)))
             con2.commit(); con2.close()
             return self._json({"id":rid})
         if path=="/api/honey_harvests":
@@ -828,9 +843,11 @@ class Handler(BaseHTTPRequestHandler):
                      body.get("demareeAction",""),body.get("entryHrNr",""),body.get("oxalBlockAction",""),
                      body.get("varroaCount",""),int(body.get("varroaAnts",0) or 0),rid))
             elif kind=="reminders":
-                con.execute("UPDATE reminders SET text=?,apiaryId=?,apiaryName=?,dueDate=?,remindDaysBefore=? WHERE id=?",
+                con.execute("UPDATE reminders SET text=?,apiaryId=?,apiaryName=?,dueDate=?,remindDaysBefore=?,repeatMode=?,repeatWeekdays=?,repeatIntervalWeeks=?,repeatMonthDay=? WHERE id=?",
                     (body.get("text",""),body.get("apiaryId",""),body.get("apiaryName",""),
-                     body.get("dueDate",""),int(body.get("remindDaysBefore",0) or 0),rid))
+                     body.get("dueDate",""),int(body.get("remindDaysBefore",0) or 0),
+                     body.get("repeatMode","none"),json.dumps(body.get("repeatWeekdays",[])),
+                     int(body.get("repeatIntervalWeeks",0) or 0),int(body.get("repeatMonthDay",0) or 0),rid))
             elif kind=="scales":
                 con.execute("UPDATE scales SET name=?,url=?,notes=? WHERE id=?",
                     (body.get("name",""),body.get("url",""),body.get("notes",""),rid))
@@ -925,7 +942,7 @@ class Handler(BaseHTTPRequestHandler):
              "entries":[parse_entry(r) for r in con.execute("SELECT * FROM entries").fetchall()],
              "scales":rows(con,"SELECT * FROM scales"),
              "honey_harvests":rows(con,"SELECT * FROM honey_harvests"),
-             "reminders":rows(con,"SELECT * FROM reminders"),
+             "reminders":[parse_reminder(r) for r in con.execute("SELECT * FROM reminders").fetchall()],
              "sirup_calc":rows(con,"SELECT * FROM sirup_calc"),
              "honey_stir_batches":rows(con,"SELECT * FROM honey_stir_batches"),
              "honey_stir_entries":[parse_stir_entry(r) for r in con.execute("SELECT * FROM honey_stir_entries").fetchall()],
@@ -990,9 +1007,10 @@ class Handler(BaseHTTPRequestHandler):
                  h.get("notizen",""),h.get("apiaryId",""),h.get("apiaryName",""),
                  int(h.get("anzahlVoelker",0) or 0),h.get("createdAt","")))
         for r in body.get("reminders",[]):
-            con.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore) VALUES(?,?,?,?,?,?,?)",
+            con.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore,repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (r["id"],r.get("text",""),r.get("apiaryId",""),r.get("apiaryName",""),r.get("createdAt",""),
-                 r.get("dueDate",""),int(r.get("remindDaysBefore",0) or 0)))
+                 r.get("dueDate",""),int(r.get("remindDaysBefore",0) or 0),r.get("repeatMode","none"),
+                 json.dumps(r.get("repeatWeekdays",[])),int(r.get("repeatIntervalWeeks",0) or 0),int(r.get("repeatMonthDay",0) or 0)))
         for sc in body.get("sirup_calc",[]):
             con.execute("INSERT INTO sirup_calc(id,date,ratio,mode,inputValue,sugar,water,result,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
                 (sc["id"],sc.get("date",""),sc.get("ratio",""),sc.get("mode",""),
