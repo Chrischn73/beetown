@@ -1429,6 +1429,38 @@ function computeNextDueDate(r) {
   }
   return null;
 }
+/* Erstes Faelligkeitsdatum, wenn beim Anlegen/Bearbeiten einer wiederkehrenden Erinnerung
+   kein Datum eingegeben wurde - ohne das faende isReminderDue() nie ein dueDate und die
+   Erinnerung wuerde trotz Wiederholung nie ausgeloest. Im Unterschied zu computeNextDueDate()
+   (naechster Termin NACH einem bestehenden dueDate) schliesst diese Funktion den heutigen Tag
+   als moeglichen ersten Termin mit ein. */
+function computeInitialDueDate(r) {
+  const today = todayInput();
+  if(r.repeatMode==='weekday' && (r.repeatWeekdays||[]).length){
+    const wanted = new Set(r.repeatWeekdays.map(Number));
+    for(let i=0; i<=13; i++){
+      const candidate = addDays(today, i);
+      const wd = (new Date(candidate).getDay()+6)%7;
+      if(wanted.has(wd)) return candidate;
+    }
+    return today;
+  }
+  if(r.repeatMode==='interval' && r.repeatIntervalWeeks>0){
+    return today;
+  }
+  if(r.repeatMode==='monthday' && r.repeatMonthDay>0){
+    const [y,m,d] = today.split('-').map(Number);
+    const daysInThisMonth = new Date(y, m, 0).getDate();
+    const dayThisMonth = Math.min(r.repeatMonthDay, daysInThisMonth);
+    if(dayThisMonth >= d) return `${String(y).padStart(4,'0')}-${String(m).padStart(2,'0')}-${String(dayThisMonth).padStart(2,'0')}`;
+    let ny=y, nm=m+1;
+    if(nm>12){ nm=1; ny+=1; }
+    const daysInNextMonth = new Date(ny, nm, 0).getDate();
+    const dayNextMonth = Math.min(r.repeatMonthDay, daysInNextMonth);
+    return `${String(ny).padStart(4,'0')}-${String(nm).padStart(2,'0')}-${String(dayNextMonth).padStart(2,'0')}`;
+  }
+  return today;
+}
 async function markReminderDone(r) {
   const next = computeNextDueDate(r);
   if(next) await api('PUT','./api/reminders/'+r.id, {...r, dueDate: next});
@@ -1461,16 +1493,23 @@ function reminderForm(existing, apiaries, after) {
       const apiary = apiaries.find(a=>a.id===data.apiaryId);
       const chosenWeekdays = [...document.querySelectorAll('.reminder-weekday-chk:checked')].map(el=>parseInt(el.value));
       if(data.repeatMode==='weekday' && chosenWeekdays.length===0) return alert('Bitte mindestens einen Wochentag auswählen.');
+      const repeatMode = data.repeatMode||'none';
+      const repeatWeekdays = chosenWeekdays;
+      const repeatIntervalWeeks = parseInt(data.repeatIntervalWeeks)||0;
+      const repeatMonthDay = parseInt(data.repeatMonthDay)||0;
+      /* Ohne Datum wuerde eine wiederkehrende Erinnerung nie ausgeloest (isReminderDue()
+         braucht ein dueDate) - deshalb bei leerem Feld ein erstes Faelligkeitsdatum berechnen. */
+      const dueDate = data.dueDate || (repeatMode!=='none' ? computeInitialDueDate({repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay}) : '');
       const payload = {
         text: data.text.trim(),
         apiaryId: data.apiaryId||'',
         apiaryName: apiary ? apiary.name : '',
-        dueDate: data.dueDate||'',
+        dueDate,
         remindDaysBefore: parseInt(data.remindDaysBefore)||0,
-        repeatMode: data.repeatMode||'none',
-        repeatWeekdays: chosenWeekdays,
-        repeatIntervalWeeks: parseInt(data.repeatIntervalWeeks)||0,
-        repeatMonthDay: parseInt(data.repeatMonthDay)||0,
+        repeatMode,
+        repeatWeekdays,
+        repeatIntervalWeeks,
+        repeatMonthDay,
       };
       if(existing) await api('PUT','./api/reminders/'+existing.id, payload);
       else await api('POST','./api/reminders',{...payload, createdAt:new Date().toISOString()});
