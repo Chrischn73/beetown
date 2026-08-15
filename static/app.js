@@ -59,6 +59,9 @@ async function loadSettings() {
     window._homeBtnColor = homeColor;
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
     window._vkTilesPerRow = s.vkTilesPerRow || 'auto';
+    window._btnPrimaryColor = s.btnPrimaryColor || '';
+    window._btnGhostColor = s.btnGhostColor || '';
+    applyButtonTheme();
   } catch(_) {}
 }
 /* Buttons auf der Startseite - einzeln in den Einstellungen ausblendbar.
@@ -105,6 +108,19 @@ function homeBtnSizeVars(key) {
 function homeBtnColorStyle(key) {
   const c = window._homeBtnColor && window._homeBtnColor[key];
   return c ? `background:${c};color:${readableTextColor(c)};border-color:${c};` : '';
+}
+/* Globale Farbe fuer alle .btn-primary/.btn-ghost ausserhalb der Startseite (dort gilt
+   stattdessen die individuelle Farbe je Button, siehe homeBtnColorStyle - Inline-Styles
+   dort haben ohnehin Vorrang vor diesen CSS-Variablen). Leer = zurueck auf Standard-Look
+   (CSS-Fallback auf var(--honey)/var(--surface) greift automatisch). */
+function applyButtonTheme() {
+  const root = document.documentElement.style;
+  const primary = window._btnPrimaryColor;
+  const ghost = window._btnGhostColor;
+  if(primary){ root.setProperty('--btn-primary-bg', primary); root.setProperty('--btn-primary-fg', readableTextColor(primary)); }
+  else { root.removeProperty('--btn-primary-bg'); root.removeProperty('--btn-primary-fg'); }
+  if(ghost){ root.setProperty('--btn-ghost-bg', ghost); root.setProperty('--btn-ghost-fg', readableTextColor(ghost)); }
+  else { root.removeProperty('--btn-ghost-bg'); root.removeProperty('--btn-ghost-fg'); }
 }
 function homeBtnTextHidden(key) {
   return (window._homeBtnShowText && window._homeBtnShowText[key]===false);
@@ -865,6 +881,7 @@ function go(view, params={}) {
   /* Scroll-/Such-Erinnerung nur gültig, wenn im selben go()-Aufruf explizit mitgegeben – sonst nicht versehentlich eine alte Position/Suche aus einer anderen Navigation übernehmen */
   if(view==='colony' && !('backScrollY' in cleanParams)) cleanParams.backScrollY = undefined;
   if(view==='apiaries' && !('searchQuery' in cleanParams)) cleanParams.searchQuery = undefined;
+  if(view==='sirupcalc' && !('prefillTarget' in cleanParams)) cleanParams.prefillTarget = undefined;
   if(!('from' in cleanParams)) cleanParams.from = undefined;
   if(!('fromParams' in cleanParams)) cleanParams.fromParams = undefined;
   nav={...nav,...cleanParams,view};
@@ -3102,11 +3119,12 @@ async function renderFuetterungsvorschlag() {
 
     bodyEl.innerHTML = `
       <h2 class="section-h">Gesamtmengen</h2>
-      <div class="card" style="margin-bottom:1rem">
+      <div class="card" style="margin-bottom:1rem;flex-direction:column;align-items:stretch;gap:.5rem">
         <div class="card-main" style="width:100%;display:flex;justify-content:space-between;align-items:center">
           <span>Für den gesamten Stand</span>
           <strong style="font-variant-numeric:tabular-nums">${gesamt.toFixed(1).replace('.',',')} L</strong>
         </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="fv-open-sirupcalc">🧪 Zuckersirup berechnen</button>
       </div>
       <h2 class="section-h">Mengen pro Volk</h2>
       ${rows.length === 0 ? emptyState('Keine Völker','Keine Völker (ohne BK) an diesem Standort.') : `
@@ -3128,6 +3146,10 @@ async function renderFuetterungsvorschlag() {
         colonyId: li.dataset.id, apiaryId: li.dataset.apiary,
         from: 'fuetterungsvorschlag', fromParams: {restoreScrollY: window.scrollY}
       });
+    });
+    const sirupBtn = document.getElementById('fv-open-sirupcalc');
+    if(sirupBtn) sirupBtn.onclick = () => go('sirupcalc', {
+      prefillTarget: gesamt, from: 'fuetterungsvorschlag', fromParams: {restoreScrollY: window.scrollY}
     });
   };
 
@@ -3386,6 +3408,13 @@ async function renderSirupCalc() {
       loadHistory();
     });
   };
+  /* Vorbelegung, wenn von einer anderen Seite mit einer Gesamtmenge verlinkt wurde
+     (z. B. Fütterungsvorschlag "Gesamtmengen") - direkt mit ausrechnen, nicht nur eintragen. */
+  if(nav.prefillTarget){
+    document.getElementById('sirup-target-input').value = fmtNum(nav.prefillTarget);
+    nav.prefillTarget = undefined;
+    document.getElementById('btn-calc-target').click();
+  }
   await loadHistory();
 }
 
@@ -3797,7 +3826,10 @@ async function renderGewicht() {
     const back=document.createElement('div');
     back.className='modal-back modal-top';
     back.innerHTML=`<div class="modal" role="dialog" aria-modal="true">
-      <div class="modal-head"><h2>Gewicht erfassen — ${esc(c.name)}</h2></div>
+      <div class="modal-head" style="flex-direction:column;align-items:center;text-align:center;gap:.1rem">
+        <div class="muted" style="font-size:.8rem">Gewicht erfassen</div>
+        <h2 style="font-size:1.6rem;font-weight:700;margin:0">${esc(c.name)}</h2>
+      </div>
       <div style="padding:0 1rem .6rem;font-size:.85rem;color:var(--ink-soft)">Bisheriges Gewicht: <strong style="color:var(--ink)">${oldWeightText}</strong></div>
       <form class="modal-body">
         <div style="display:flex;align-items:center;gap:.6rem;margin:.4rem 0">
@@ -3805,15 +3837,15 @@ async function renderGewicht() {
           <input class="inp" name="date" type="date" value="${todayInput()}" style="flex:1;padding:.35rem .6rem">
           <button type="button" class="btn btn-ghost btn-sm date-clear" data-clear="date" title="Datum löschen" style="flex-shrink:0">✕</button>
         </div>
-        <label class="lbl">Teilgewicht 1 (kg)</label>
+        <label class="lbl" style="font-size:1rem">Teilgewicht 1 (kg)</label>
         <div style="display:flex;align-items:center;gap:.5rem">
-          <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3" style="flex:1;min-width:0">
-          <button type="button" class="btn btn-primary" id="w-next" style="flex-shrink:0">Weiter</button>
+          <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3" style="flex:1;min-width:0;font-size:1.2rem">
+          <button type="button" class="btn btn-primary" id="w-next" style="flex-shrink:0;font-size:1.2rem">Weiter</button>
         </div>
-        <label class="lbl" style="margin-top:.5rem">Teilgewicht 2 (kg)</label>
+        <label class="lbl" style="margin-top:.5rem;font-size:1rem">Teilgewicht 2 (kg)</label>
         <div style="display:flex;align-items:center;gap:.5rem">
-          <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1" style="flex:1;min-width:0">
-          <button type="button" class="btn btn-primary" id="w-save" style="flex-shrink:0">Speichern</button>
+          <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1" style="flex:1;min-width:0;font-size:1.2rem">
+          <button type="button" class="btn btn-primary" id="w-save" style="flex-shrink:0;font-size:1.2rem">Speichern</button>
         </div>
       </form>
       <div class="modal-foot" style="flex-direction:column;gap:.5rem;align-items:stretch">
@@ -3875,7 +3907,7 @@ async function renderGewicht() {
         });
         await api('PUT','./api/colonies/'+c.id, {...c, currentWeight: totalStr, currentWeightDate: entryDate});
         c.currentWeight = totalStr; c.currentWeightDate = entryDate;
-      }catch(err){ actionBtn.disabled=false; return alert('Fehler: '+err.message); }
+      }catch(err){ saveBtn.disabled=false; return alert('Fehler: '+err.message); }
       close();
       renderList();
       let toastMsg = `✅ ${fmtKg(newWeight)} kg gespeichert`;
@@ -3888,7 +3920,6 @@ async function renderGewicht() {
       showToast(toastMsg, 6000, true);
       openWeightModal(findNextIndex(idx));
     };
-    actionBtn.onclick = ()=>{ if(mode==='next'){ advanceToTeil2(); } else { doSave(); } };
 
     t1input.focus();
   };
@@ -4988,6 +5019,17 @@ async function renderSettings() {
           </div>
         </div>`).join('')}
       </div>`)}
+    ${settingsSection('btncolors','Button-Farben (übrige Menüs)',`
+      <p class="muted">Gilt für alle Buttons außerhalb der Startseite (dort gelten die einzeln
+      eingestellten Farben oben weiterhin unverändert). Nur zwei Farben für die ganze App:</p>
+      <label class="check-item" style="margin-top:.4rem">
+        <input type="checkbox" id="btn-ghost-color-chk"><span>Standard-Buttons (z. B. "Einnahmen")</span>
+      </label>
+      <input class="inp" id="btn-ghost-color-inp" type="color" value="#ffffff" style="width:2.4rem;height:2.2rem;padding:.15rem;margin-top:.3rem;display:none">
+      <label class="check-item" style="margin-top:.7rem">
+        <input type="checkbox" id="btn-primary-color-chk"><span>Hervorgehobene Buttons (z. B. "Erfassen")</span>
+      </label>
+      <input class="inp" id="btn-primary-color-inp" type="color" value="#ffd43b" style="width:2.4rem;height:2.2rem;padding:.15rem;margin-top:.3rem;display:none">`)}
     ${settingsSection('darstellung','Darstellung',`
       <label class="lbl">Design</label>
       <select class="inp" id="theme-select">
@@ -5215,12 +5257,22 @@ async function renderSettings() {
       const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
       if(colorInp){ colorInp.value=stored||'#ffd43b'; colorInp.style.display=stored?'':'none'; }
     });
+    const ghostChk=document.getElementById('btn-ghost-color-chk'), ghostInp=document.getElementById('btn-ghost-color-inp');
+    if(ghostChk){ ghostChk.checked=!!s.btnGhostColor; ghostInp.value=s.btnGhostColor||'#ffffff'; ghostInp.style.display=s.btnGhostColor?'':'none'; }
+    const primaryChk=document.getElementById('btn-primary-color-chk'), primaryInp=document.getElementById('btn-primary-color-inp');
+    if(primaryChk){ primaryChk.checked=!!s.btnPrimaryColor; primaryInp.value=s.btnPrimaryColor||'#ffd43b'; primaryInp.style.display=s.btnPrimaryColor?'':'none'; }
   }).catch(()=>{});
   document.querySelectorAll('.home-btn-color-chk').forEach(chk=>{
     chk.onchange=()=>{
       const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${chk.dataset.key}"]`);
       if(colorInp) colorInp.style.display=chk.checked?'':'none';
     };
+  });
+  document.getElementById('btn-ghost-color-chk')?.addEventListener('change', (e)=>{
+    document.getElementById('btn-ghost-color-inp').style.display = e.target.checked?'':'none';
+  });
+  document.getElementById('btn-primary-color-chk')?.addEventListener('change', (e)=>{
+    document.getElementById('btn-primary-color-inp').style.display = e.target.checked?'':'none';
   });
   /* Sammel-Farbe: fuer alle per Kaestchen markierten Buttons auf einmal setzen bzw.
      zuruecksetzen, statt jeden Button einzeln umzustellen. Wirkt nur auf die Formularfelder -
@@ -5295,6 +5347,11 @@ async function renderSettings() {
       const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
       payload['homeBtnColor_'+k]=(chk.checked && colorInp)?colorInp.value:'';
     });
+    // Globale Button-Farben (uebrige Menues)
+    const ghostChkSave=document.getElementById('btn-ghost-color-chk'), ghostInpSave=document.getElementById('btn-ghost-color-inp');
+    if(ghostChkSave) payload.btnGhostColor=(ghostChkSave.checked && ghostInpSave)?ghostInpSave.value:'';
+    const primaryChkSave=document.getElementById('btn-primary-color-chk'), primaryInpSave=document.getElementById('btn-primary-color-inp');
+    if(primaryChkSave) payload.btnPrimaryColor=(primaryChkSave.checked && primaryInpSave)?primaryInpSave.value:'';
     // HR-Nummern
     const hrNrsToggle=document.getElementById('toggle-hr-nrs');
     if(hrNrsToggle) payload.showHrNrs=hrNrsToggle.checked?'true':'false';
