@@ -2739,21 +2739,14 @@ async function renderHoney() {
     } : null, true);
 
     document.getElementById('harvest-add-tracht').onclick = () => {
-      openModal('Neue Tracht', `
-        <label class="lbl">Name</label>
-        <input class="inp" name="name" type="text" placeholder="z. B. Waldhonig">
-      `, async(data, close2) => {
-        const name = data.name.trim();
-        if (!name) return alert('Bitte einen Namen eingeben.');
-        const res = await api('POST', './api/trachten', { name });
-        trachtenList.push({ id: res.id, name });
-        close2();
+      trachtForm(null, (id, name) => {
+        trachtenList.push({ id, name });
         const sel = document.getElementById('harvest-tracht-select');
         if (sel) {
           sel.innerHTML = trachtenList.map(t =>
             `<option value="${esc(t.name)}" ${t.name===name?'selected':''}>${esc(t.name)}</option>`).join('');
         }
-      }, null, true);
+      });
     };
   }
 
@@ -3715,7 +3708,7 @@ async function renderGewicht() {
      40-kg-Standard fuer neue Voelker und wo man ihn aendern kann. */
   try{
     if(!localStorage.getItem('imkerei-seen-gewicht-hint')){
-      showToast('💡 Neue Völker bekommen automatisch ein Ziel-Gewicht von 40 kg zugewiesen.<div style="margin-top:.3rem;font-size:.8rem;font-weight:400;opacity:.85">Ändern kannst du das unter Einstellungen → Gewicht.</div>', 9000, true);
+      showToast('💡 Neue Völker bekommen automatisch ein Ziel-Gewicht von 40 kg zugewiesen.<div style="margin-top:.3rem;font-size:.8rem;font-weight:400;opacity:.85">Ändern kannst du das unter Einstellungen → Gewicht.</div><div style="margin-top:.3rem;font-size:.72rem;font-weight:400;opacity:.7">(Zum Schließen antippen)</div>', 0, true);
       localStorage.setItem('imkerei-seen-gewicht-hint', '1');
     }
   }catch(_){}
@@ -5006,15 +4999,12 @@ async function renderSettings() {
       <ul class="card-list">${scales.map((s)=>`<li class="card"><div class="card-main"><div class="card-title">${esc(s.name)}</div><div class="card-sub scale-url-preview">${esc(s.url||'–')}</div></div><button class="btn btn-ghost btn-sm" data-edit-scale="${s.id}">Bearbeiten</button></li>`).join('')}${scales.length===0?'<li class="card muted" style="justify-content:center">Noch keine Waagen</li>':''}</ul>
       ${scales.length<5?'<button class="btn btn-ghost block" id="add-scale">+ Waage hinzufügen</button>':''}`)}
     ${settingsSection('trachten','Ernte – Trachten',`
-      <p class="muted">Welche Trachten stehen beim Ernte-Erfassen zur Auswahl?</p>
+      <p class="muted">Welche Trachten stehen beim Ernte-Erfassen zur Auswahl? Zum Umbenennen antippen.</p>
       <ul class="card-list" id="trachten-list">
-        ${trachten.map(t=>`<li class="card" data-id="${esc(t.id)}"><div class="card-main"><div class="card-title">${esc(t.name)}</div></div><button type="button" class="btn btn-ghost btn-sm trachten-del" data-id="${esc(t.id)}" title="Löschen">✕</button></li>`).join('')}
+        ${trachten.map(t=>`<li class="card" data-id="${esc(t.id)}" style="cursor:pointer"><div class="card-main"><div class="card-title">${esc(t.name)}</div></div></li>`).join('')}
         ${trachten.length===0?'<li class="card muted" style="justify-content:center">Noch keine Trachten</li>':''}
       </ul>
-      <div style="display:flex;gap:.5rem;margin-top:.5rem">
-        <input class="inp" id="trachten-new-name" type="text" placeholder="z. B. Waldhonig" style="flex:1">
-        <button type="button" class="btn btn-ghost" id="trachten-add" style="flex-shrink:0">+ Hinzufügen</button>
-      </div>`)}
+      <button type="button" class="btn btn-ghost block" id="trachten-add" style="margin-top:.5rem">+ Tracht hinzufügen</button>`)}
     ${settingsSection('darstellung','Darstellung',`
       <label class="lbl">Design</label>
       <select class="inp" id="theme-select">
@@ -5228,19 +5218,9 @@ async function renderSettings() {
   $('#add-apiary').onclick=()=>apiaryForm();
   const addScale=$('#add-scale'); if(addScale) addScale.onclick=()=>scaleForm(null,()=>renderSettings());
 
-  document.getElementById('trachten-add')?.addEventListener('click', async()=>{
-    const inp = document.getElementById('trachten-new-name');
-    const name = inp.value.trim();
-    if(!name) return alert('Bitte einen Namen eingeben.');
-    await api('POST','./api/trachten',{name});
-    renderSettings();
-  });
-  document.querySelectorAll('.trachten-del').forEach(btn=>{
-    btn.onclick = async()=>{
-      if(!confirm('Diese Tracht wirklich löschen?')) return;
-      await api('DELETE','./api/trachten/'+btn.dataset.id);
-      renderSettings();
-    };
+  document.getElementById('trachten-add')?.addEventListener('click', ()=>trachtForm(null, ()=>renderSettings()));
+  document.querySelectorAll('#trachten-list li[data-id]').forEach(li=>{
+    li.onclick = () => trachtForm(trachten.find(t=>t.id===li.dataset.id), ()=>renderSettings(), ()=>renderSettings());
   });
 
   document.getElementById('btn-clear-fuetterung')?.addEventListener('click', async () => {
@@ -5480,6 +5460,28 @@ async function renderSettings() {
   };
 }
 
+/* Wird sowohl aus den Einstellungen (Verwaltung) als auch direkt aus dem
+   Ernte-Erfassen-Formular heraus aufgerufen (dort ohne vollen Seiten-Reload -
+   onSaved bekommt id+name, um die Auswahl lokal zu aktualisieren). */
+function trachtForm(existing, onSaved, onDeleted) {
+  openModal(existing?'Tracht bearbeiten':'Neue Tracht',
+    field('Name','name',existing?.name,true),
+    async(data,close)=>{
+      const name = data.name.trim();
+      if(!name) return alert('Bitte einen Namen eingeben.');
+      let id = existing?.id;
+      if(existing) await api('PUT','./api/trachten/'+existing.id,{name});
+      else { const res = await api('POST','./api/trachten',{name}); id = res.id; }
+      close();
+      if(onSaved) onSaved(id, name);
+    },
+    existing ? async(close)=>{
+      if(!confirm('Diese Tracht wirklich löschen?')) return;
+      await api('DELETE','./api/trachten/'+existing.id);
+      close();
+      if(onDeleted) onDeleted(existing.id);
+    } : null, true);
+}
 function scaleForm(existing, after) {
   openModal(existing?'Waage bearbeiten':'Neue Waage',`
     ${field('Name','name',existing?.name,true)}${field('URL (http://...)','url',existing?.url)}${textareaField('Notizen','notes',existing?.notes)}`,
@@ -5606,11 +5608,19 @@ function openModal(title,bodyHTML,onSave,onDelete,noBackdropClose=false){
   };
 }
 /* Kurze Rückmeldung, verschwindet nach ca. 1 Sekunde von selbst */
+/* duration=0: Toast bleibt stehen, bis man ihn antippt (statt automatisch zu verschwinden) -
+   fuer Hinweise, die der Nutzer bewusst zur Kenntnis nehmen soll. */
 function showToast(msg, duration=3000, isHtml=false){
   const t=document.createElement('div');
   t.className='toast';
   if(isHtml) t.innerHTML=msg; else t.textContent=msg;
   document.body.appendChild(t);
+  if(duration===0){
+    t.classList.add('toast-dismissible');
+    t.title='Zum Schließen antippen';
+    t.onclick=()=>{ t.classList.add('toast-out'); setTimeout(()=>t.remove(),300); };
+    return;
+  }
   setTimeout(()=>t.classList.add('toast-out'), duration);
   setTimeout(()=>t.remove(), duration+300);
 }

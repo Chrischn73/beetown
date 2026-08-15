@@ -270,6 +270,7 @@ textarea.inp{resize:vertical}
   font-size:.9rem; font-weight:600; box-shadow:0 4px 16px rgba(0,0,0,.25); z-index:80;
   opacity:1; transition:opacity .3s ease, transform .3s ease; pointer-events:none; text-align:center; max-width:90vw}
 .toast-out{opacity:0; transform:translateX(-50%) translateY(-8px)}
+.toast-dismissible{pointer-events:auto; cursor:pointer}
 
 /* ---------- Lightbox ---------- */
 .lightbox{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.92);
