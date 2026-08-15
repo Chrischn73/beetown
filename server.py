@@ -161,6 +161,8 @@ def init_db():
             varroaCount TEXT, varroaAnts INTEGER DEFAULT 0, createdAt TEXT);
         CREATE TABLE IF NOT EXISTS scales(
             id TEXT PRIMARY KEY, name TEXT, url TEXT, notes TEXT, createdAt TEXT);
+        CREATE TABLE IF NOT EXISTS trachten(
+            id TEXT PRIMARY KEY, name TEXT, createdAt TEXT);
         CREATE TABLE IF NOT EXISTS settings(
             key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS reminders(
@@ -264,6 +266,9 @@ def init_db():
         for i, (name, price, grams, color) in enumerate(DEFAULT_HONEY_PRODUCTS):
             con.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,kind,createdAt) VALUES(?,?,?,?,1,?,?,'honig',?)",
                 (new_id(), name, price, grams, i, color, now_iso()))
+    if con.execute("SELECT COUNT(*) FROM trachten").fetchone()[0] == 0:
+        for name in ("Frühtracht","Sommertracht","Rapshonig"):
+            con.execute("INSERT INTO trachten(id,name,createdAt) VALUES(?,?,?)", (new_id(), name, now_iso()))
     # Farben auch fuer bereits vorhandene Standard-Produkte nachtragen (z.B. nach Upgrade
     # von einer Version ohne Farb-Spalte), aber keine vom Nutzer bewusst geloeschte Farbe ueberschreiben.
     for prefix, color in HONEY_PRODUCT_COLOR_BY_PREFIX:
@@ -516,6 +521,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json([parse_entry(r) for r in rs])
             if path=="/api/scales":
                 return self._json(rows(con,"SELECT * FROM scales ORDER BY name"))
+            if path=="/api/trachten":
+                return self._json(rows(con,"SELECT * FROM trachten ORDER BY name"))
             if path=="/api/settings":
                 r=con.execute("SELECT key,value FROM settings").fetchall()
                 return self._json({row[0]:row[1] for row in r})
@@ -702,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
                 zg = body.get("zielGewicht","")
                 if not zg:
                     row = con.execute("SELECT value FROM settings WHERE key='zielGewicht'").fetchone()
-                    zg = row["value"] if row else ""
+                    zg = row["value"] if row else "40"
                 con.execute("""INSERT INTO colonies
                     (id,apiaryId,name,queenYear,queenNr,queenGen,status,source,notes,scaleId,
                      sortOrder,createdAt,archived,demareeStage,demareedAt,demareeEndedAt,
@@ -739,6 +746,12 @@ class Handler(BaseHTTPRequestHandler):
                 rid=new_id()
                 con.execute("INSERT INTO scales(id,name,url,notes,createdAt) VALUES(?,?,?,?,?)",
                     (rid,body.get("name",""),body.get("url",""),body.get("notes",""),now_iso()))
+                con.commit(); return self._json({"id":rid})
+
+            if path=="/api/trachten":
+                rid=new_id()
+                con.execute("INSERT INTO trachten(id,name,createdAt) VALUES(?,?,?)",
+                    (rid,body.get("name","").strip(),now_iso()))
                 con.commit(); return self._json({"id":rid})
 
             if path=="/api/colonies/bulk-update":
@@ -804,7 +817,7 @@ class Handler(BaseHTTPRequestHandler):
         con=db()
         try:
             body=self._rjson()
-            m=re.match(r"^/api/(apiaries|colonies|entries|scales|reminders|honey_harvests|honey_stir_batches|honey_stir_entries|honey_products|honey_sales|honey_costs)/([^/]+)$",path)
+            m=re.match(r"^/api/(apiaries|colonies|entries|scales|trachten|reminders|honey_harvests|honey_stir_batches|honey_stir_entries|honey_products|honey_sales|honey_costs)/([^/]+)$",path)
             if not m: return self._err(404,"Not found")
             kind,rid=m.group(1),m.group(2)
             if not ID_RE.match(rid): return self._err(400,"Bad id")
@@ -851,6 +864,8 @@ class Handler(BaseHTTPRequestHandler):
             elif kind=="scales":
                 con.execute("UPDATE scales SET name=?,url=?,notes=? WHERE id=?",
                     (body.get("name",""),body.get("url",""),body.get("notes",""),rid))
+            elif kind=="trachten":
+                con.execute("UPDATE trachten SET name=? WHERE id=?",(body.get("name","").strip(),rid))
             elif kind=="honey_harvests":
                 con.execute("UPDATE honey_harvests SET year=?,tracht=?,menge=?,notizen=?,apiaryId=?,apiaryName=?,anzahlVoelker=? WHERE id=?",
                     (int(body.get("year",0)),body.get("tracht",""),float(body.get("menge",0)),
@@ -893,7 +908,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok":True})
         con=db()
         try:
-            m=re.match(r"^/api/(apiaries|colonies|entries|scales|reminders|honey_harvests|sirup_calc|honey_stir_batches|honey_stir_entries|honey_products|honey_sales|honey_costs)/([^/]+)$",path)
+            m=re.match(r"^/api/(apiaries|colonies|entries|scales|trachten|reminders|honey_harvests|sirup_calc|honey_stir_batches|honey_stir_entries|honey_products|honey_sales|honey_costs)/([^/]+)$",path)
             if not m: return self._err(404,"Not found")
             kind,rid=m.group(1),m.group(2)
             if not ID_RE.match(rid): return self._err(400,"Bad id")
@@ -915,6 +930,8 @@ class Handler(BaseHTTPRequestHandler):
             elif kind=="scales":
                 con.execute("UPDATE colonies SET scaleId='' WHERE scaleId=?",(rid,))
                 con.execute("DELETE FROM scales WHERE id=?",(rid,))
+            elif kind=="trachten":
+                con.execute("DELETE FROM trachten WHERE id=?",(rid,))
             elif kind=="honey_stir_batches":
                 for e in con.execute("SELECT photos FROM honey_stir_entries WHERE batchId=?",(rid,)).fetchall():
                     delete_photos(photo_ids(json.loads(e["photos"] or "[]")))
@@ -941,6 +958,7 @@ class Handler(BaseHTTPRequestHandler):
              "colonies":rows(con,"SELECT * FROM colonies"),
              "entries":[parse_entry(r) for r in con.execute("SELECT * FROM entries").fetchall()],
              "scales":rows(con,"SELECT * FROM scales"),
+             "trachten":rows(con,"SELECT * FROM trachten"),
              "honey_harvests":rows(con,"SELECT * FROM honey_harvests"),
              "reminders":[parse_reminder(r) for r in con.execute("SELECT * FROM reminders").fetchall()],
              "sirup_calc":rows(con,"SELECT * FROM sirup_calc"),
@@ -959,7 +977,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_restore(self, con, body):
         if body.get("app")!="imkerei": return self._err(400,"Keine gültige Backup-Datei")
-        for t in ("apiaries","colonies","entries","scales","honey_harvests","reminders","sirup_calc",
+        for t in ("apiaries","colonies","entries","scales","trachten","honey_harvests","reminders","sirup_calc",
                   "honey_stir_batches","honey_stir_entries","honey_products","honey_sales","honey_costs",
                   "settings"): con.execute(f"DELETE FROM {t}")
         for a in body.get("apiaries",[]):
@@ -999,6 +1017,9 @@ class Handler(BaseHTTPRequestHandler):
         for s in body.get("scales",[]):
             con.execute("INSERT INTO scales(id,name,url,notes,createdAt) VALUES(?,?,?,?,?)",
                 (s["id"],s.get("name",""),s.get("url",""),s.get("notes",""),s.get("createdAt","")))
+        for t in body.get("trachten",[]):
+            con.execute("INSERT INTO trachten(id,name,createdAt) VALUES(?,?,?)",
+                (t["id"],t.get("name",""),t.get("createdAt","")))
         for h in body.get("honey_harvests",[]):
             con.execute("""INSERT INTO honey_harvests
                 (id,year,tracht,menge,notizen,apiaryId,apiaryName,anzahlVoelker,createdAt)
