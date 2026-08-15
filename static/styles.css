@@ -696,6 +696,13 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 .obs-btn.hidden { display:none !important; }
 .obs-swarm-row.hidden { display:none !important; }
 
+/* ---------- Einstellungen: sticky Kopf-Leiste (Setup/Backup + Speichern) ---------- */
+.settings-sticky-toolbar{
+  position:sticky; z-index:15; background:var(--bg);
+  display:flex; justify-content:flex-end; align-items:center; gap:.5rem; flex-wrap:wrap;
+  padding:.4rem 0 .6rem; margin-bottom:.3rem; border-bottom:1px solid var(--line);
+}
+
 /* ---------- Einstellungen: aufklappbare Bereiche ---------- */
 .settings-section {
   border-bottom: 1px solid var(--line);

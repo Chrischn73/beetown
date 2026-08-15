@@ -4918,7 +4918,7 @@ async function renderSettings() {
       <div class="settings-section-body">${body}</div>
     </details>`;
   app.innerHTML=`<div class="settings">
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+    <div class="settings-sticky-toolbar">
       <a class="btn btn-ghost btn-sm" id="setup-portal-link" style="display:none">⚙️ Setup / Update / Backup</a>
       <button class="btn btn-save-settings" id="save-all-settings">💾 Speichern</button>
     </div>
@@ -4976,14 +4976,29 @@ async function renderSettings() {
       <p class="muted">Bis zu 5 Beelogger-Waagen eintragen.</p>
       <ul class="card-list">${scales.map((s)=>`<li class="card"><div class="card-main"><div class="card-title">${esc(s.name)}</div><div class="card-sub scale-url-preview">${esc(s.url||'–')}</div></div><button class="btn btn-ghost btn-sm" data-edit-scale="${s.id}">Bearbeiten</button></li>`).join('')}${scales.length===0?'<li class="card muted" style="justify-content:center">Noch keine Waagen</li>':''}</ul>
       ${scales.length<5?'<button class="btn btn-ghost block" id="add-scale">+ Waage hinzufügen</button>':''}`)}
-    ${settingsSection('allecols','„Alle Völker" – Angezeigte Felder',`
+    ${settingsSection('darstellung','Darstellung',`
+      <label class="lbl">Design</label>
+      <select class="inp" id="theme-select">
+        <option value="system">System (automatisch)</option>
+        <option value="light">Hell</option>
+        <option value="dark">Dunkel</option>
+      </select>
+      <label class="check-item" style="margin-top:.7rem">
+        <input type="checkbox" id="toggle-hr-nrs"> <span>Honigraum-Nummern in Übersicht anzeigen</span>
+      </label>
+      <label class="check-item" style="margin-top:.5rem">
+        <input type="checkbox" id="toggle-show-search"> <span>Suchfeld auf Startseite anzeigen</span>
+      </label>
+
+      <div class="section-h" style="margin-top:1.2rem">„Alle Völker" – Angezeigte Felder</div>
       <p class="muted">Welche Spalten sollen in der Gesamtübersicht erscheinen?</p>
       <div class="check-list" id="all-cols-cfg">
         ${ALL_COLS.map(c=>`<label class="check-item">
           <input type="checkbox" class="all-col-chk" data-key="${c.key}" ${c.def?'checked':''}><span>${esc(c.label)}</span>
         </label>`).join('')}
-      </div>`)}
-    ${settingsSection('homebtns','Startseite – Angezeigte Buttons',`
+      </div>
+
+      <div class="section-h" style="margin-top:1.2rem">Startseite – Angezeigte Buttons</div>
       <p class="muted">Welche Buttons sollen erscheinen, wie groß, mit oder ohne Text? Jeder Button einzeln einstellbar.</p>
       <div class="home-btn-bulk-row">
         <input type="color" id="home-btn-bulk-color" value="#ffd43b" title="Sammel-Farbe">
@@ -5018,8 +5033,9 @@ async function renderSettings() {
             <input class="inp home-btn-color-inp" data-key="${c.key}" type="color" value="#ffd43b" style="width:2.4rem;height:2.2rem;padding:.15rem;display:none">
           </div>
         </div>`).join('')}
-      </div>`)}
-    ${settingsSection('btncolors','Button-Farben (übrige Menüs)',`
+      </div>
+
+      <div class="section-h" style="margin-top:1.2rem">Button-Farben (übrige Menüs)</div>
       <p class="muted">Gilt für alle Buttons außerhalb der Startseite (dort gelten die einzeln
       eingestellten Farben oben weiterhin unverändert). Nur zwei Farben für die ganze App:</p>
       <label class="check-item" style="margin-top:.4rem">
@@ -5030,19 +5046,6 @@ async function renderSettings() {
         <input type="checkbox" id="btn-primary-color-chk"><span>Hervorgehobene Buttons (z. B. "Erfassen")</span>
       </label>
       <input class="inp" id="btn-primary-color-inp" type="color" value="#ffd43b" style="width:2.4rem;height:2.2rem;padding:.15rem;margin-top:.3rem;display:none">`)}
-    ${settingsSection('darstellung','Darstellung',`
-      <label class="lbl">Design</label>
-      <select class="inp" id="theme-select">
-        <option value="system">System (automatisch)</option>
-        <option value="light">Hell</option>
-        <option value="dark">Dunkel</option>
-      </select>
-      <label class="check-item" style="margin-top:.7rem">
-        <input type="checkbox" id="toggle-hr-nrs"> <span>Honigraum-Nummern in Übersicht anzeigen</span>
-      </label>
-      <label class="check-item" style="margin-top:.5rem">
-        <input type="checkbox" id="toggle-show-search"> <span>Suchfeld auf Startseite anzeigen</span>
-      </label>`)}
     ${settingsSection('varroa','Varroa Zählung',`
       <label class="check-item">
         <input type="checkbox" id="toggle-varroa-autonext"> <span>Nach dem Speichern automatisch zum nächsten Volk springen</span>
@@ -5077,6 +5080,12 @@ async function renderSettings() {
       <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-umlarv" style="margin-top:.5rem">Königinnenzucht-Datum (Volkseinstellungen) zurücksetzen</button>
       <p class="muted" style="margin-top:.5rem">Setzt nur die Felder am Volk zurück – vorhandene Einträge in der Stockkarte bleiben erhalten.</p>`)}
   </div>`;
+  /* Sticky-Leiste (Setup/Backup + Speichern) muss direkt unter der (ebenfalls sticky)
+     Kopfzeile "einrasten" - deren Höhe ist je nach Geraet (Safe-Area-Inset oben bei
+     Notch-Displays) unterschiedlich, daher hier gemessen statt fest verdrahtet. */
+  const topbarEl = document.querySelector('.topbar');
+  const stickyToolbar = document.querySelector('.settings-sticky-toolbar');
+  if(topbarEl && stickyToolbar) stickyToolbar.style.top = topbarEl.offsetHeight + 'px';
   document.querySelectorAll('.settings-section').forEach(sec=>{
     const key='settingsSecOpen_'+sec.dataset.sec;
     if(localStorage.getItem(key)==='1') sec.open=true;
