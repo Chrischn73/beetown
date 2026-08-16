@@ -173,8 +173,9 @@ body{
   background:var(--danger); color:#fff; border:2px solid var(--surface); font-size:.7rem; cursor:pointer; line-height:1}
 .cap-inp{width:108px; margin-top:.3rem; font:inherit; font-size:.78rem; padding:.35rem .45rem;
   border:1px solid var(--line); border-radius:7px; background:var(--input-bg); color:var(--ink)}
-.photo-row{display:flex; gap:.5rem; margin-top:.5rem}
+.photo-row{display:flex; gap:.5rem; margin-top:.5rem; flex-wrap:wrap}
 .photo-row .btn-photo{flex:1}
+.photo-row .photo-btn-hd{flex:0 0 auto}
 
 /* ---------- Fotos (Timeline) ---------- */
 .photos{display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.6rem}

@@ -710,8 +710,8 @@ function resizeImage(file, maxSize=1280, quality=0.82) {
     img.src=url;
   });
 }
-async function uploadPhoto(file) {
-  const blob = await resizeImage(file);
+async function uploadPhoto(file, highRes=false) {
+  const blob = highRes ? await resizeImage(file, 3000, 0.92) : await resizeImage(file);
   const {id} = await api('POST','./api/photos',blob,true);
   return id;
 }
@@ -721,6 +721,7 @@ function photoButtonsHTML(thumbsId='form-thumbs', allEntries, colonyId) {
     <div class="photo-row">
       <label class="btn btn-photo">📷 Kamera<input type="file" accept="image/*" capture="environment" class="photo-input" hidden></label>
       <label class="btn btn-photo">🖼 Galerie<input type="file" accept="image/*" multiple class="photo-input" hidden></label>
+      <label class="btn btn-photo btn-sm photo-btn-hd" title="Foto in höherer Auflösung speichern - z. B. damit Varroamilben besser erkennbar sind">🔍 Varroa<input type="file" accept="image/*" capture="environment" class="photo-input photo-input-hd" hidden></label>
     </div>`;
 }
 
@@ -758,8 +759,9 @@ function wirePhotos(photos, thumbsId='form-thumbs', allEntries, currentEntryId) 
   document.querySelectorAll('.photo-input').forEach((inp)=>inp.onchange=async(ev)=>{
     const labels=[...document.querySelectorAll('.btn-photo')];
     labels.forEach((l)=>l.classList.add('busy'));
+    const highRes = inp.classList.contains('photo-input-hd');
     for(const f of [...ev.target.files]){
-      try{const id=await uploadPhoto(f);photos.push({id,caption:''});}
+      try{const id=await uploadPhoto(f, highRes);photos.push({id,caption:''});}
       catch(err){alert('Foto-Fehler: '+err.message);}
     }
     labels.forEach((l)=>l.classList.remove('busy'));
