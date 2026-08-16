@@ -274,10 +274,13 @@ textarea.inp{resize:vertical}
 
 /* ---------- Lightbox ---------- */
 .lightbox{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.92);
-  display:flex; align-items:center; justify-content:center; padding:1rem; cursor:zoom-out}
-.lightbox figure{margin:0; max-width:100%; max-height:100%; display:flex; flex-direction:column; align-items:center}
-.lightbox img{max-width:100%; max-height:88vh; border-radius:8px}
+  display:flex; align-items:center; justify-content:center; padding:1rem; cursor:zoom-out; overflow:auto}
+.lightbox figure{margin:auto; max-width:100%; max-height:100%; display:flex; flex-direction:column; align-items:center}
+.lightbox img{max-width:100%; max-height:88vh; border-radius:8px; cursor:zoom-in}
 .lightbox figcaption{color:#eee; margin-top:.6rem; font-size:.9rem; text-align:center}
+.lightbox.lightbox-zoomed{align-items:flex-start; justify-content:flex-start}
+.lightbox.lightbox-zoomed figure{margin:0; max-width:none; max-height:none}
+.lightbox.lightbox-zoomed img{max-width:none; max-height:none; cursor:zoom-out}
 
 /* ---------- Fehlerbanner ---------- */
 .banner-error{background:var(--danger-soft-bg); border:1px solid var(--danger-soft-line); color:var(--danger);
@@ -588,17 +591,6 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 }
 .form-divider { border-color: var(--honey, #f5a623) !important; opacity: .5; }
 
-/* Umlarv-Info Block */
-.umlarv-info {
-  display: flex; flex-wrap: wrap; gap: .3rem .6rem;
-  align-items: center; margin: .4rem 0;
-  background: var(--surface); border: 1px solid var(--line);
-  border-radius: 8px; padding: .4rem .6rem; font-size: .85rem;
-}
-.umlarv-label { font-weight: 700; color: var(--ink-soft); }
-.umlarv-sep   { color: var(--line); }
-.umlarv-future { color: #2f9e44; font-weight: 700; }
-.umlarv-past   { color: var(--ink-soft); text-decoration: line-through; }
 
 /* ---------- v1.9.9 – Alle Völker ---------- */
 .all-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.3rem}
@@ -637,7 +629,7 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 }
 .umlarv-label{
   font-weight:700; color:var(--ink-soft);
-  min-width:120px; flex-shrink:0;
+  min-width:145px; flex-shrink:0;
 }
 .umlarv-date{ font-weight:600; }
 .umlarv-future{ color:#2f9e44; }

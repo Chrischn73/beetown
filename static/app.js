@@ -2068,12 +2068,12 @@ function entryForm(colonyId, existing, colony, allEntries) {
     </div>
     ${selectField('Art','type',existing?.type||'',ENTRY_TYPES.map((t)=>[t,t]))}
     ${field('Datum','date',existing?.date||todayInput(),true,'date')}
+    ${photoButtonsHTML()}
     ${selectField('Sanftmut','temper',existing?.temper||'---',TEMPER_OPTIONS.map((t)=>[t,t]))}
     ${selectField('Volksstärke','strength',existing?.strength||'---',STRENGTH_OPTIONS.map((t)=>[t,t]))}
     ${selectField('Futter','food',existing?.food||'---',FOOD_OPTIONS.map((t)=>[t,t]))}
     ${field('Gewicht (kg)','gewicht',existingExtra.gewicht||'','','number')}
-    ${textareaField('Notizen','notes',existing?.notes)}
-    ${photoButtonsHTML()}`,
+    ${textareaField('Notizen','notes',existing?.notes)}`,
     async(data,close)=>{
       const obs_extra={...swarmCounts, ...selectValues,
         gewicht: data.gewicht||'',
@@ -5629,6 +5629,9 @@ function openLightbox(url,caption){
   back.className='lightbox';
   back.innerHTML=`<figure><img src="${url}">${caption?`<figcaption>${esc(caption)}</figcaption>`:''}</figure>`;
   back.onclick=()=>back.remove();
+  /* Klick aufs Bild selbst vergroessert es auf Originalgroesse (scrollbar) statt die Lightbox
+     zu schliessen - vor allem am PC gedacht, wo es keine Pinch-Geste gibt. */
+  back.querySelector('img').onclick=(e)=>{ e.stopPropagation(); back.classList.toggle('lightbox-zoomed'); };
   document.body.appendChild(back);
 }
 
