@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.28';
+const APP_VERSION = 'v2.9.29';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -5110,6 +5110,13 @@ async function renderSettings() {
       <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-oxalblock" style="margin-top:.5rem">Oxalsäure-Blockbehandlung (Volkseinstellungen) zurücksetzen</button>
       <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-umlarv" style="margin-top:.5rem">Königinnenzucht-Datum (Volkseinstellungen) zurücksetzen</button>
       <p class="muted" style="margin-top:.5rem">Setzt nur die Felder am Volk zurück – vorhandene Einträge in der Stockkarte bleiben erhalten.</p>`)}
+    ${settingsSection('system','System',`
+      <label class="check-item">
+        <input type="checkbox" id="toggle-zugangsschutz"> <span>Passwort-Abfrage beim Öffnen der App aktiv</span>
+      </label>
+      <p class="muted" style="margin-top:.4rem">Schützt den Browser-Zugriff auf diese App mit einem gemeinsamen
+      Passwort (kein Benutzerkonto, keine E-Mail). Beim Deaktivieren ist die App für jeden im selben Netzwerk ohne
+      Passwort erreichbar - wirkt sofort nach dem Speichern.</p>`)}
   </div>`;
   /* Sticky-Leiste (Setup/Backup + Speichern) muss direkt unter der (ebenfalls sticky)
      Kopfzeile "einrasten" - deren Höhe ist je nach Geraet (Safe-Area-Inset oben bei
@@ -5403,6 +5410,9 @@ async function renderSettings() {
     // Suchfeld
     const showSearchToggle=document.getElementById('toggle-show-search');
     if(showSearchToggle) payload.showSearch=showSearchToggle.checked?'true':'false';
+    // Passwort-Zugangsschutz (invertiert: Haekchen=Schutz AN -> zugangDeaktiviert='false')
+    const zugangToggle=document.getElementById('toggle-zugangsschutz');
+    if(zugangToggle) payload.zugangDeaktiviert=zugangToggle.checked?'false':'true';
     // Aktions-Buttons
     document.querySelectorAll('.action-btn-chk').forEach(chk=>{
       payload['actionBtn_'+chk.dataset.key]=chk.checked?'true':'false';
@@ -5435,6 +5445,12 @@ async function renderSettings() {
       await api('POST','./api/settings',{showSearch: showSearchToggle.checked ? 'true' : 'false'});
       window._showSearch = showSearchToggle.checked;
     };
+  }
+  const zugangToggleLoad=document.getElementById('toggle-zugangsschutz');
+  if(zugangToggleLoad){
+    apiGet('./api/settings').then(s => {
+      zugangToggleLoad.checked = (s.zugangDeaktiviert !== 'true');
+    }).catch(()=>{ zugangToggleLoad.checked = true; });
   }
   const varroaAutoNextToggle=document.getElementById('toggle-varroa-autonext');
   if(varroaAutoNextToggle){
