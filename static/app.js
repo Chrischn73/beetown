@@ -3447,6 +3447,42 @@ async function renderSirupCalc() {
   await loadHistory();
 }
 
+/* Langes Antippen (1 s) eines Volk-Eintrags in einer Arbeitsliste (Gewicht, Varroa)
+   springt zur Volk-Seite; der Zurueck-Pfeil dort fuehrt an die alte Scroll-Position der
+   Liste zurueck. Ein kurzer Tap loest weiterhin die Erfassung aus. Rueckgabe ist eine
+   Pruef-Funktion fuer den onclick-Handler: liefert true, wenn der Tap ein Long-Press war
+   und der Klick deshalb ignoriert werden soll. */
+function attachColonyLongPress(li, resolveColony, fromView){
+  let pressTimer = null;
+  let longPressed = false;
+  let activePointerId = null;
+
+  const startPress = (e) => {
+    longPressed = false;
+    activePointerId = e.pointerId;
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      /* Implizite Pointer-Capture explizit freigeben, BEVOR das Element aus dem DOM verschwindet –
+         sonst bleibt der Browser (v.a. Android/iOS) in einem "Finger hängt noch am alten Element"-
+         Zustand, der erst durch einen zweiten, ins Leere gehenden Tap aufgelöst wird. */
+      try{ if(activePointerId!=null && li.hasPointerCapture?.(activePointerId)) li.releasePointerCapture(activePointerId); }catch(_){}
+      const colony = resolveColony();
+      if(colony) go('colony', { colonyId: colony.id, apiaryId: colony.apiaryId, from: fromView, fromParams: {restoreScrollY: window.scrollY} });
+    }, 1000);
+  };
+  const cancelPress = () => {
+    if(pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+  };
+
+  li.addEventListener('pointerdown', startPress);
+  li.addEventListener('pointerup', cancelPress);
+  li.addEventListener('pointerleave', cancelPress);
+  li.addEventListener('pointercancel', cancelPress);
+  li.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  return () => { if(longPressed){ longPressed = false; return true; } return false; };
+}
+
 /* ---------- Gewicht ---------- */
 
 async function renderLastEntries() {
@@ -3508,6 +3544,9 @@ async function renderVarroaCount() {
   let currentApiaryId = apiaries.some(a => a.id === savedVarroaApiaryId) ? savedVarroaApiaryId : apiaries[0].id;
   let all = [];
   let lastCountMap = {};
+  /* Nur sinnvoll, wenn ueberhaupt automatisch weitergesprungen wird - der Haken wird
+     deshalb gar nicht angezeigt, solange autoNext aus ist. */
+  let editBackwards = false;
 
   const cardSub = (c) => {
     const last = lastCountMap[c.id];
@@ -3520,7 +3559,7 @@ async function renderVarroaCount() {
     listEl.innerHTML = all.length === 0
       ? `<p class="muted" style="padding:.6rem 0">Keine Völker an diesem Standort.</p>`
       : all.map(c => `
-        <li class="card" data-colony="${esc(c.id)}" style="cursor:pointer">
+        <li class="card" data-colony="${esc(c.id)}" style="cursor:pointer;touch-action:manipulation;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none">
           <div class="card-main">
             <div class="card-title">${esc(c.name)}</div>
             <div class="card-sub" id="varroa-sub-${esc(c.id)}">${cardSub(c)}</div>
@@ -3528,7 +3567,11 @@ async function renderVarroaCount() {
           <img src="./icons/varroa.png" alt="" style="width:20px;height:20px;object-fit:contain">
         </li>`).join('');
     listEl.querySelectorAll('[data-colony]').forEach(el => {
-      el.onclick = () => openForColony(all.findIndex(c=>c.id===el.dataset.colony));
+      const wasLongPress = attachColonyLongPress(el, () => all.find(c=>c.id===el.dataset.colony), 'varroacount');
+      el.onclick = () => {
+        if(wasLongPress()) return;
+        openForColony(all.findIndex(c=>c.id===el.dataset.colony));
+      };
     });
     const countEl = document.getElementById('varroa-count-label');
     if(countEl) countEl.textContent = `${all.length} Völker`;
@@ -3568,7 +3611,7 @@ async function renderVarroaCount() {
       const sub = document.getElementById('varroa-sub-'+c.id);
       lastCountMap[c.id] = { varroaCount: data.varroaCount||'0', date: todayInput(), varroaAnts: antsVal };
       if(sub) sub.textContent = cardSub(c);
-      if(autoNext) openForColony(idx+1);
+      if(autoNext) openForColony(editBackwards ? idx-1 : idx+1);
     });
     const antsBtn = document.getElementById('btn-ants');
     if(antsBtn) antsBtn.onclick = () => antsBtn.classList.toggle('on');
@@ -3588,6 +3631,11 @@ async function renderVarroaCount() {
     </select>
     <label class="lbl" style="margin-top:.6rem">Info-Text (wird bei jeder Zählung übernommen)</label>
     <textarea class="inp" id="varroa-infotext" rows="2" placeholder="z.B. Windel eingelegt am ..., Auswertung nach 3 Tagen"></textarea>
+    ${autoNext ? `
+    <label class="check-item" style="margin-top:.6rem">
+      <input type="checkbox" id="varroa-rueckwaerts-toggle">
+      <span>Völker rückwärts bearbeiten</span>
+    </label>` : ''}
     <ul class="card-list" id="varroa-list" style="margin-top:.8rem"></ul>`;
 
   $('#open-varroahistory').onclick = () => go('varroahistory', {from:'varroacount', fromParams:{restoreScrollY: window.scrollY}});
@@ -3595,6 +3643,8 @@ async function renderVarroaCount() {
     api('POST','./api/settings',{varroaApiaryFilter: ev.target.value}).catch(()=>{});
     loadApiary(ev.target.value);
   };
+  const varroaRueckwaerts = document.getElementById('varroa-rueckwaerts-toggle');
+  if(varroaRueckwaerts) varroaRueckwaerts.onchange = (ev) => { editBackwards = ev.target.checked; };
 
   await loadApiary(currentApiaryId);
 }
@@ -3825,35 +3875,9 @@ async function renderGewicht() {
       </ul>`;
 
     bodyEl.querySelectorAll('.gewicht-item').forEach(li => {
-      let pressTimer = null;
-      let longPressed = false;
-      let activePointerId = null;
-
-      const startPress = (e) => {
-        longPressed = false;
-        activePointerId = e.pointerId;
-        pressTimer = setTimeout(() => {
-          longPressed = true;
-          /* Implizite Pointer-Capture explizit freigeben, BEVOR das Element aus dem DOM verschwindet –
-             sonst bleibt der Browser (v.a. Android/iOS) in einem "Finger hängt noch am alten Element"-
-             Zustand, der erst durch einen zweiten, ins Leere gehenden Tap aufgelöst wird. */
-          try{ if(activePointerId!=null && li.hasPointerCapture?.(activePointerId)) li.releasePointerCapture(activePointerId); }catch(_){}
-          const colony = all.find(c => c.id === li.dataset.id);
-          if(colony) go('colony', { colonyId: colony.id, apiaryId: colony.apiaryId, from: 'gewicht', fromParams: {restoreScrollY: window.scrollY} });
-        }, 1000);
-      };
-      const cancelPress = () => {
-        if(pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-      };
-
-      li.addEventListener('pointerdown', startPress);
-      li.addEventListener('pointerup', cancelPress);
-      li.addEventListener('pointerleave', cancelPress);
-      li.addEventListener('pointercancel', cancelPress);
-      li.addEventListener('contextmenu', (e) => e.preventDefault());
-
+      const wasLongPress = attachColonyLongPress(li, () => all.find(c => c.id === li.dataset.id), 'gewicht');
       li.onclick = () => {
-        if(longPressed) { longPressed = false; return; }
+        if(wasLongPress()) return;
         const idx = all.findIndex(c => c.id === li.dataset.id);
         if(idx>=0) openWeightModal(idx);
       };
