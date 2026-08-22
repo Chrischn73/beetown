@@ -25,6 +25,7 @@ function varroaCountBadgeHTML(e){
 /* ---------- Globale Settings ---------- */
 window._showHrNrs = true; // Default: anzeigen
 window._showSearch = true; // Default: anzeigen
+window._autoKomma = true; // Default: an (Gewichtseingabe ohne Komma, siehe autoKommaWeight())
 window._actionBtnVis = {}; // key -> bool, Default: alle an (siehe actionBtnHidden())
 window._obsBtnVis = {};    // key -> bool, Default: alle an (siehe obsBtnHidden())
 window._homeBtnVis = {};   // key -> bool, Default: alle an (siehe homeBtnHidden())
@@ -36,6 +37,7 @@ async function loadSettings() {
     const s = await apiGet('./api/settings');
     window._showHrNrs = (s.showHrNrs !== 'false');
     window._showSearch = (s.showSearch !== 'false');
+    window._autoKomma = (s.autoKomma !== 'false');
     const actionVis = {};
     ACTION_BTN_CONFIG.forEach(c => { actionVis[c.key] = (s['actionBtn_'+c.key] !== 'false'); });
     window._actionBtnVis = actionVis;
@@ -200,6 +202,18 @@ const photoURL = (id) => `./api/photos/${id}`;
 function parseDecimal(str) {
   if(str==null) return NaN;
   return parseFloat(String(str).trim().replace(',','.'));
+}
+/* Automatische Kommasetzung bei Gewichtseingaben: wer am Handy tippt, spart sich das
+   Komma - die Trennung sitzt immer nach der zweiten Stelle (1234 -> 12,34, 123 -> 12,3,
+   12 -> 12,0, 8 -> 8,0). Greift nur bei reinen Ziffernfolgen; sobald ein Komma oder Punkt
+   getippt wurde, bleibt die Eingabe unangetastet. Ab 5 Ziffern ebenfalls unverändert -
+   das ist eher ein Tippfehler als ein Gewicht. */
+function autoKommaWeight(str) {
+  const s = String(str==null?'':str).trim();
+  if(!/^\d+$/.test(s)) return s;
+  if(s.length === 1 || s.length === 2) return s + ',0';
+  if(s.length === 3 || s.length === 4) return s.slice(0,2) + ',' + s.slice(2);
+  return s;
 }
 function fmtNum(n) {
   return (Math.round(n*10)/10).toString().replace('.',',');
@@ -3731,6 +3745,7 @@ async function renderGewicht() {
   let currentApiaryId = apiaries.some(a => a.id === savedApiaryId) ? savedApiaryId : '';
   const rundgangTage = parseInt(gewichtSettings.gewichtRundgangTage) || 4;
   let onlyUnweighedMode = false;
+  let editBackwards = false;
   let all = [];
   const applyFilter = () => {
     all = currentApiaryId ? fullList.filter(c => c.apiaryId === currentApiaryId) : fullList.slice();
@@ -3751,6 +3766,14 @@ async function renderGewicht() {
     for(let i=fromIdx+1;i<all.length;i++){ if(!recentlyWeighed(all[i])) return i; }
     return all.length;
   };
+  /* Spiegelbild von findNextIndex() fuer den Rueckwaerts-Modus. */
+  const findPrevIndex = (fromIdx) => {
+    if(!onlyUnweighedMode) return fromIdx-1;
+    for(let i=fromIdx-1;i>=0;i--){ if(!recentlyWeighed(all[i])) return i; }
+    return -1;
+  };
+  /* Richtung, in die nach dem Speichern und ueber den Sprung-Button weitergegangen wird. */
+  const findStepIndex = (fromIdx) => editBackwards ? findPrevIndex(fromIdx) : findNextIndex(fromIdx);
 
   app.innerHTML = `
     <p class="muted" style="font-size:.8rem; margin:0 0 .8rem">Hier kannst du alle Gewichte erfassen –
@@ -3760,9 +3783,13 @@ async function renderGewicht() {
       <option value="" ${currentApiaryId===''?'selected':''}>Alle Standorte</option>
       ${apiaries.map(a => `<option value="${esc(a.id)}" ${a.id===currentApiaryId?'selected':''}>${esc(a.name)}</option>`).join('')}
     </select>
-    <label class="check-item" style="margin-bottom:.8rem">
+    <label class="check-item">
       <input type="checkbox" id="gewicht-rundgang-toggle">
       <span>Nicht gewogen (${rundgangTage} Tage)</span>
+    </label>
+    <label class="check-item" style="margin-bottom:.8rem">
+      <input type="checkbox" id="gewicht-rueckwaerts-toggle">
+      <span>Völker rückwärts bearbeiten</span>
     </label>
     <div id="gewicht-body"></div>
     <div style="padding:1rem .8rem .5rem;display:flex;flex-direction:column;gap:.5rem">
@@ -3835,25 +3862,26 @@ async function renderGewicht() {
 
   /* Eigenes (nicht auf openModal() basierendes) Modal fuer die Gewichtserfassung:
      kein X, Fenster oben statt als Bottom-Sheet ausgerichtet, Abbrechen/Zurueck/
-     Weiterspringen unten. "Weiter" und "Speichern" sitzen jeweils direkt rechts
-     neben ihrem Eingabefeld statt als ein gemeinsamer Button oben. */
-  const openWeightModal = (idx) => {
-    if(idx<0 || idx>=all.length) return;
-    const c = all[idx];
-    const oldCur = parseFloat(c.currentWeight);
-    const hasOld = !isNaN(oldCur);
-    const oldWeightText = hasOld
-      ? `${fmtKg(oldCur)} kg${c.currentWeightDate ? ' (Stand '+fmtDate(c.currentWeightDate)+')' : ''}`
-      : 'noch kein Gewicht erfasst';
+     Weiterspringen unten. Ein einziger Button rechts neben Teilgewicht 2 fuehrt durch
+     die Eingabe: erst "Weiter" (springt auf Teilgewicht 2), dann "Speichern".
+     Beim Volkswechsel wird das Modal absichtlich NICHT neu aufgebaut, sondern nur neu
+     befuellt (loadColony) - so behaelt Teilgewicht 1 durchgehend den Fokus und die
+     Handy-Tastatur bleibt offen. Ein focus() nach einem await ignorieren mobile Browser,
+     weil es dann ausserhalb der Tap-Geste liegt. */
+  const openWeightModal = (startIdx) => {
+    if(startIdx<0 || startIdx>=all.length) return;
+    let idx = startIdx;
+    let c = all[idx];
+    let oldCur = NaN, hasOld = false;
 
     const back=document.createElement('div');
     back.className='modal-back modal-top';
     back.innerHTML=`<div class="modal" role="dialog" aria-modal="true">
       <div class="modal-head" style="flex-direction:column;align-items:center;text-align:center;gap:.1rem">
         <div class="muted" style="font-size:.8rem">Gewicht erfassen</div>
-        <h2 style="font-size:1.6rem;font-weight:700;margin:0">${esc(c.name)}</h2>
+        <h2 id="w-name" style="font-size:1.6rem;font-weight:700;margin:0"></h2>
       </div>
-      <div style="padding:0 1rem .6rem;font-size:.85rem;color:var(--ink-soft)">Bisheriges Gewicht: <strong style="color:var(--ink)">${oldWeightText}</strong></div>
+      <div style="padding:0 1rem .6rem;font-size:.85rem;color:var(--ink-soft)">Bisheriges Gewicht: <strong id="w-old" style="color:var(--ink)"></strong></div>
       <form class="modal-body">
         <div style="display:flex;align-items:center;gap:.6rem;margin:.4rem 0">
           <label class="lbl" style="margin:0;flex-shrink:0">Datum</label>
@@ -3861,19 +3889,16 @@ async function renderGewicht() {
           <button type="button" class="btn btn-ghost btn-sm date-clear" data-clear="date" title="Datum löschen" style="flex-shrink:0">✕</button>
         </div>
         <label class="lbl" style="font-size:1rem">Teilgewicht 1 (kg)</label>
-        <div style="display:flex;align-items:center;gap:.5rem">
-          <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3" style="flex:1;min-width:0;font-size:1.2rem">
-          <button type="button" class="btn btn-primary" id="w-next" style="flex-shrink:0;font-size:1.2rem">Weiter</button>
-        </div>
+        <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3" style="width:100%;font-size:1.2rem">
         <label class="lbl" style="margin-top:.5rem;font-size:1rem">Teilgewicht 2 (kg)</label>
         <div style="display:flex;align-items:center;gap:.5rem">
           <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1" style="flex:1;min-width:0;font-size:1.2rem">
-          <button type="button" class="btn btn-primary" id="w-save" style="flex-shrink:0;font-size:1.2rem">Speichern</button>
+          <button type="button" class="btn btn-primary" id="w-step" style="flex-shrink:0;font-size:1.2rem">Weiter</button>
         </div>
       </form>
       <div class="modal-foot" style="flex-direction:column;gap:.5rem;align-items:stretch">
         <div style="display:flex;gap:.5rem">
-          <button type="button" class="btn btn-subtle btn-sm" id="w-prev" style="flex:0 0 auto" ${idx<=0?'disabled':''}>← Zurück</button>
+          <button type="button" class="btn btn-subtle btn-sm" id="w-prev" style="flex:0 0 auto">← Zurück</button>
           <button type="button" class="btn btn-subtle btn-sm" id="w-skip" style="flex:1">Zum nächsten Volk springen</button>
         </div>
         <button type="button" class="btn btn-ghost" id="w-cancel" style="width:100%">Abbrechen</button>
@@ -3882,69 +3907,135 @@ async function renderGewicht() {
     document.body.appendChild(back);
 
     const form=back.querySelector('.modal-body');
-    const initialValues=snapshotFormValues(form);
+    const nameEl = back.querySelector('#w-name');
+    const oldEl = back.querySelector('#w-old');
+    const stepBtn = back.querySelector('#w-step');
+    const prevBtn = back.querySelector('#w-prev');
+    const skipBtn = back.querySelector('#w-skip');
+    const dateInput = form.querySelector('input[name="date"]');
+    const t1input = form.querySelector('input[name="teil1"]');
+    const t2input = form.querySelector('input[name="teil2"]');
+    let initialValues = snapshotFormValues(form);
+
     back.querySelectorAll('.date-clear').forEach(b=>b.onclick=()=>{
       const inp=form.querySelector(`input[name="${b.dataset.clear}"]`);
       if(inp) inp.value='';
     });
     const close=()=>back.remove();
-    const guardedLeave = (next) => {
-      if(formIsDirty(form,initialValues) && !confirm('Ohne zu speichern schließen?')) return;
-      close();
-      next();
-    };
-    back.querySelector('#w-cancel').onclick=()=>guardedLeave(()=>{});
-    back.querySelector('#w-skip').onclick=()=>guardedLeave(()=>openWeightModal(findNextIndex(idx)));
-    const prevBtn = back.querySelector('#w-prev');
-    if(!prevBtn.disabled) prevBtn.onclick=()=>guardedLeave(()=>openWeightModal(idx-1));
+    const confirmLeave = () => !formIsDirty(form,initialValues) || confirm('Ohne zu speichern schließen?');
 
-    const saveBtn = back.querySelector('#w-save');
-    const t1input = form.querySelector('input[name="teil1"]');
-    const t2input = form.querySelector('input[name="teil2"]');
+    /* Ein Tap auf einen Button wuerde dem Eingabefeld den Fokus nehmen und am Handy die
+       Tastatur zuklappen - preventDefault auf mousedown verhindert den Fokuswechsel,
+       der click-Handler laeuft trotzdem. */
+    [stepBtn, prevBtn, skipBtn].forEach(b => b.addEventListener('mousedown', (e)=>e.preventDefault()));
+
+    /* Komma automatisch setzen (Einstellungen → Gewicht), sobald das Feld verlassen
+       wird bzw. bevor weitergesprungen/gespeichert wird. */
+    const applyAutoKomma = (inp) => {
+      if(!window._autoKomma) return;
+      const fixed = autoKommaWeight(inp.value);
+      if(fixed !== inp.value) inp.value = fixed;
+    };
+    t1input.addEventListener('blur', ()=>applyAutoKomma(t1input));
+    t2input.addEventListener('blur', ()=>applyAutoKomma(t2input));
+
+    /* Ein Button, zwei Stufen: 1 = "Weiter" (auf Teilgewicht 2), 2 = "Speichern". */
+    let stage = 1;
+    const setStage = (s) => { stage = s; stepBtn.textContent = (s===1 ? 'Weiter' : 'Speichern'); };
+    t1input.addEventListener('focus', ()=>setStage(1));
+    t2input.addEventListener('focus', ()=>setStage(2));
+
     /* Leeres Teilgewicht 1 beim Weiterspringen automatisch mit 0 besetzen, statt zu blockieren -
        eine Waagschale kann durchaus leer sein. */
     const advanceToTeil2 = () => {
+      applyAutoKomma(t1input);
       if(t1input.value.trim()==='') t1input.value='0';
       t2input.focus();
+      setStage(2);
     };
-    back.querySelector('#w-next').onclick = advanceToTeil2;
-    saveBtn.onclick = () => doSave();
-    t1input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); advanceToTeil2(); } });
-    t2input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); doSave(); } });
+
+    /* Im Rueckwaerts-Modus tauschen die beiden Fussnavigations-Buttons die Richtung:
+       gesprungen wird zum vorherigen Volk, "Zurueck" geht dann nach vorne. */
+    const updateNavButtons = () => {
+      if(editBackwards){
+        prevBtn.textContent = 'Vorwärts →';
+        prevBtn.disabled = idx >= all.length-1;
+        skipBtn.textContent = 'Zum vorherigen Volk springen';
+      }else{
+        prevBtn.textContent = '← Zurück';
+        prevBtn.disabled = idx <= 0;
+        skipBtn.textContent = 'Zum nächsten Volk springen';
+      }
+    };
+
+    /* Bestehendes Modal auf ein anderes Volk umstellen, ohne das DOM neu zu bauen. */
+    const loadColony = (newIdx) => {
+      if(newIdx<0 || newIdx>=all.length){ close(); return; }
+      idx = newIdx;
+      c = all[idx];
+      oldCur = parseFloat(c.currentWeight);
+      hasOld = !isNaN(oldCur);
+      nameEl.textContent = c.name;
+      oldEl.textContent = hasOld
+        ? `${fmtKg(oldCur)} kg${c.currentWeightDate ? ' (Stand '+fmtDate(c.currentWeightDate)+')' : ''}`
+        : 'noch kein Gewicht erfasst';
+      dateInput.value = todayInput();
+      t1input.value = ''; t2input.value = '';
+      stepBtn.disabled = false;
+      setStage(1);
+      updateNavButtons();
+      initialValues = snapshotFormValues(form);
+      t1input.focus();
+    };
+
+    back.querySelector('#w-cancel').onclick=()=>{ if(confirmLeave()) close(); };
+    skipBtn.onclick=()=>{ if(confirmLeave()) loadColony(findStepIndex(idx)); };
+    prevBtn.onclick=()=>{
+      if(prevBtn.disabled) return;
+      if(confirmLeave()) loadColony(editBackwards ? idx+1 : idx-1);
+    };
 
     const doSave = async()=>{
+      applyAutoKomma(t1input); applyAutoKomma(t2input);
       if(t1input.value.trim()==='') t1input.value='0';
       const t1 = parseDecimal(t1input.value), t2 = parseDecimal(t2input.value);
       if(isNaN(t1)){ alert('Teilgewicht 1 ist ungültig.'); t1input.focus(); return; }
       if(isNaN(t2)){ alert('Bitte Teilgewicht 2 eingeben.'); t2input.focus(); return; }
-      const dateInput = form.querySelector('input[name="date"]');
       const entryDate = dateInput.value || todayInput();
       const newWeight = Math.round((t1+t2)*10)/10;
       const totalStr = newWeight.toString();
-      saveBtn.disabled=true;
+      const t1raw = t1input.value, t2raw = t2input.value;
+      const savedColony = c, savedOldCur = oldCur, savedHasOld = hasOld;
+      stepBtn.disabled=true;
+      /* Fokus noch innerhalb der Tap-Geste zurueck auf Teilgewicht 1 setzen - danach
+         folgen awaits, und ein focus() von dort aus bleibt am Handy wirkungslos. */
+      t1input.focus();
       try{
         await api('POST','./api/entries',{
-          colonyId: c.id, type:'Gewichtserfassung', date: entryDate, notes:'', photos:[], obs:[],
-          obs_extra: { gewicht: totalStr, teilgewicht1: t1input.value, teilgewicht2: t2input.value },
+          colonyId: savedColony.id, type:'Gewichtserfassung', date: entryDate, notes:'', photos:[], obs:[],
+          obs_extra: { gewicht: totalStr, teilgewicht1: t1raw, teilgewicht2: t2raw },
           createdAt: new Date().toISOString()
         });
-        await api('PUT','./api/colonies/'+c.id, {...c, currentWeight: totalStr, currentWeightDate: entryDate});
-        c.currentWeight = totalStr; c.currentWeightDate = entryDate;
-      }catch(err){ saveBtn.disabled=false; return alert('Fehler: '+err.message); }
-      close();
+        await api('PUT','./api/colonies/'+savedColony.id, {...savedColony, currentWeight: totalStr, currentWeightDate: entryDate});
+        savedColony.currentWeight = totalStr; savedColony.currentWeightDate = entryDate;
+      }catch(err){ stepBtn.disabled=false; return alert('Fehler: '+err.message); }
       renderList();
-      let toastMsg = `✅ ${fmtKg(newWeight)} kg gespeichert`;
-      if(hasOld){
-        const diff = Math.round((newWeight-oldCur)*10)/10;
+      let toastMsg = `<div style="font-size:1.3rem;font-weight:800;margin-bottom:.2rem">${esc(savedColony.name)}</div>✅ ${fmtKg(newWeight)} kg gespeichert`;
+      if(savedHasOld){
+        const diff = Math.round((newWeight-savedOldCur)*10)/10;
         const diffSign = diff>0?'+':(diff<0?'−':'±');
-        toastMsg += `<div style="margin-top:.3rem;font-size:.78rem;font-weight:400;opacity:.85">Alt: ${fmtKg(oldCur)} kg → Neu: ${fmtKg(newWeight)} kg</div>
+        toastMsg += `<div style="margin-top:.3rem;font-size:.78rem;font-weight:400;opacity:.85">Alt: ${fmtKg(savedOldCur)} kg → Neu: ${fmtKg(newWeight)} kg</div>
           <div style="margin-top:.15rem;font-size:1.25rem;font-weight:800">${diffSign}${fmtKg(Math.abs(diff))} kg</div>`;
       }
       showToast(toastMsg, 6000, true);
-      openWeightModal(findNextIndex(idx));
+      loadColony(findStepIndex(idx));
     };
 
-    t1input.focus();
+    stepBtn.onclick = () => { if(stage===1) advanceToTeil2(); else doSave(); };
+    t1input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); advanceToTeil2(); } });
+    t2input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); doSave(); } });
+
+    loadColony(idx);
   };
 
   renderList();
@@ -3959,6 +4050,10 @@ async function renderGewicht() {
   document.getElementById('gewicht-rundgang-toggle').onchange = (ev) => {
     onlyUnweighedMode = ev.target.checked;
     renderList();
+  };
+
+  document.getElementById('gewicht-rueckwaerts-toggle').onchange = (ev) => {
+    editBackwards = ev.target.checked;
   };
 
   document.getElementById('btn-set-ziel').onclick = () => {
@@ -4973,7 +5068,12 @@ async function renderSettings() {
       <p class="muted" style="margin-top:1rem">Rundgang-Modus auf der Gewicht-Seite: Völker, deren letzte Wägung
       höchstens so viele Tage zurückliegt, gelten als "erledigt" (grün hervorgehoben).</p>
       <label class="lbl">Tage-Schwelle</label>
-      <input class="inp" id="gewicht-rundgang-tage" type="number" min="1" max="60" value="4">`)}
+      <input class="inp" id="gewicht-rundgang-tage" type="number" min="1" max="60" value="4">
+      <p class="muted" style="margin-top:1rem">Bei den Teilgewichten das Komma automatisch setzen:
+      1234 wird zu 12,34 · 123 zu 12,3 · 12 zu 12,0. Tippt man selbst ein Komma, bleibt die Eingabe unverändert.</p>
+      <label class="check-item">
+        <input type="checkbox" id="toggle-auto-komma"> <span>Komma automatisch setzen</span>
+      </label>`)}
     ${settingsSection('oxalblockgap','Oxalsäure-Blockbehandlung',`
       <p class="muted">Nach jeder gespeicherten Blockstufe wird automatisch eine Erinnerung für die
       nächste fällige Stufe angelegt (und die vorherige Auto-Erinnerung entfernt).</p>
@@ -5410,6 +5510,9 @@ async function renderSettings() {
     // Suchfeld
     const showSearchToggle=document.getElementById('toggle-show-search');
     if(showSearchToggle) payload.showSearch=showSearchToggle.checked?'true':'false';
+    // Automatische Kommasetzung bei Teilgewichten
+    const autoKommaToggleSave=document.getElementById('toggle-auto-komma');
+    if(autoKommaToggleSave) payload.autoKomma=autoKommaToggleSave.checked?'true':'false';
     // Passwort-Zugangsschutz (invertiert: Haekchen=Schutz AN -> zugangDeaktiviert='false')
     const zugangToggle=document.getElementById('toggle-zugangsschutz');
     if(zugangToggle) payload.zugangDeaktiviert=zugangToggle.checked?'false':'true';
@@ -5434,6 +5537,16 @@ async function renderSettings() {
     hrNrsToggle.onchange = async () => {
       await api('POST','./api/settings',{showHrNrs: hrNrsToggle.checked ? 'true' : 'false'});
       window._showHrNrs = hrNrsToggle.checked;
+    };
+  }
+  const autoKommaToggle=document.getElementById('toggle-auto-komma');
+  if(autoKommaToggle){
+    apiGet('./api/settings').then(s => {
+      autoKommaToggle.checked = (s.autoKomma !== 'false');
+    }).catch(()=>{ autoKommaToggle.checked = true; });
+    autoKommaToggle.onchange = async () => {
+      await api('POST','./api/settings',{autoKomma: autoKommaToggle.checked ? 'true' : 'false'});
+      window._autoKomma = autoKommaToggle.checked;
     };
   }
   const showSearchToggle=document.getElementById('toggle-show-search');
