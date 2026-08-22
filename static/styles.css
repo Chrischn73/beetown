@@ -260,6 +260,10 @@ textarea.inp{resize:vertical}
   padding:.8rem 1rem calc(.8rem + var(--safe-bottom)); border-top:1px solid var(--line)}
 @media(min-width:680px){ .modal-back{align-items:center} .modal{border-radius:18px; max-width:520px} }
 
+/* Blickdichter statt halbtransparenter Hintergrund - fuer das Erinnerungen-Popup beim
+   App-Start, das nichts von der App dahinter durchscheinen lassen soll. */
+.modal-back-opaque{background:rgba(10,8,5,1)}
+
 /* Modal, das statt unten (Bottom-Sheet) ganz oben ausgerichtet wird (z. B. Gewichtserfassung) */
 .modal-back.modal-top{align-items:flex-start}
 .modal-back.modal-top .modal{border-radius:0 0 18px 18px; margin-top:var(--safe-top)}

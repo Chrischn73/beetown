@@ -1596,6 +1596,7 @@ async function checkDueReminders() {
     async(data,close)=>{ close(); },
     null);
   document.querySelector('.modal-back .modal-foot')?.style.setProperty('display','none');
+  document.querySelector('.modal-back')?.classList.add('modal-back-opaque');
   document.querySelectorAll('.reminder-due-popup-item').forEach(el=>{
     el.onclick=async()=>{
       const r = due.find(x=>x.id===el.dataset.id);
@@ -3913,10 +3914,10 @@ async function renderGewicht() {
           <button type="button" class="btn btn-ghost btn-sm date-clear" data-clear="date" title="Datum löschen" style="flex-shrink:0">✕</button>
         </div>
         <label class="lbl" style="font-size:1rem">Teilgewicht 1 (kg)</label>
-        <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3" style="width:100%;font-size:1.2rem">
+        <input class="inp" name="teil1" type="text" inputmode="decimal" placeholder="z. B. 10,3 oder 124 → 12,4" style="width:100%;font-size:1.2rem">
         <label class="lbl" style="margin-top:.5rem;font-size:1rem">Teilgewicht 2 (kg)</label>
         <div style="display:flex;align-items:center;gap:.5rem">
-          <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 8,1" style="flex:1;min-width:0;font-size:1.2rem">
+          <input class="inp" name="teil2" type="text" inputmode="decimal" placeholder="z. B. 10,3 oder 124 → 12,4" style="flex:1;min-width:0;font-size:1.2rem">
           <button type="button" class="btn btn-primary" id="w-step" style="flex-shrink:0;font-size:1.2rem">Weiter</button>
         </div>
       </form>
