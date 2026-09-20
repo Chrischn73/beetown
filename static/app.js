@@ -67,6 +67,7 @@ async function loadSettings() {
     window._lastEntriesLimit = parseInt(s.lastEntriesLimit) || 90;
     window._demareeShowDays = parseInt(s.demareeShowDays) || 40;
     window._kaefigungFreiShowDays = parseInt(s.kaefigungFreiShowDays) || 60;
+    window._oxalBlockShowDays = parseInt(s.oxalBlockShowDays) || 40;
     window._btnPrimaryColor = s.btnPrimaryColor || '';
     window._btnGhostColor = s.btnGhostColor || '';
     applyButtonTheme();
@@ -354,6 +355,13 @@ function oxalBlockInfo(c) {
   const daysSinceLast  = Math.floor((Date.now() - new Date(lastAt)) / 86400000);
   const done = daysSinceStart >= OXAL_BLOCK_DAYS;
   return { stage, startAt, lastAt, daysSinceStart, daysSinceLast, done };
+}
+/* Blendet das Oxal-Block-Badge nach konfigurierbarer Anzahl Tage seit Bedampfungsbeginn aus,
+   sobald der Block abgeschlossen ist - läuft er noch, bleibt es unbegrenzt sichtbar. */
+function oxalBlockVisible(c) {
+  const info = oxalBlockInfo(c);
+  if (!info || !info.done) return true;
+  return info.daysSinceStart <= (window._oxalBlockShowDays || 40);
 }
 function oxalBlockLabel(c) {
   const info = oxalBlockInfo(c);
@@ -1727,7 +1735,7 @@ ${c.requeueFlag?(()=>{const _r=c.requeueReasons?JSON.parse(c.requeueReasons||'[]
             })() : ''}
             ${c.koeniginFreiDate && (!c.kaefigungDate || c.koeniginFreiDate >= c.kaefigungDate) && kaefigungFreiVisible(c) ? `<div class="kaef-badge">👑 freigelassen: ${fmtDate(c.koeniginFreiDate)}</div>` : ''}
             ${c.demareeStage&&demareeVisible(c)?`<div class="demaree-badge ${c.demareeEndedAt?'demaree-done':''}">${demareeLabel(c)}</div>`:''}
-            ${c.oxalBlockStage?`<div class="demaree-badge ${oxalBlockInfo(c)?.done?'demaree-done':''}">${OXAL_BLOCK_ICON} ${oxalBlockLabel(c)}</div>`:''}
+            ${c.oxalBlockStage&&oxalBlockVisible(c)?`<div class="demaree-badge ${oxalBlockInfo(c)?.done?'demaree-done':''}">${OXAL_BLOCK_ICON} ${oxalBlockLabel(c)}</div>`:''}
           </div>
         </li>`).join('')}
     </ul>`}`;
@@ -2010,7 +2018,7 @@ async function renderColony() {
           </div>` : ''}
         </div>` : ''}
         ${colony.demareeStage&&demareeVisible(colony)?`<div class="demaree-badge ${colony.demareeEndedAt?'demaree-done':''}">${demareeLabel(colony)}</div>`:''}
-        ${colony.oxalBlockStage?`<div class="demaree-badge ${oxalBlockInfo(colony)?.done?'demaree-done':''}">${OXAL_BLOCK_ICON} ${oxalBlockLabel(colony)}</div>`:''}
+        ${colony.oxalBlockStage&&oxalBlockVisible(colony)?`<div class="demaree-badge ${oxalBlockInfo(colony)?.done?'demaree-done':''}">${OXAL_BLOCK_ICON} ${oxalBlockLabel(colony)}</div>`:''}
         ${requeueBadge(colony)}${breedBadge(colony)}${scaleLink}
       </div>
       ${isArchived?'':'<button class="btn btn-ghost btn-sm" id="edit-colony">Bearbeiten</button>'}
@@ -5132,6 +5140,7 @@ async function renderSettings() {
       <a class="btn btn-ghost btn-sm" id="setup-portal-link" style="display:none">⚙️ Setup / Update / Backup</a>
       <button class="btn btn-save-settings" id="save-all-settings">💾 Speichern</button>
     </div>
+    <div class="settings-group-label first">Betrieb &amp; Stammdaten</div>
     ${settingsSection('betrieb','Betrieb',`
       <label class="lbl">Betriebsname (wird oben angezeigt)</label>
       <input class="inp" id="apiary-name-input" type="text" placeholder="z. B. Imkerei Frerichs" value="">
@@ -5146,53 +5155,6 @@ async function renderSettings() {
         </label>
         <button class="btn btn-ghost btn-sm" id="logo-delete-btn" style="display:none">Logo löschen</button>
       </div>`)}
-    ${settingsSection('zucht','Königinnenzucht – Zeitabstände',`
-      <p class="muted">Wird für die Berechnung von Schlupf und erster Eilage verwendet.</p>
-      <label class="lbl">Umlarven → Schlupf (Tage)</label>
-      <input class="inp" id="schlupf-days" type="number" min="1" max="30" value="11">
-      <label class="lbl" style="margin-top:.5rem">Schlupf → Erste Eilage (Tage)</label>
-      <input class="inp" id="eilage-days" type="number" min="1" max="60" value="28">`)}
-    ${settingsSection('demaree','Demaree-Anzeige',`
-      <p class="muted">Wie lange soll das Demaree-Badge (Stufe/Tage) in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden, falls es nie als "beendet" markiert wurde?</p>
-      <label class="lbl">Anzahl Tage</label>
-      <input class="inp" id="demaree-show-days" type="number" min="1" max="365" value="40">`)}
-    ${settingsSection('kaefigung','Käfigung-Anzeige',`
-      <p class="muted">Wie viele Tage nach der Freilassung soll der "freigelassen"-Hinweis in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden? Solange noch nicht freigelassen wurde, bleibt der Käfigung-Hinweis unbegrenzt (orange) sichtbar.</p>
-      <label class="lbl">Anzahl Tage nach Freilassung</label>
-      <input class="inp" id="kaefigung-frei-show-days" type="number" min="1" max="365" value="60">`)}
-    ${settingsSection('gewicht','Gewicht',`
-      <p class="muted">Ziel-Gewicht, das neuen Völkern automatisch zugewiesen wird.</p>
-      <label class="lbl">Ziel-Gewicht (kg)</label>
-      <input class="inp" id="ziel-gewicht" type="number" step="0.1" min="0" placeholder="z.B. 44">
-      <p class="muted" style="margin-top:1rem">Rundgang-Modus auf der Gewicht-Seite: Völker, deren letzte Wägung
-      höchstens so viele Tage zurückliegt, gelten als "erledigt" (grün hervorgehoben).</p>
-      <label class="lbl">Tage-Schwelle</label>
-      <input class="inp" id="gewicht-rundgang-tage" type="number" min="1" max="60" value="4">
-      <p class="muted" style="margin-top:1rem">Bei den Teilgewichten das Komma automatisch setzen:
-      1234 wird zu 12,34 · 123 zu 12,3 · 12 zu 12,0. Tippt man selbst ein Komma, bleibt die Eingabe unverändert.</p>
-      <label class="check-item">
-        <input type="checkbox" id="toggle-auto-komma"> <span>Komma automatisch setzen</span>
-      </label>`)}
-    ${settingsSection('oxalblockgap','Oxalsäure-Blockbehandlung',`
-      <p class="muted">Nach jeder gespeicherten Blockstufe wird automatisch eine Erinnerung für die
-      nächste fällige Stufe angelegt (und die vorherige Auto-Erinnerung entfernt).</p>
-      <label class="lbl">Tage zwischen den Stufen</label>
-      <input class="inp" id="oxal-block-gap-days" type="number" min="1" max="30" value="4">`)}
-    ${settingsSection('bkfilter','Sonderbehandlung „BK"-Völker',`
-      <p class="muted">Völker bzw. Standorte, deren Name mit diesem Präfix beginnt, werden in
-      Übersichten (Alle Völker, Gewicht, Varroa-Zählung, Varroa-Historie, Ziel-Gewicht setzen)
-      gesondert behandelt bzw. ausgeblendet. Präfix leer lassen, um die Sonderbehandlung
-      abzuschalten.</p>
-      <label class="lbl">Präfix</label>
-      <input class="inp" id="bk-prefix" type="text" maxlength="10" placeholder="BK">`)}
-    ${settingsSection('verkaufErfassen','Verkauf – Erfassen',`
-      <p class="muted">Wie viele Produkt-Kacheln sollen pro Zeile angezeigt werden?</p>
-      <select class="inp" id="vk-tiles-per-row">
-        <option value="auto">Automatisch (je nach Bildschirmbreite)</option>
-        <option value="2">2 pro Zeile</option>
-        <option value="3">3 pro Zeile</option>
-        <option value="4">4 pro Zeile</option>
-      </select>`)}
     ${settingsSection('standorte','Standorte',`
       <button class="btn btn-primary block" id="add-apiary">+ Neuen Standort anlegen</button>`)}
     ${settingsSection('waagen','Stockwaagen',`
@@ -5206,6 +5168,8 @@ async function renderSettings() {
         ${trachten.length===0?'<li class="card muted" style="justify-content:center">Noch keine Trachten</li>':''}
       </ul>
       <button type="button" class="btn btn-ghost block" id="trachten-add" style="margin-top:.5rem">+ Tracht hinzufügen</button>`)}
+
+    <div class="settings-group-label">Darstellung &amp; Übersichten</div>
     ${settingsSection('darstellung','Darstellung',`
       <label class="lbl">Design</label>
       <select class="inp" id="theme-select">
@@ -5276,14 +5240,12 @@ async function renderSettings() {
         <input type="checkbox" id="btn-primary-color-chk"><span>Hervorgehobene Buttons (z. B. "Erfassen")</span>
       </label>
       <input class="inp" id="btn-primary-color-inp" type="color" value="#ffd43b" style="width:2.4rem;height:2.2rem;padding:.15rem;margin-top:.3rem;display:none">`)}
-    ${settingsSection('varroa','Varroa Zählung',`
-      <label class="check-item">
-        <input type="checkbox" id="toggle-varroa-autonext"> <span>Nach dem Speichern automatisch zum nächsten Volk springen</span>
-      </label>`)}
     ${settingsSection('lastentries','Letzte Einträge',`
       <p class="muted">Wie viele Einträge sollen in "Letzte Einträge" (über alle Völker hinweg) angezeigt werden?</p>
       <label class="lbl">Anzahl</label>
       <input class="inp" id="last-entries-limit" type="number" min="1" max="500" value="90">`)}
+
+    <div class="settings-group-label">Eintragsformular</div>
     ${settingsSection('aktionbtns','Aktions-Buttons im Eintrag',`
       <p class="muted">Welche Aktions-Buttons sollen im Eintragsformular erscheinen?</p>
       <div class="check-list" id="action-btns-cfg">
@@ -5298,6 +5260,75 @@ async function renderSettings() {
           <input type="checkbox" class="obs-btn-chk" data-key="${k}" checked><span>${esc(l)}</span>
         </label>`).join('')}
       </div>`)}
+
+    <div class="settings-group-label">Volk-Anzeigen – Zeitschwellen</div>
+    ${settingsSection('demaree','Demaree-Anzeige',`
+      <p class="muted">Wie lange soll das Demaree-Badge (Stufe/Tage) in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden, falls es nie als "beendet" markiert wurde?</p>
+      <label class="lbl">Anzahl Tage</label>
+      <input class="inp" id="demaree-show-days" type="number" min="1" max="365" value="40">`)}
+    ${settingsSection('kaefigung','Käfigung-Anzeige',`
+      <p class="muted">Wie viele Tage nach der Freilassung soll der "freigelassen"-Hinweis in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden? Solange noch nicht freigelassen wurde, bleibt der Käfigung-Hinweis unbegrenzt (orange) sichtbar.</p>
+      <label class="lbl">Anzahl Tage nach Freilassung</label>
+      <input class="inp" id="kaefigung-frei-show-days" type="number" min="1" max="365" value="60">`)}
+    ${settingsSection('oxalblockgap','Oxalsäure-Blockbehandlung',`
+      <p class="muted">Nach jeder gespeicherten Blockstufe wird automatisch eine Erinnerung für die
+      nächste fällige Stufe angelegt (und die vorherige Auto-Erinnerung entfernt).</p>
+      <label class="lbl">Tage zwischen den Stufen</label>
+      <input class="inp" id="oxal-block-gap-days" type="number" min="1" max="30" value="4">
+      <p class="muted" style="margin-top:1rem">Wie lange soll der "Block Stufe X abgeschlossen"-Hinweis in der
+      Volk-Übersicht und auf der Volk-Seite noch angezeigt werden (gerechnet ab Bedampfungsbeginn)?
+      Läuft der Block noch, bleibt der Hinweis unbegrenzt sichtbar.</p>
+      <label class="lbl">Anzahl Tage</label>
+      <input class="inp" id="oxal-block-show-days" type="number" min="1" max="365" value="40">`)}
+    ${settingsSection('zucht','Königinnenzucht – Zeitabstände',`
+      <p class="muted">Wird für die Berechnung von Schlupf und erster Eilage verwendet.</p>
+      <label class="lbl">Umlarven → Schlupf (Tage)</label>
+      <input class="inp" id="schlupf-days" type="number" min="1" max="30" value="11">
+      <label class="lbl" style="margin-top:.5rem">Schlupf → Erste Eilage (Tage)</label>
+      <input class="inp" id="eilage-days" type="number" min="1" max="60" value="28">`)}
+    ${settingsSection('gewicht','Gewicht',`
+      <p class="muted">Ziel-Gewicht, das neuen Völkern automatisch zugewiesen wird.</p>
+      <label class="lbl">Ziel-Gewicht (kg)</label>
+      <input class="inp" id="ziel-gewicht" type="number" step="0.1" min="0" placeholder="z.B. 44">
+      <p class="muted" style="margin-top:1rem">Rundgang-Modus auf der Gewicht-Seite: Völker, deren letzte Wägung
+      höchstens so viele Tage zurückliegt, gelten als "erledigt" (grün hervorgehoben).</p>
+      <label class="lbl">Tage-Schwelle</label>
+      <input class="inp" id="gewicht-rundgang-tage" type="number" min="1" max="60" value="4">
+      <p class="muted" style="margin-top:1rem">Bei den Teilgewichten das Komma automatisch setzen:
+      1234 wird zu 12,34 · 123 zu 12,3 · 12 zu 12,0. Tippt man selbst ein Komma, bleibt die Eingabe unverändert.</p>
+      <label class="check-item">
+        <input type="checkbox" id="toggle-auto-komma"> <span>Komma automatisch setzen</span>
+      </label>`)}
+
+    <div class="settings-group-label">Arbeitsabläufe</div>
+    ${settingsSection('varroa','Varroa Zählung',`
+      <label class="check-item">
+        <input type="checkbox" id="toggle-varroa-autonext"> <span>Nach dem Speichern automatisch zum nächsten Volk springen</span>
+      </label>`)}
+    ${settingsSection('bkfilter','Sonderbehandlung „BK"-Völker',`
+      <p class="muted">Völker bzw. Standorte, deren Name mit diesem Präfix beginnt, werden in
+      Übersichten (Alle Völker, Gewicht, Varroa-Zählung, Varroa-Historie, Ziel-Gewicht setzen)
+      gesondert behandelt bzw. ausgeblendet. Präfix leer lassen, um die Sonderbehandlung
+      abzuschalten.</p>
+      <label class="lbl">Präfix</label>
+      <input class="inp" id="bk-prefix" type="text" maxlength="10" placeholder="BK">`)}
+    ${settingsSection('verkaufErfassen','Verkauf – Erfassen',`
+      <p class="muted">Wie viele Produkt-Kacheln sollen pro Zeile angezeigt werden?</p>
+      <select class="inp" id="vk-tiles-per-row">
+        <option value="auto">Automatisch (je nach Bildschirmbreite)</option>
+        <option value="2">2 pro Zeile</option>
+        <option value="3">3 pro Zeile</option>
+        <option value="4">4 pro Zeile</option>
+      </select>`)}
+
+    <div class="settings-group-label">System &amp; Daten</div>
+    ${settingsSection('system','System',`
+      <label class="check-item">
+        <input type="checkbox" id="toggle-zugangsschutz"> <span>Passwort-Abfrage beim Öffnen der App aktiv</span>
+      </label>
+      <p class="muted" style="margin-top:.4rem">Schützt den Browser-Zugriff auf diese App mit einem gemeinsamen
+      Passwort (kein Benutzerkonto, keine E-Mail). Beim Deaktivieren ist die App für jeden im selben Netzwerk ohne
+      Passwort erreichbar - wirkt sofort nach dem Speichern.</p>`)}
     <div id="backup-section-wrap">${settingsSection('datensicherung','Backup',`
       <a class="btn btn-ghost block" href="./api/backup" download>Backup exportieren (.json)</a>
       <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>`)}</div>
@@ -5313,13 +5344,6 @@ async function renderSettings() {
       <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-oxalblock" style="margin-top:.5rem">Oxalsäure-Blockbehandlung (Volkseinstellungen) zurücksetzen</button>
       <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-umlarv" style="margin-top:.5rem">Königinnenzucht-Datum (Volkseinstellungen) zurücksetzen</button>
       <p class="muted" style="margin-top:.5rem">Setzt nur die Felder am Volk zurück – vorhandene Einträge in der Stockkarte bleiben erhalten.</p>`)}
-    ${settingsSection('system','System',`
-      <label class="check-item">
-        <input type="checkbox" id="toggle-zugangsschutz"> <span>Passwort-Abfrage beim Öffnen der App aktiv</span>
-      </label>
-      <p class="muted" style="margin-top:.4rem">Schützt den Browser-Zugriff auf diese App mit einem gemeinsamen
-      Passwort (kein Benutzerkonto, keine E-Mail). Beim Deaktivieren ist die App für jeden im selben Netzwerk ohne
-      Passwort erreichbar - wirkt sofort nach dem Speichern.</p>`)}
   </div>`;
   /* Sticky-Leiste (Setup/Backup + Speichern) muss direkt unter der (ebenfalls sticky)
      Kopfzeile "einrasten" - deren Höhe ist je nach Geraet (Safe-Area-Inset oben bei
@@ -5418,6 +5442,8 @@ async function renderSettings() {
     if(grt) grt.value = s.gewichtRundgangTage || '4';
     const obg = document.getElementById('oxal-block-gap-days');
     if(obg) obg.value = s.oxalBlockGapDays || '4';
+    const obsd = document.getElementById('oxal-block-show-days');
+    if(obsd) obsd.value = s.oxalBlockShowDays || '40';
     const bkP = document.getElementById('bk-prefix');
     if(bkP) bkP.value = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
     const vktpr = document.getElementById('vk-tiles-per-row');
@@ -5582,6 +5608,8 @@ async function renderSettings() {
     if(grt) payload.gewichtRundgangTage=grt;
     const obg=document.getElementById('oxal-block-gap-days')?.value;
     if(obg) payload.oxalBlockGapDays=obg;
+    const obsdEl=document.getElementById('oxal-block-show-days');
+    if(obsdEl?.value) payload.oxalBlockShowDays=obsdEl.value;
     const bkPEl=document.getElementById('bk-prefix');
     if(bkPEl) payload.bkPrefix=bkPEl.value.trim();
     const vktprEl=document.getElementById('vk-tiles-per-row');
@@ -5882,5 +5910,13 @@ function openLightbox(url,caption){
   document.body.appendChild(back);
 }
 
-if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{})); }
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  let _swRefreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(_swRefreshing) return;
+    _swRefreshing=true;
+    window.location.reload();
+  });
+}
 render().then(()=>checkDueReminders());
