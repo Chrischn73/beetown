@@ -444,13 +444,25 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
   background: #1a3d22; color: #69db7c; border-color: #2f7a3a;
 }
 
-/* Käfigung-Anzeige: dezenter als die gelben Badges */
+/* Käfigung-Anzeige (nach Freilassung / erledigt): dezent */
 .kaef-badge {
   display: block; margin-top: .2rem;
   color: var(--ink-soft, #666);
   font-size: .78rem; font-weight: 500;
 }
 [data-theme="dark"] .kaef-badge { color: #a8a8a8; }
+
+/* Käfigung aktiv (noch nicht freigelassen): wichtiger Hinweis, auffällig orange */
+.kaef-badge-active {
+  display: inline-block; margin-top: .2rem;
+  background: #fff0e0; color: #b35c00;
+  border: 1px solid #f5a623;
+  border-radius: 6px; padding: .1rem .5rem;
+  font-size: .78rem; font-weight: 600;
+}
+[data-theme="dark"] .kaef-badge-active {
+  background: #4a2c00; color: #ffb75e; border-color: #b35c00;
+}
 
 /* Formular-Trenner und Abschnitts-Label */
 .form-divider { border: none; border-top: 1px solid var(--line); margin: 1rem 0 .5rem; }
@@ -639,6 +651,9 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 .umlarv-date{ font-weight:600; }
 .umlarv-future{ color:#2f9e44; }
 .umlarv-past  { color:var(--ink-soft); text-decoration:line-through; }
+.umlarv-warn  { color:#b35c00; }
+[data-theme="dark"] .umlarv-warn { color:#ffb75e; }
+.umlarv-muted { color:var(--ink-soft); }
 
 /* ---------- v1.9.11 ---------- */
 /* Punkt 2: Zustand "ok" – transparenter Kreis in Schriftfarbe */

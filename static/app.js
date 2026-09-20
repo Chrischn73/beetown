@@ -66,6 +66,7 @@ async function loadSettings() {
     window._vkTilesPerRow = s.vkTilesPerRow || 'auto';
     window._lastEntriesLimit = parseInt(s.lastEntriesLimit) || 90;
     window._demareeShowDays = parseInt(s.demareeShowDays) || 40;
+    window._kaefigungFreiShowDays = parseInt(s.kaefigungFreiShowDays) || 60;
     window._btnPrimaryColor = s.btnPrimaryColor || '';
     window._btnGhostColor = s.btnGhostColor || '';
     applyButtonTheme();
@@ -331,6 +332,14 @@ function demareeVisible(c) {
   if (!refDate) return true;
   const days = Math.floor((Date.now() - new Date(refDate)) / 86400000);
   return days <= (window._demareeShowDays || 40);
+}
+
+/* Blendet den "freigelassen"-Hinweis nach konfigurierbarer Anzahl Tage seit der
+   Freilassung aus (Käfigung-Hinweis selbst hat kein Zeitlimit, solange nicht freigelassen). */
+function kaefigungFreiVisible(c) {
+  if (!c.koeniginFreiDate) return false;
+  const days = Math.floor((Date.now() - new Date(c.koeniginFreiDate)) / 86400000);
+  return days <= (window._kaefigungFreiShowDays || 60);
 }
 
 /* ---------- Oxalsäure-Blockbehandlung ---------- */
@@ -1714,9 +1723,9 @@ ${c.requeueFlag?(()=>{const _r=c.requeueReasons?JSON.parse(c.requeueReasons||'[]
             ${c.weiselprobeDate ? `<div class="demaree-badge">🐝 Weiselprobe: ${fmtDate(c.weiselprobeDate)}</div>` : ''}
             ${c.kaefigungDate && (!c.koeniginFreiDate || c.koeniginFreiDate < c.kaefigungDate) ? (() => {
               const days = Math.floor((Date.now()-new Date(c.kaefigungDate))/86400000);
-              return `<div class="kaef-badge">${KAEFIG_SVG} Käfigung: ${days} Tage</div>`;
+              return `<div class="kaef-badge-active">${KAEFIG_SVG} Käfigung: ${days} Tage</div>`;
             })() : ''}
-            ${c.koeniginFreiDate && (!c.kaefigungDate || c.koeniginFreiDate >= c.kaefigungDate) ? `<div class="demaree-badge">👑 freigelassen: ${fmtDate(c.koeniginFreiDate)}</div>` : ''}
+            ${c.koeniginFreiDate && (!c.kaefigungDate || c.koeniginFreiDate >= c.kaefigungDate) && kaefigungFreiVisible(c) ? `<div class="kaef-badge">👑 freigelassen: ${fmtDate(c.koeniginFreiDate)}</div>` : ''}
             ${c.demareeStage&&demareeVisible(c)?`<div class="demaree-badge ${c.demareeEndedAt?'demaree-done':''}">${demareeLabel(c)}</div>`:''}
             ${c.oxalBlockStage?`<div class="demaree-badge ${oxalBlockInfo(c)?.done?'demaree-done':''}">${OXAL_BLOCK_ICON} ${oxalBlockLabel(c)}</div>`:''}
           </div>
@@ -1991,13 +2000,13 @@ async function renderColony() {
             const days = Math.floor((Date.now()-new Date(colony.kaefigungDate))/86400000);
             return `<div class="umlarv-row">
               <span class="umlarv-label">${KAEFIG_SVG} Käfigung:</span>
-              <span class="umlarv-date umlarv-future">${fmtDate(colony.kaefigungDate)} (${days} Tage)</span>
+              <span class="umlarv-date umlarv-warn">${fmtDate(colony.kaefigungDate)} (${days} Tage)</span>
             </div>`;
           })() : ''}
-          ${colony.koeniginFreiDate && (!colony.kaefigungDate || colony.koeniginFreiDate >= colony.kaefigungDate) ? `
+          ${colony.koeniginFreiDate && (!colony.kaefigungDate || colony.koeniginFreiDate >= colony.kaefigungDate) && kaefigungFreiVisible(colony) ? `
           <div class="umlarv-row">
             <span class="umlarv-label">👑 freigelassen:</span>
-            <span class="umlarv-date">${fmtDate(colony.koeniginFreiDate)}</span>
+            <span class="umlarv-date umlarv-muted">${fmtDate(colony.koeniginFreiDate)}</span>
           </div>` : ''}
         </div>` : ''}
         ${colony.demareeStage&&demareeVisible(colony)?`<div class="demaree-badge ${colony.demareeEndedAt?'demaree-done':''}">${demareeLabel(colony)}</div>`:''}
@@ -5147,6 +5156,10 @@ async function renderSettings() {
       <p class="muted">Wie lange soll das Demaree-Badge (Stufe/Tage) in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden, falls es nie als "beendet" markiert wurde?</p>
       <label class="lbl">Anzahl Tage</label>
       <input class="inp" id="demaree-show-days" type="number" min="1" max="365" value="40">`)}
+    ${settingsSection('kaefigung','Käfigung-Anzeige',`
+      <p class="muted">Wie viele Tage nach der Freilassung soll der "freigelassen"-Hinweis in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden? Solange noch nicht freigelassen wurde, bleibt der Käfigung-Hinweis unbegrenzt (orange) sichtbar.</p>
+      <label class="lbl">Anzahl Tage nach Freilassung</label>
+      <input class="inp" id="kaefigung-frei-show-days" type="number" min="1" max="365" value="60">`)}
     ${settingsSection('gewicht','Gewicht',`
       <p class="muted">Ziel-Gewicht, das neuen Völkern automatisch zugewiesen wird.</p>
       <label class="lbl">Ziel-Gewicht (kg)</label>
@@ -5413,6 +5426,8 @@ async function renderSettings() {
     if(lel) lel.value = s.lastEntriesLimit || '90';
     const dsd = document.getElementById('demaree-show-days');
     if(dsd) dsd.value = s.demareeShowDays || '40';
+    const kfsd = document.getElementById('kaefigung-frei-show-days');
+    if(kfsd) kfsd.value = s.kaefigungFreiShowDays || '60';
   }).catch(()=>{});
 
   const nameInp = document.getElementById('apiary-name-input');
@@ -5575,6 +5590,8 @@ async function renderSettings() {
     if(lelEl?.value) payload.lastEntriesLimit=lelEl.value;
     const dsdEl=document.getElementById('demaree-show-days');
     if(dsdEl?.value) payload.demareeShowDays=dsdEl.value;
+    const kfsdEl=document.getElementById('kaefigung-frei-show-days');
+    if(kfsdEl?.value) payload.kaefigungFreiShowDays=kfsdEl.value;
     // Alle-Spalten
     document.querySelectorAll('.all-col-chk').forEach(chk=>{
       payload['allCol_'+chk.dataset.key]=chk.checked?'true':'false';
