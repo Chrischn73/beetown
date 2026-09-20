@@ -39,7 +39,10 @@ async function loadSettings() {
     window._showSearch = (s.showSearch !== 'false');
     window._autoKomma = (s.autoKomma !== 'false');
     const actionVis = {};
-    ACTION_BTN_CONFIG.forEach(c => { actionVis[c.key] = (s['actionBtn_'+c.key] !== 'false'); });
+    ACTION_BTN_CONFIG.forEach(c => {
+      const stored = s['actionBtn_'+c.key];
+      actionVis[c.key] = ACTION_BTN_DEFAULT_OFF.has(c.key) ? (stored === 'true') : (stored !== 'false');
+    });
     window._actionBtnVis = actionVis;
     const obsVis = {};
     OBS_OPTIONS.forEach(([k]) => { obsVis[k] = (s['obsBtn_'+k] !== 'false'); });
@@ -61,6 +64,8 @@ async function loadSettings() {
     window._homeBtnColor = homeColor;
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
     window._vkTilesPerRow = s.vkTilesPerRow || 'auto';
+    window._lastEntriesLimit = parseInt(s.lastEntriesLimit) || 90;
+    window._demareeShowDays = parseInt(s.demareeShowDays) || 40;
     window._btnPrimaryColor = s.btnPrimaryColor || '';
     window._btnGhostColor = s.btnGhostColor || '';
     applyButtonTheme();
@@ -319,6 +324,14 @@ function demareeLabel(c) {
   }
   return label;
 }
+/* Blendet das Demaree-Badge aus, wenn seit Start/Ende mehr Tage vergangen sind als eingestellt -
+   Auffangnetz für vergessene "beendet"-Markierungen, die sonst ewig "seit N Tagen" anzeigen würden. */
+function demareeVisible(c) {
+  const refDate = c.demareeEndedAt || c.demareedAt;
+  if (!refDate) return true;
+  const days = Math.floor((Date.now() - new Date(refDate)) / 86400000);
+  return days <= (window._demareeShowDays || 40);
+}
 
 /* ---------- Oxalsäure-Blockbehandlung ---------- */
 const OXAL_BLOCK_DAYS = 22;
@@ -423,6 +436,8 @@ const OBS_LABEL = {
   'weiselprobe': 'Weiselprobe eingehängt',
   'kaefigung':   'Käfigung',
   'koeniginFrei':'Königin freigelassen',
+  'futterkranzprobe':    'Futterkranzprobe',
+  'koeniginabgedrueckt': 'Königin abgedrückt',
 };
 const SWARM_COUNT_KEYS = { swarm_open: 'swarm_open_count', swarm_capped: 'swarm_capped_count' };
 
@@ -437,7 +452,12 @@ const ACTION_BTN_CONFIG = [
   {key:'koeniginfrei', label:'Königin freigelassen'},
   {key:'fuettern',     label:'Fütterung'},
   {key:'wabentyp',     label:'+Wabe (Typ + Position)'},
+  {key:'futterkranzprobe',    label:'Futterkranzprobe'},
+  {key:'koeniginabgedrueckt', label:'Königin abgedrückt'},
 ];
+/* Neue Aktions-Buttons, die standardmäßig AUS sind (erst in den Einstellungen aktivierbar) -
+   Umkehrung der sonst üblichen "an, außer explizit auf false gesetzt"-Logik, siehe loadSettings(). */
+const ACTION_BTN_DEFAULT_OFF = new Set(['futterkranzprobe','koeniginabgedrueckt']);
 const POS_1_TO_12 = Array.from({length:12},(_,i)=>i+1);
 /* Beobachtungen mit fester Werte-Auswahl statt einfachem Ein/Aus-Toggle:
    ein Button öffnet ein Auswahlfenster, der Button-Text zeigt die gewählte Stufe. */
@@ -538,6 +558,7 @@ const ACTION_BTN_ID_SUFFIX = {
   demaree:'demaree', hr:'hr', weiselprobe:'weiselprobe', oxal:'oxal',
   oxalblock:'oxal-block', kaefigung:'kaefigung', koeniginfrei:'koenigin-frei',
   fuettern:'fuettern', wabentyp:'wabentyp',
+  futterkranzprobe:'futterkranzprobe', koeniginabgedrueckt:'koenigin-abgedrueckt',
 };
 function applyButtonVisibilityLive() {
   ACTION_BTN_CONFIG.forEach((c)=>{
@@ -853,7 +874,7 @@ function wireObs(selected, swarmCounts, selectValues) {
 function obsChipsHTML(obs, extraData) {
   const chips = (obs||[]).map((k)=>{
     const warn=(k==='swarm_open'||k==='swarm_capped')?' obs-chip-warn':'';
-    const action=(k==='oxal'||k==='weiselprobe'||k==='kaefigung')?' obs-chip-action':'';
+    const action=(k==='oxal'||k==='weiselprobe'||k==='kaefigung'||k==='futterkranzprobe'||k==='koeniginabgedrueckt')?' obs-chip-action':'';
     let label=OBS_LABEL[k]||LEGACY_OBS_LABEL[k]||k;
     if(extraData&&k in SWARM_COUNT_KEYS){const cnt=extraData[SWARM_COUNT_KEYS[k]];if(cnt&&cnt>0)label+=` (${cnt})`;}
     if(k==='wildbau'&&extraData?.wildbau_stufe){label+=` (Stufe ${extraData.wildbau_stufe})`;}
@@ -1691,12 +1712,12 @@ ${c.requeueFlag?(()=>{const _r=c.requeueReasons?JSON.parse(c.requeueReasons||'[]
             <div class="card-sub">${queenInfoLine(c)} ${hrCountBadge(c)}</div>
             ${c.source?`<div class="card-source">${esc(c.source)}</div>`:''}
             ${c.weiselprobeDate ? `<div class="demaree-badge">🐝 Weiselprobe: ${fmtDate(c.weiselprobeDate)}</div>` : ''}
-            ${c.kaefigungDate ? (() => {
+            ${c.kaefigungDate && (!c.koeniginFreiDate || c.koeniginFreiDate < c.kaefigungDate) ? (() => {
               const days = Math.floor((Date.now()-new Date(c.kaefigungDate))/86400000);
               return `<div class="kaef-badge">${KAEFIG_SVG} Käfigung: ${days} Tage</div>`;
             })() : ''}
-            ${c.koeniginFreiDate ? `<div class="demaree-badge">👑 freigelassen: ${fmtDate(c.koeniginFreiDate)}</div>` : ''}
-            ${c.demareeStage?`<div class="demaree-badge ${c.demareeEndedAt?'demaree-done':''}">${demareeLabel(c)}</div>`:''}
+            ${c.koeniginFreiDate && (!c.kaefigungDate || c.koeniginFreiDate >= c.kaefigungDate) ? `<div class="demaree-badge">👑 freigelassen: ${fmtDate(c.koeniginFreiDate)}</div>` : ''}
+            ${c.demareeStage&&demareeVisible(c)?`<div class="demaree-badge ${c.demareeEndedAt?'demaree-done':''}">${demareeLabel(c)}</div>`:''}
             ${c.oxalBlockStage?`<div class="demaree-badge ${oxalBlockInfo(c)?.done?'demaree-done':''}">${OXAL_BLOCK_ICON} ${oxalBlockLabel(c)}</div>`:''}
           </div>
         </li>`).join('')}
@@ -1966,20 +1987,20 @@ async function renderColony() {
             <span class="umlarv-label">🐝 Weiselprobe:</span>
             <span class="umlarv-date">${fmtDate(colony.weiselprobeDate)}</span>
           </div>` : ''}
-          ${colony.kaefigungDate ? (() => {
+          ${colony.kaefigungDate && (!colony.koeniginFreiDate || colony.koeniginFreiDate < colony.kaefigungDate) ? (() => {
             const days = Math.floor((Date.now()-new Date(colony.kaefigungDate))/86400000);
             return `<div class="umlarv-row">
               <span class="umlarv-label">${KAEFIG_SVG} Käfigung:</span>
               <span class="umlarv-date umlarv-future">${fmtDate(colony.kaefigungDate)} (${days} Tage)</span>
             </div>`;
           })() : ''}
-          ${colony.koeniginFreiDate ? `
+          ${colony.koeniginFreiDate && (!colony.kaefigungDate || colony.koeniginFreiDate >= colony.kaefigungDate) ? `
           <div class="umlarv-row">
             <span class="umlarv-label">👑 freigelassen:</span>
             <span class="umlarv-date">${fmtDate(colony.koeniginFreiDate)}</span>
           </div>` : ''}
         </div>` : ''}
-        ${colony.demareeStage?`<div class="demaree-badge ${colony.demareeEndedAt?'demaree-done':''}">${demareeLabel(colony)}</div>`:''}
+        ${colony.demareeStage&&demareeVisible(colony)?`<div class="demaree-badge ${colony.demareeEndedAt?'demaree-done':''}">${demareeLabel(colony)}</div>`:''}
         ${colony.oxalBlockStage?`<div class="demaree-badge ${oxalBlockInfo(colony)?.done?'demaree-done':''}">${OXAL_BLOCK_ICON} ${oxalBlockLabel(colony)}</div>`:''}
         ${requeueBadge(colony)}${breedBadge(colony)}${scaleLink}
       </div>
@@ -2063,6 +2084,8 @@ function entryForm(colonyId, existing, colony, allEntries) {
   let entryKaefigung      = existing?.obs?.includes('kaefigung')      || false;
   let entryOxal           = existing?.obs?.includes('oxal')           || false;
   let entryKoeniginFrei   = existing?.obs?.includes('koeniginFrei')   || false;
+  let entryFutterkranzprobe    = existing?.obs?.includes('futterkranzprobe')    || false;
+  let entryKoeniginAbgedrueckt = existing?.obs?.includes('koeniginabgedrueckt') || false;
   let entryWabenPositions = (existingExtra.wabenPositions||[]).slice();
 
   openModal(existing?'Eintrag bearbeiten':'Neuer Eintrag',`
@@ -2078,6 +2101,8 @@ function entryForm(colonyId, existing, colony, allEntries) {
       <button type="button" class="obs-btn ${actionBtnHidden('koeniginfrei')} ${entryKoeniginFrei?'on':''}" id="btn-koenigin-frei">👑 freigelassen</button>
       <button type="button" class="obs-btn ${actionBtnHidden('fuettern')} ${existingExtra.fuetterType?'on':''}" id="btn-fuettern">🍯 Fütterung</button>
       <button type="button" class="obs-btn ${actionBtnHidden('wabentyp')} ${entryWabenPositions.length?'on':''}" id="btn-wabentyp">${wabeBtnLabelHtml(entryWabenPositions)}</button>
+      <button type="button" class="obs-btn ${actionBtnHidden('futterkranzprobe')} ${entryFutterkranzprobe?'on':''}" id="btn-futterkranzprobe">🍯 Futterkranzprobe</button>
+      <button type="button" class="obs-btn ${actionBtnHidden('koeniginabgedrueckt')} ${entryKoeniginAbgedrueckt?'on':''}" id="btn-koenigin-abgedrueckt">👑 abgedrückt</button>
     </div>
     <div id="fuetter-block" style="${existingExtra.fuetterType?'':'display:none'}">
       ${selectField('Fütterungsart','fuetterType',existingExtra.fuetterType||FUETTER_TYPES[0],FUETTER_TYPES.map(t=>[t,t]))}
@@ -2106,6 +2131,12 @@ function entryForm(colonyId, existing, colony, allEntries) {
       else obs.delete('kaefigung');
       if(entryKoeniginFrei) obs.add('koeniginFrei');
       else obs.delete('koeniginFrei');
+      const futterkranzprobeBtn=document.getElementById('btn-futterkranzprobe');
+      if(futterkranzprobeBtn?.classList.contains('on')) obs.add('futterkranzprobe');
+      else obs.delete('futterkranzprobe');
+      const koeniginAbgedruecktBtn=document.getElementById('btn-koenigin-abgedrueckt');
+      if(koeniginAbgedruecktBtn?.classList.contains('on')) obs.add('koeniginabgedrueckt');
+      else obs.delete('koeniginabgedrueckt');
       const payload={...data,photos,obs:[...obs],obs_extra,demareeAction:demareeActionVal,entryHrNr,oxalBlockAction:oxalBlockActionVal};
       if(existing) await api('PUT','./api/entries/'+existing.id,payload);
       else await api('POST','./api/entries',{...payload,colonyId,createdAt:new Date().toISOString()});
@@ -2204,6 +2235,20 @@ function entryForm(colonyId, existing, colony, allEntries) {
     oxalBtnEl.addEventListener('click', function(){ this.classList.toggle('on'); });
   }
 
+  /* Futterkranzprobe – reiner Eintrags-Chip, kein Datum am Volk */
+  const futterkranzprobeBtnEl = document.getElementById('btn-futterkranzprobe');
+  if(futterkranzprobeBtnEl){
+    if(existing?.obs?.includes('futterkranzprobe')) futterkranzprobeBtnEl.classList.add('on');
+    futterkranzprobeBtnEl.addEventListener('click', function(){ this.classList.toggle('on'); });
+  }
+
+  /* Königin abgedrückt – reiner Eintrags-Chip, kein Datum am Volk */
+  const koeniginAbgedruecktBtnEl = document.getElementById('btn-koenigin-abgedrueckt');
+  if(koeniginAbgedruecktBtnEl){
+    if(existing?.obs?.includes('koeniginabgedrueckt')) koeniginAbgedruecktBtnEl.classList.add('on');
+    koeniginAbgedruecktBtnEl.addEventListener('click', function(){ this.classList.toggle('on'); });
+  }
+
   /* Käfigung – setzt Datum am Volk */
   const kaefBtn = document.getElementById('btn-kaefigung');
   if(kaefBtn){
@@ -2288,6 +2333,8 @@ function massEntryForm(apiaryId, colonies) {
       <button type="button" class="obs-btn ${actionBtnHidden('koeniginfrei')}" id="mass-btn-koenigin-frei">👑 freigelassen</button>
       <button type="button" class="obs-btn ${actionBtnHidden('fuettern')}" id="mass-btn-fuettern">🍯 Fütterung</button>
       <button type="button" class="obs-btn ${actionBtnHidden('wabentyp')}" id="mass-btn-wabentyp">${wabeBtnLabelHtml(massWabenPositions)}</button>
+      <button type="button" class="obs-btn ${actionBtnHidden('futterkranzprobe')}" id="mass-btn-futterkranzprobe">🍯 Futterkranzprobe</button>
+      <button type="button" class="obs-btn ${actionBtnHidden('koeniginabgedrueckt')}" id="mass-btn-koenigin-abgedrueckt">👑 abgedrückt</button>
     </div>
     <div id="mass-fuetter-block" style="display:none">
       ${selectField('Fütterungsart','fuetterType',FUETTER_TYPES[0],FUETTER_TYPES.map(t=>[t,t]))}
@@ -2308,6 +2355,10 @@ function massEntryForm(apiaryId, colonies) {
       if(ids.length===0) return alert('Bitte mindestens ein Volk auswählen.');
       const oxalMassBtn=document.getElementById('mass-btn-oxal');
       if(oxalMassBtn?.classList.contains('on')) obs.add('oxal');
+      const futterkranzprobeMassBtn=document.getElementById('mass-btn-futterkranzprobe');
+      if(futterkranzprobeMassBtn?.classList.contains('on')) obs.add('futterkranzprobe');
+      const koeniginAbgedruecktMassBtn=document.getElementById('mass-btn-koenigin-abgedrueckt');
+      if(koeniginAbgedruecktMassBtn?.classList.contains('on')) obs.add('koeniginabgedrueckt');
       const obs_extra={...swarmCounts, ...selectValues,
         fuetterType: document.getElementById('mass-btn-fuettern')?.classList.contains('on') ? (data.fuetterType||'') : '',
         fuetterMenge: document.getElementById('mass-btn-fuettern')?.classList.contains('on') ? (data.fuetterMenge||'') : '',
@@ -2348,6 +2399,12 @@ function massEntryForm(apiaryId, colonies) {
     massWeiselprobe=!massWeiselprobe; this.classList.toggle('on',massWeiselprobe);
   });
   document.getElementById('mass-btn-oxal')?.addEventListener('click',function(){
+    this.classList.toggle('on');
+  });
+  document.getElementById('mass-btn-futterkranzprobe')?.addEventListener('click',function(){
+    this.classList.toggle('on');
+  });
+  document.getElementById('mass-btn-koenigin-abgedrueckt')?.addEventListener('click',function(){
     this.classList.toggle('on');
   });
   document.getElementById('mass-btn-kaefigung')?.addEventListener('click',function(){
@@ -3488,12 +3545,12 @@ function attachColonyLongPress(li, resolveColony, fromView){
 
 async function renderLastEntries() {
   setHeader('Letzte Einträge', true);
-  const items = await apiGet('./api/entries/latest');
+  const items = await apiGet('./api/entries/latest?limit='+(window._lastEntriesLimit||90));
 
   app.innerHTML = `
     ${items.length === 0 ? emptyState('Keine Einträge','Es wurden noch keine Stockkarten-Einträge erfasst.') : `
     <div class="toolbar" style="justify-content:space-between;align-items:center">
-      <span class="muted">${items.length} Völker · neuester Eintrag zuerst</span>
+      <span class="muted">${items.length} Einträge · neuester zuerst</span>
     </div>
     <ul class="timeline">
       ${items.map((it) => {
@@ -5086,6 +5143,10 @@ async function renderSettings() {
       <input class="inp" id="schlupf-days" type="number" min="1" max="30" value="11">
       <label class="lbl" style="margin-top:.5rem">Schlupf → Erste Eilage (Tage)</label>
       <input class="inp" id="eilage-days" type="number" min="1" max="60" value="28">`)}
+    ${settingsSection('demaree','Demaree-Anzeige',`
+      <p class="muted">Wie lange soll das Demaree-Badge (Stufe/Tage) in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden, falls es nie als "beendet" markiert wurde?</p>
+      <label class="lbl">Anzahl Tage</label>
+      <input class="inp" id="demaree-show-days" type="number" min="1" max="365" value="40">`)}
     ${settingsSection('gewicht','Gewicht',`
       <p class="muted">Ziel-Gewicht, das neuen Völkern automatisch zugewiesen wird.</p>
       <label class="lbl">Ziel-Gewicht (kg)</label>
@@ -5206,6 +5267,10 @@ async function renderSettings() {
       <label class="check-item">
         <input type="checkbox" id="toggle-varroa-autonext"> <span>Nach dem Speichern automatisch zum nächsten Volk springen</span>
       </label>`)}
+    ${settingsSection('lastentries','Letzte Einträge',`
+      <p class="muted">Wie viele Einträge sollen in "Letzte Einträge" (über alle Völker hinweg) angezeigt werden?</p>
+      <label class="lbl">Anzahl</label>
+      <input class="inp" id="last-entries-limit" type="number" min="1" max="500" value="90">`)}
     ${settingsSection('aktionbtns','Aktions-Buttons im Eintrag',`
       <p class="muted">Welche Aktions-Buttons sollen im Eintragsformular erscheinen?</p>
       <div class="check-list" id="action-btns-cfg">
@@ -5344,6 +5409,10 @@ async function renderSettings() {
     if(bkP) bkP.value = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
     const vktpr = document.getElementById('vk-tiles-per-row');
     if(vktpr) vktpr.value = s.vkTilesPerRow || 'auto';
+    const lel = document.getElementById('last-entries-limit');
+    if(lel) lel.value = s.lastEntriesLimit || '90';
+    const dsd = document.getElementById('demaree-show-days');
+    if(dsd) dsd.value = s.demareeShowDays || '40';
   }).catch(()=>{});
 
   const nameInp = document.getElementById('apiary-name-input');
@@ -5502,6 +5571,10 @@ async function renderSettings() {
     if(bkPEl) payload.bkPrefix=bkPEl.value.trim();
     const vktprEl=document.getElementById('vk-tiles-per-row');
     if(vktprEl) payload.vkTilesPerRow=vktprEl.value;
+    const lelEl=document.getElementById('last-entries-limit');
+    if(lelEl?.value) payload.lastEntriesLimit=lelEl.value;
+    const dsdEl=document.getElementById('demaree-show-days');
+    if(dsdEl?.value) payload.demareeShowDays=dsdEl.value;
     // Alle-Spalten
     document.querySelectorAll('.all-col-chk').forEach(chk=>{
       payload['allCol_'+chk.dataset.key]=chk.checked?'true':'false';
@@ -5602,7 +5675,8 @@ async function renderSettings() {
   // Aktions- und Beobachtungs-Buttons: Checkbox-Zustand laden (Default: alle an)
   apiGet('./api/settings').then(s=>{
     document.querySelectorAll('.action-btn-chk').forEach(chk=>{
-      chk.checked = (s['actionBtn_'+chk.dataset.key] !== 'false');
+      const stored = s['actionBtn_'+chk.dataset.key];
+      chk.checked = ACTION_BTN_DEFAULT_OFF.has(chk.dataset.key) ? (stored === 'true') : (stored !== 'false');
     });
     document.querySelectorAll('.obs-btn-chk').forEach(chk=>{
       chk.checked = (s['obsBtn_'+chk.dataset.key] !== 'false');

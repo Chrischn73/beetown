@@ -791,19 +791,20 @@ class Handler(BaseHTTPRequestHandler):
                 """).fetchall()
                 return self._json([parse_entry(r) for r in rs])
             if path=="/api/entries/latest":
+                try:
+                    limit=int((q.get("limit") or ["90"])[0])
+                except ValueError:
+                    limit=90
+                if limit<=0: limit=90
                 rs=con.execute("""
                     SELECT e.*, c.name AS colonyName, c.apiaryId AS apiaryId, a.name AS apiaryName
-                    FROM (
-                        SELECT *, ROW_NUMBER() OVER (
-                            PARTITION BY colonyId ORDER BY date DESC, createdAt DESC
-                        ) AS rn
-                        FROM entries
-                    ) e
+                    FROM entries e
                     JOIN colonies c ON c.id = e.colonyId
                     LEFT JOIN apiaries a ON a.id = c.apiaryId
-                    WHERE e.rn = 1 AND c.archived = 0
+                    WHERE c.archived = 0
                     ORDER BY e.date DESC, e.createdAt DESC
-                """).fetchall()
+                    LIMIT ?
+                """,(limit,)).fetchall()
                 return self._json([parse_entry(r) for r in rs])
             if path=="/api/scales":
                 return self._json(rows(con,"SELECT * FROM scales ORDER BY name"))
