@@ -4,4 +4,4 @@ After=imkerei.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/backup-scripts/imkerei-backup.sh
+ExecStart=/opt/backup-scripts/imkerei-backup.sh --nur-bei-aenderung

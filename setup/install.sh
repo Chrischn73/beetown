@@ -89,7 +89,7 @@ log() { echo; echo "==> $*"; }
 # ---------------------------------------------------------------------------
 log "Pruefe benoetigte Dateien in $APP_SRC_DIR bzw. $SCRIPT_DIR"
 for f in imkerei.service \
-         imkerei-backup.sh imkerei-backup-rotate.py imkerei-backup.service imkerei-backup.timer \
+         imkerei-backup.sh imkerei-backup-rotate.py imkerei-backup-fingerprint.py imkerei-backup.service imkerei-backup.timer \
          imkerei-update-check.service imkerei-update-check.timer; do
     if [ ! -e "$SCRIPT_DIR/$f" ]; then
         echo "FEHLER: $SCRIPT_DIR/$f fehlt. Wurde der komplette setup-Ordner uebertragen?"
@@ -273,6 +273,7 @@ log "Backup-Skript einrichten (/opt/backup-scripts)"
 mkdir -p /opt/backup-scripts
 cp "$SCRIPT_DIR/imkerei-backup.sh" /opt/backup-scripts/
 cp "$SCRIPT_DIR/imkerei-backup-rotate.py" /opt/backup-scripts/
+cp "$SCRIPT_DIR/imkerei-backup-fingerprint.py" /opt/backup-scripts/
 chmod +x /opt/backup-scripts/imkerei-backup.sh
 [ -n "$OWNER" ] && chown -R "$OWNER:$OWNER" /opt/backup-scripts
 
