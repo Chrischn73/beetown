@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.35';
+const APP_VERSION = 'v2.9.36';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -85,6 +85,7 @@ const HOME_BTN_CONFIG = [
   {key:'lastentries', label:'Letzte Einträge'},
   {key:'varroacount', label:'Varroazählung'},
   {key:'archive',     label:'Archiv'},
+  {key:'requeue',     label:'Umweiselung'},
 ];
 function homeBtnHidden(key) {
   return (window._homeBtnVis && window._homeBtnVis[key]===false) ? 'hidden' : '';
@@ -631,7 +632,9 @@ const ALL_COLS = [
   {key:'showStatus',   label:'Zustand (Farb-Dot)',         def:true},
   {key:'showFlags',    label:'⚠ Umweiselung / ⭐ Nachzucht', def:true},
   {key:'showApiary',   label:'Standort',                   def:true},
-  {key:'showQueen',    label:'Königin (Jahr/Nr/Gen)',       def:true},
+  {key:'showQueenYear',label:'Königin Jahr (Farb-Badge)',   def:true},
+  {key:'showQueenNr',  label:'Königin Nummer',              def:true},
+  {key:'showQueenGen', label:'Königin Generation',          def:true},
   {key:'showSource',   label:'Herkunft',                   def:false},
   {key:'showHr',       label:'Honigraume (Anzahl)',         def:true},
   {key:'showDemaree',  label:'Demaree-Status',              def:true},
@@ -645,7 +648,9 @@ const ALL_COLS = [
 function getAllCols(settings) {
   const cfg = {};
   ALL_COLS.forEach(c => {
-    const stored = settings['allCol_'+c.key];
+    /* Königin Jahr/Nr/Gen waren früher eine gemeinsame Spalte (showQueen) - deren alter
+       Wert gilt, bis die neuen Einzelschalter einmal gespeichert wurden. */
+    const stored = settings['allCol_'+c.key] ?? (c.key.startsWith('showQueen') ? settings.allCol_showQueen : undefined);
     cfg[c.key] = stored !== undefined ? stored === 'true' : c.def;
   });
   return cfg;
@@ -719,7 +724,7 @@ function wireQueenYearColor() {
 }
 
 /* ---------- Umweiselung ---------- */
-const REQUEUE_REASONS = ['Sanftmut','Schwarmlust','Legeleistung','Alter der Königin','Krankheit','Sonstiges'];
+const REQUEUE_REASONS = ['Sanftmut','Schwarmlust','Wildbau','Volksstärke','Legeleistung','Alter der Königin','Krankheit','Sonstiges'];
 
 function requeueBadge(colony) {
   if (!colony.requeueFlag) return '';
@@ -730,6 +735,242 @@ function requeueBadge(colony) {
 function breedBadge(colony) {
   if (!colony.breedFlag) return '';
   return `<span class="breed-badge">⭐ Nachzucht</span>`;
+}
+
+/* ---------- Umweiselungsliste (Startseiten-Button "Umweiselung") ----------
+   Automatisch erkannte Kandidaten werden pro Kalenderjahr aus den Einträgen berechnet
+   (nie gespeichert), gespeichert wird nur der Benutzer-Zustand je Jahr/Volk als JSON in
+   settings.umweiselListe:
+     { "2026": { "<colonyId>": { done, doneAt, removedCriteria:[...], manual:{reason,addedAt}|null, autoFlag } } }
+   "Entfernen" merkt sich die zu dem Zeitpunkt erfüllten Kriterien - kommt später ein
+   weiteres Kriterium dazu, taucht das Volk wieder auf. autoFlag = das requeueFlag am Volk
+   wurde von der Liste gesetzt (und darf wieder entfernt werden, wenn die Kriterien wegfallen,
+   z. B. weil ein Eintrag gelöscht wurde). */
+const REQUEUE_CRITERIA = [
+  { key:'swarm',    label:'Schwarmtrieb', min:3, reason:'Schwarmlust',
+    test:(e,x)=> (e.obs||[]).some(o=>o==='swarm_open'||o==='swarm_capped'||o==='ss_stark'||o==='ss_normal'||o==='ss_gering')
+                 || ['stark','normal','gering'].includes(x.swarmMood) },
+  { key:'wildbau',  label:'Wildbau (mittel/stark)', min:2, reason:'Wildbau',
+    test:(e,x)=> ['mittel','stark'].includes(x.wildbauLevel || legacyWildbauLevelFromStufe(x.wildbau_stufe)) },
+  { key:'temper',   label:'Sanftmut ≤ mittel', min:3, reason:'Sanftmut',
+    test:(e)=> /^[123]\b/.test(e.temper||'') },
+  { key:'strength', label:'Volksstärke ≤ mittel', min:3, reason:'Volksstärke',
+    test:(e)=> /^[123]\b/.test(e.strength||'') },
+];
+function requeueEntryExtra(e) {
+  if(!e.obs_extra) return {};
+  if(typeof e.obs_extra==='string'){ try{ return JSON.parse(e.obs_extra)||{}; }catch(_){ return {}; } }
+  return e.obs_extra;
+}
+/* -> { year: { colonyId: { critKey: [datum, ...] } } } - nur erfüllte Kriterien (Schwelle erreicht) */
+function requeueComputeAuto(entries, activeIds) {
+  const hits = {};
+  entries.forEach(e=>{
+    if(!activeIds.has(e.colonyId) || !e.date) return;
+    const y = String(e.date).slice(0,4);
+    const x = requeueEntryExtra(e);
+    REQUEUE_CRITERIA.forEach(c=>{
+      if(!c.test(e,x)) return;
+      ((hits[y] ||= {})[e.colonyId] ||= {})[c.key] ||= [];
+      hits[y][e.colonyId][c.key].push(e.date);
+    });
+  });
+  Object.values(hits).forEach(byCol=>Object.entries(byCol).forEach(([cid,byCrit])=>{
+    REQUEUE_CRITERIA.forEach(c=>{
+      if(byCrit[c.key] && byCrit[c.key].length<c.min) delete byCrit[c.key];
+      else if(byCrit[c.key]) byCrit[c.key].sort();
+    });
+    if(!Object.keys(byCrit).length) delete byCol[cid];
+  }));
+  return hits;
+}
+function requeueLoadList(settings) {
+  try { const l = JSON.parse(settings.umweiselListe || '{}'); return (l && typeof l==='object') ? l : {}; }
+  catch(_) { return {}; }
+}
+const requeueSaveList = (list) => api('POST','./api/settings',{umweiselListe: JSON.stringify(list)});
+async function requeueLoadActiveColonies() {
+  const apiaries = await apiGet('./api/apiaries');
+  const all = [];
+  await Promise.all(apiaries.map(async(a)=>{
+    const cols = await apiGet('./api/colonies?apiaryId='+a.id);
+    cols.forEach(c=>{ if(!c.archived){ c._apiaryName=a.name; all.push(c); } });
+  }));
+  return all;
+}
+/* Sichtbar = manuell hinzugefügt ODER mindestens ein erfülltes Kriterium, das beim
+   letzten "Entfernen" noch nicht erfüllt war. */
+function requeueItemVisible(item, met) {
+  if(item?.manual) return true;
+  const removed = item?.removedCriteria || [];
+  return met.some(k=>!removed.includes(k));
+}
+function requeueParseReasons(c) { try { return JSON.parse(c.requeueReasons||'[]')||[]; } catch(_) { return []; } }
+
+/* Gleicht Liste (aktuelles Jahr) und requeueFlag an den Völkern ab. Läuft nach dem
+   Speichern/Löschen von Einträgen und beim Öffnen der Liste - nur wenn der Button aktiv ist. */
+async function syncRequeue(pre) {
+  if(window._homeBtnVis && window._homeBtnVis.requeue===false) return null;
+  const [settings, entries, colonies] = pre ? [pre.settings, pre.entries, pre.colonies] : await Promise.all([
+    apiGet('./api/settings').catch(()=>({})),
+    apiGet('./api/entries/all').catch(()=>[]),
+    requeueLoadActiveColonies(),
+  ]);
+  const year = String(new Date().getFullYear());
+  const auto = requeueComputeAuto(entries, new Set(colonies.map(c=>c.id)));
+  const list = requeueLoadList(settings);
+  const yl = list[year] ||= {};
+  let listChanged = false;
+  for(const c of colonies){
+    const met = Object.keys(auto[year]?.[c.id] || {});
+    let item = yl[c.id];
+    const visible = requeueItemVisible(item, met);
+    const active = visible && !item?.done;
+    const visibleAuto = met.filter(k=>!(item?.removedCriteria||[]).includes(k));
+    if(c.requeueFlag && !active){
+      if(item && (item.done || item.manual || item.removedCriteria?.length)){
+        /* Liste gewinnt: erledigt/entfernt -> Markierung am Volk aufheben */
+        await api('PUT','./api/colonies/'+c.id,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
+      } else if(item?.autoFlag){
+        /* Kriterien weggefallen (Eintrag gelöscht/geändert) */
+        delete yl[c.id]; listChanged = true;
+        await api('PUT','./api/colonies/'+c.id,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
+      } else {
+        /* Markierung von Hand am Volk (oder aus dem Vorjahr) -> als manueller Eintrag übernehmen */
+        const rs = requeueParseReasons(c);
+        const reason = [rs.join(', '), c.requeueNote||''].filter(Boolean).join(' – ') || 'Am Volk markiert';
+        yl[c.id] = {...(item||{}), manual:{reason, addedAt:todayInput()}, done:false};
+        listChanged = true;
+      }
+    } else if(active){
+      const rs = requeueParseReasons(c);
+      const want = [...new Set([...rs, ...visibleAuto.map(k=>REQUEUE_CRITERIA.find(x=>x.key===k).reason)])];
+      if(visibleAuto.length && !item?.autoFlag && !c.requeueFlag){
+        item = yl[c.id] = {...(item||{}), autoFlag:true}; listChanged = true;
+      }
+      if(!c.requeueFlag || want.length!==rs.length){
+        await api('PUT','./api/colonies/'+c.id,{...c,requeueFlag:1,requeueReasons:JSON.stringify(want)});
+      }
+    }
+  }
+  if(listChanged) await requeueSaveList(list);
+  return list;
+}
+/* Nach dem Speichern/Löschen eines Eintrags: Fehler im Abgleich dürfen das Speichern nicht
+   stören. Mit colonyId nur dieses eine Volk abgleichen (spart das Laden aller Einträge). */
+async function syncRequeueSafe(colonyId) {
+  try {
+    if(!colonyId) return void await syncRequeue();
+    if(window._homeBtnVis && window._homeBtnVis.requeue===false) return;
+    const [settings, entries, colony] = await Promise.all([
+      apiGet('./api/settings').catch(()=>({})),
+      apiGet('./api/entries?colonyId='+colonyId).catch(()=>[]),
+      apiGet('./api/colonies/'+colonyId),
+    ]);
+    if(colony && !colony.archived) await syncRequeue({settings, entries, colonies:[colony]});
+  } catch(_) {}
+}
+
+async function renderRequeue() {
+  setHeader('Umweiselung', true);
+  const [settings, entries, colonies] = await Promise.all([
+    apiGet('./api/settings').catch(()=>({})),
+    apiGet('./api/entries/all').catch(()=>[]),
+    requeueLoadActiveColonies(),
+  ]);
+  const synced = await syncRequeue({settings, entries, colonies}).catch(()=>null);
+  const list = synced || requeueLoadList(settings);
+  const colById = Object.fromEntries(colonies.map(c=>[c.id,c]));
+  const auto = requeueComputeAuto(entries, new Set(colonies.map(c=>c.id)));
+  const curYear = String(new Date().getFullYear());
+  const years = [...new Set([curYear, ...Object.keys(auto), ...Object.keys(list)])].sort().reverse();
+
+  const sections = years.map(y=>{
+    const ids = new Set([...Object.keys(auto[y]||{}), ...Object.keys(list[y]||{})]);
+    const rows = [...ids].filter(id=>colById[id]).map(id=>{
+      const item = list[y]?.[id];
+      const crit = auto[y]?.[id] || {};
+      if(!requeueItemVisible(item, Object.keys(crit))) return null;
+      return {id, c:colById[id], item, crit};
+    }).filter(Boolean).sort((a,b)=>(!!a.item?.done - !!b.item?.done) || a.c.name.localeCompare(b.c.name,'de',{numeric:true}));
+    if(!rows.length && y!==curYear) return '';
+    const openCount = rows.filter(r=>!r.item?.done).length;
+    return `<details class="rq-year" ${y===curYear?'open':''}>
+      <summary class="section-h rq-year-h">${y} <span class="muted">(${openCount} offen${rows.length-openCount?`, ${rows.length-openCount} erl.`:''})</span></summary>
+      ${rows.length ? `<ul class="rq-list">${rows.map(r=>`
+        <li class="card rq-row ${r.item?.done?'rq-done':''}">
+          <div class="rq-main" data-rq-open="${r.id}">
+            <div class="card-title">${esc(r.c.name)} <span class="card-sub" style="display:inline">· ${esc(r.c._apiaryName||'')}</span></div>
+            <div class="rq-reasons">
+              ${REQUEUE_CRITERIA.filter(k=>r.crit[k.key]).map(k=>`<span class="obs-chip rq-chip">${esc(k.label)} ${r.crit[k.key].length}×: ${r.crit[k.key].map(fmtDateShort).join(', ')}</span>`).join('')}
+              ${r.item?.manual?`<span class="obs-chip rq-chip rq-chip-manual">✎ ${esc(r.item.manual.reason)}</span>`:''}
+            </div>
+            ${r.item?.done?`<div class="muted" style="font-size:.78rem">erledigt${r.item.doneAt?' am '+fmtDate(r.item.doneAt):''}</div>`:''}
+          </div>
+          <div class="rq-actions">
+            ${r.item?.done
+              ? `<button type="button" class="btn btn-ghost btn-sm" data-rq-undo="${y}|${r.id}" title="Wieder offen">↺</button>`
+              : `<button type="button" class="btn btn-ghost btn-sm" data-rq-done="${y}|${r.id}" title="Erledigt">✓ erl.</button>`}
+            <button type="button" class="btn btn-ghost btn-sm" data-rq-del="${y}|${r.id}" title="Aus der Liste entfernen">🗑</button>
+          </div>
+        </li>`).join('')}</ul>` : `<p class="muted">Keine Völker für ${y}.</p>`}
+    </details>`;
+  }).join('');
+
+  app.innerHTML = `
+    <div class="toolbar" style="justify-content:space-between;align-items:center">
+      <span class="muted" style="font-size:.8rem">Automatisch: 3× Schwarmzellen/-stimmung · 2× Wildbau mittel/stark · 3× Sanftmut ≤ mittel · 3× Volksstärke ≤ mittel (je Jahr)</span>
+    </div>
+    <button type="button" class="btn btn-primary block" id="rq-add">+ Volk hinzufügen</button>
+    ${sections}`;
+
+  const mutate = async(y, id, fn) => {
+    const l = requeueLoadList(await apiGet('./api/settings').catch(()=>({})));
+    const yl = l[y] ||= {};
+    fn(yl, yl[id] ||= {});
+    await requeueSaveList(l);
+    /* erledigt/entfernt im laufenden Jahr -> Markierung am Volk aufheben */
+    if(y===curYear){
+      const it = l[y][id];
+      const c = await apiGet('./api/colonies/'+id).catch(()=>null);
+      const off = it?.done || (!it?.manual && (it?.removedCriteria||[]).length);
+      if(c && off && c.requeueFlag) await api('PUT','./api/colonies/'+id,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
+    }
+    renderRequeue();
+  };
+  const split = (v)=>v.split('|');
+  app.querySelectorAll('[data-rq-open]').forEach(el=>el.onclick=()=>{
+    const c = colById[el.dataset.rqOpen];
+    go('colony',{colonyId:c.id, apiaryId:c.apiaryId, from:'requeue', fromParams:{restoreScrollY:window.scrollY}});
+  });
+  app.querySelectorAll('[data-rq-done]').forEach(b=>b.onclick=()=>{ const [y,id]=split(b.dataset.rqDone);
+    mutate(y,id,(yl,it)=>{ it.done=true; it.doneAt=todayInput(); }); });
+  app.querySelectorAll('[data-rq-undo]').forEach(b=>b.onclick=()=>{ const [y,id]=split(b.dataset.rqUndo);
+    mutate(y,id,(yl,it)=>{ it.done=false; it.doneAt=''; }); });
+  app.querySelectorAll('[data-rq-del]').forEach(b=>b.onclick=()=>{ const [y,id]=split(b.dataset.rqDel);
+    if(!confirm(`${colById[id]?.name||'Volk'} aus der Umweiselungsliste ${y} entfernen?`)) return;
+    mutate(y,id,(yl,it)=>{ it.removedCriteria=Object.keys(auto[y]?.[id]||{}); it.manual=null; it.done=false; it.doneAt=''; }); });
+  $('#rq-add').onclick=()=>{
+    const opts = colonies.slice().sort((a,b)=>a.name.localeCompare(b.name,'de',{numeric:true}))
+      .map(c=>[c.id, `${c.name} (${c._apiaryName||''})`]);
+    openModal('Volk zur Umweiselung hinzufügen', `
+      ${selectField('Volk','colonyId','',[['','— bitte wählen —'],...opts])}
+      ${textareaField('Begründung','reason','')}`,
+      async(data,close)=>{
+        if(!data.colonyId) return alert('Bitte ein Volk auswählen.');
+        if(!data.reason.trim()) return alert('Bitte eine Begründung eingeben.');
+        const l = requeueLoadList(await apiGet('./api/settings').catch(()=>({})));
+        const yl = l[curYear] ||= {};
+        yl[data.colonyId] = {...(yl[data.colonyId]||{}), manual:{reason:data.reason.trim(), addedAt:todayInput()}, done:false, doneAt:''};
+        await requeueSaveList(l);
+        const c = await apiGet('./api/colonies/'+data.colonyId);
+        const rs = requeueParseReasons(c);
+        await api('PUT','./api/colonies/'+c.id,{...c, requeueFlag:1,
+          requeueReasons:JSON.stringify([...new Set([...rs,'Sonstiges'])]),
+          requeueNote: c.requeueNote || data.reason.trim()});
+        close(); renderRequeue();
+      }, null);
+  };
 }
 
 /* ---------- Theme ---------- */
@@ -967,6 +1208,7 @@ async function render() {
     if(nav.view==='honeystir') return await renderHoneyStir();
     if(nav.view==='honeystirbatch') return await renderHoneyStirBatch();
     if(nav.view==='verkauf') return await renderVerkauf();
+    if(nav.view==='requeue') return await renderRequeue();
   } catch(e) {
     app.innerHTML=`<div class="banner-error">${esc(e.message)}
       <button class="btn btn-ghost btn-sm" onclick="location.reload()">Neu laden</button></div>`;
@@ -977,7 +1219,7 @@ backBtn.addEventListener('click',()=>{
   if(nav.from){ go(nav.from, nav.fromParams||{}); return; }
   if(nav.view==='colony'){ go('colonies',{apiaryId:nav.apiaryId,restoreScrollY:nav.backScrollY}); return; }
   if(nav.view==='honeystirbatch'){ go('honeystir'); return; }
-  if(['colonies','settings','archive','all','honey','honeystir','verkauf','fuetterung','gewicht','lastentries','varroacount','varroahistory','sirupcalc','fuetterungsvorschlag'].includes(nav.view)) go('apiaries');
+  if(['colonies','settings','archive','all','honey','honeystir','verkauf','fuetterung','gewicht','lastentries','varroacount','varroahistory','sirupcalc','fuetterungsvorschlag','requeue'].includes(nav.view)) go('apiaries');
 });
 
 /* Update-Hinweis im Header (Setup-Portal installiert - Pi ODER
@@ -1143,6 +1385,7 @@ async function renderApiaries() {
       <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge" style="${homeBtnSizeVars('lastentries')}${homeBtnColorStyle('lastentries')}"><span class="home-btn-icon">🕒</span>${homeBtnLabelHTML('lastentries','Letzte Einträge')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="${homeBtnSizeVars('varroacount')}${homeBtnColorStyle('varroacount')}"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('varroacount','Varroazählung')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive" style="${homeBtnSizeVars('archive')}${homeBtnColorStyle('archive')}"><span class="home-btn-icon">📦</span>${homeBtnLabelHTML('archive','Archiv')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('requeue')}" id="open-requeue" title="Umweiselung" style="${homeBtnSizeVars('requeue')}${homeBtnColorStyle('requeue')}"><span class="home-btn-icon">⚠</span>${homeBtnLabelHTML('requeue','Umweiselung')}</button>
       <button class="btn btn-ghost home-btn" id="open-settings" title="Einstellungen" style="${homeBtnSizeVars('settings')}${homeBtnColorStyle('settings')}"><span class="home-btn-icon">⚙︎</span>${homeBtnLabelHTML('settings','Einstellungen')}</button>
       ${hilfeLinkHTML}
     </div>
@@ -1273,6 +1516,7 @@ async function renderApiaries() {
   $('#open-lastentries').onclick=()=>go('lastentries');
   $('#open-varroacount').onclick=()=>go('varroacount');
   $('#open-archive').onclick=()=>go('archive');
+  $('#open-requeue').onclick=()=>go('requeue');
   $('#open-settings').onclick=()=>go('settings');
   const hilfeBtn=$('#open-hilfe');
   if(hilfeBtn) hilfeBtn.onclick=()=>{ window.location.href=setupPortalUrl(setupLandingPort,'/hilfe'); };
@@ -1967,6 +2211,21 @@ function requeueForm(colony, apiaryId) {
       const clear=document.getElementById('rq-clear')?.checked;
       const reasons=[...document.querySelectorAll('.rq-check:checked')].map((x)=>x.value);
       await api('PUT','./api/colonies/'+colony.id,{...colony,requeueFlag:clear?0:1,requeueReasons:clear?'[]':JSON.stringify(reasons),requeueNote:clear?'':data.requeueNote});
+      /* Umweiselungsliste (laufendes Jahr) mitziehen: aufheben = entfernen, markieren = manueller Eintrag */
+      try {
+        const year = String(new Date().getFullYear());
+        const l = requeueLoadList(await apiGet('./api/settings').catch(()=>({})));
+        const yl = l[year] ||= {};
+        if(clear){
+          const ents = await apiGet('./api/entries?colonyId='+colony.id).catch(()=>[]);
+          const met = Object.keys(requeueComputeAuto(ents, new Set([colony.id]))[year]?.[colony.id] || {});
+          yl[colony.id] = {...(yl[colony.id]||{}), removedCriteria:met, manual:null, done:false, doneAt:''};
+        } else {
+          const reason = [reasons.join(', '), (data.requeueNote||'').trim()].filter(Boolean).join(' – ') || 'Am Volk markiert';
+          yl[colony.id] = {...(yl[colony.id]||{}), manual:{reason, addedAt:todayInput()}, done:false, doneAt:''};
+        }
+        await requeueSaveList(l);
+      } catch(_) {}
       close(); renderColonies();
     },null);
 }
@@ -2210,11 +2469,13 @@ function entryForm(colonyId, existing, colony, allEntries) {
         }
         if(needsUpdate) await api('PUT','./api/colonies/'+colony.id, colonyUpdate);
       }
+      await syncRequeueSafe(colonyId);
       close(); renderColony();
     },
     existing?async(close)=>{
       if(!confirm('Diesen Eintrag löschen?')) return;
       await api('DELETE','./api/entries/'+existing.id);
+      await syncRequeueSafe(colonyId);
       close(); renderColony();
     }:null);
 
@@ -2395,6 +2656,7 @@ function massEntryForm(apiaryId, colonies) {
           }
         }
       }
+      await syncRequeueSafe();
       close(); alert(ids.length+' Einträge erstellt.'); renderColonies();
     },null);
   wireObs(obs,swarmCounts,selectValues);
@@ -2569,7 +2831,7 @@ async function renderAll() {
           ${cols.showStatus?`<span class="all-status">${status}${cols.showFlags?requeue+breed:''}</span>`:''}
           <span class="all-name">${esc(c.name)}</span>
           ${cols.showApiary?`<span class="all-sub">${esc(c._apiaryName)}</span>`:''}
-          ${cols.showQueen?`<span class="all-queen">${qBadge}${qNr ? qNr+' ' : ''}${qGen}</span>`:''}
+          ${(cols.showQueenYear&&qBadge)||(cols.showQueenNr&&qNr)||(cols.showQueenGen&&qGen)?`<span class="all-queen">${cols.showQueenYear?qBadge:''}${cols.showQueenNr&&qNr ? qNr+' ' : ''}${cols.showQueenGen?qGen:''}</span>`:''}
           ${cols.showSource&&c.source?`<span class="all-badge" style="background:transparent;color:var(--ink-soft)">${esc(c.source)}</span>`:''}
           <span class="all-badges">
             ${cols.showHr?hrBadge:''}
@@ -2622,14 +2884,13 @@ function printAllList(all, settings) {
       const eilage  = addDays(c.umlarvDate, schlupfDays+eilageDays);
       zucht = `Schlupf ${fmtDate(schlupf)}, Eilage ${fmtDate(eilage)}`;
     }
-    const queen = (c.queenYear && c.queenYear!=='unbekannt' ? String(c.queenYear).slice(-2) : '?')
-      + (c.queenNr ? ' / '+c.queenNr : '')
-      + (c.queenGen ? ' / '+c.queenGen : '');
     const cells = [];
     cells.push(`<td>${esc(c.name)}</td>`);
     if(cols.showApiary)  cells.push(`<td>${esc(c._apiaryName||'')}</td>`);
     if(cols.showStatus)  cells.push(`<td>${STATUS_TEXT[c.status||'ok']||''}</td>`);
-    if(cols.showQueen)   cells.push(`<td>${esc(queen)}</td>`);
+    if(cols.showQueenYear) cells.push(`<td>${c.queenYear && c.queenYear!=='unbekannt' ? String(c.queenYear).slice(-2) : '?'}</td>`);
+    if(cols.showQueenNr)   cells.push(`<td>${esc(c.queenNr||'')}</td>`);
+    if(cols.showQueenGen)  cells.push(`<td>${esc(c.queenGen||'')}</td>`);
     if(cols.showSource)  cells.push(`<td>${esc(c.source||'')}</td>`);
     if(cols.showHr)      cells.push(`<td>${hrTxt}</td>`);
     if(cols.showFlags)   cells.push(`<td>${esc(flags.join(', '))}</td>`);
@@ -2643,7 +2904,9 @@ function printAllList(all, settings) {
   const headers = ['Name'];
   if(cols.showApiary)  headers.push('Standort');
   if(cols.showStatus)  headers.push('Zustand');
-  if(cols.showQueen)   headers.push('Königin (Jahr/Nr/Gen)');
+  if(cols.showQueenYear) headers.push('Kön. Jahr');
+  if(cols.showQueenNr)   headers.push('Kön. Nr');
+  if(cols.showQueenGen)  headers.push('Kön. Gen');
   if(cols.showSource)  headers.push('Herkunft');
   if(cols.showHr)      headers.push('HR');
   if(cols.showFlags)   headers.push('Status');
@@ -5514,11 +5777,8 @@ async function renderSettings() {
   document.querySelectorAll('[data-edit-scale]').forEach((b)=>{ const s=scales.find((x)=>x.id===b.dataset.editScale); b.onclick=()=>scaleForm(s,()=>renderSettings()); });
   // Alle-Völker Konfiguration laden
   apiGet('./api/settings').then(s=>{
-    document.querySelectorAll('.all-col-chk').forEach(chk=>{
-      const k=chk.dataset.key;
-      const stored=s['allCol_'+k];
-      if(stored!==undefined) chk.checked=(stored==='true');
-    });
+    const allColsCfg=getAllCols(s);
+    document.querySelectorAll('.all-col-chk').forEach(chk=>{ chk.checked=!!allColsCfg[chk.dataset.key]; });
     document.querySelectorAll('.home-btn-chk').forEach(chk=>{
       const k=chk.dataset.key;
       const stored=s['homeBtn_'+k];

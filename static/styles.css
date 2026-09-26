@@ -872,3 +872,21 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
   background:var(--bg); color:var(--ink)}
 .zugang-form .btn{margin-top:.3rem}
 .zugang-hinweis{font-size:.78rem; margin-top:1rem}
+
+/* ---------- Umweiselungsliste ---------- */
+.rq-year{margin-top:1rem}
+.rq-year-h{cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:.4rem}
+.rq-year-h::-webkit-details-marker{display:none}
+.rq-year-h::marker{content:''}
+.rq-year-h .muted{text-transform:none;font-weight:500}
+.rq-year-h::before{content:'▸';font-size:.8rem;display:inline-block;width:.8rem;text-decoration:none}
+.rq-year[open] .rq-year-h::before{content:'▾'}
+.rq-list{list-style:none;padding:0;margin:.4rem 0 0;display:flex;flex-direction:column;gap:.4rem}
+.rq-row{display:flex;align-items:flex-start;gap:.5rem}
+.rq-main{flex:1;min-width:0;cursor:pointer}
+.rq-reasons{display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.3rem}
+.rq-chip{white-space:normal}
+.rq-chip-manual{font-style:italic}
+.rq-actions{display:flex;flex-direction:column;gap:.3rem;flex-shrink:0}
+.rq-done{opacity:.55}
+.rq-done .card-title{text-decoration:line-through}
