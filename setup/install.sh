@@ -286,6 +286,20 @@ cp "$SCRIPT_DIR/imkerei-update-check.service" /etc/systemd/system/imkerei-update
 cp "$SCRIPT_DIR/imkerei-update-check.timer" /etc/systemd/system/imkerei-update-check.timer
 
 # ---------------------------------------------------------------------------
+log "apt-Paket-Cache nur im RAM aufbauen - schont SD-Karte/USB-Stick"
+# Nach jedem 'apt update' schreibt apt pkgcache.bin + srcpkgcache.bin
+# (zusammen ~140 MB) komplett neu. Mit einem Monitoring-Agent, der stuendlich
+# 'apt update' anstoesst (z. B. PatchMon), waren das auf einer HonigBox
+# ~3 GiB/Tag. Leerer Pfad = apt baut den Cache bei jedem Aufruf im Speicher
+# auf (auf einem Pi 4 ca. 3 s pro apt-Aufruf). Rueckbau: Datei loeschen.
+cat > /etc/apt/apt.conf.d/02imker-app-kein-pkgcache << 'APTCACHEEOF'
+// Angelegt von BeeTown setup/install.sh - kein Paket-Cache auf dem Datentraeger.
+Dir::Cache::pkgcache "";
+Dir::Cache::srcpkgcache "";
+APTCACHEEOF
+rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin
+
+# ---------------------------------------------------------------------------
 log "Ermittle Port des Setup-Portals"
 # Die Port-80-Belegungspruefung macht jetzt das Portal-eigene install.sh
 # selbst (siehe Bootstrap oben) - hier nur noch auslesen, welchen Port es
