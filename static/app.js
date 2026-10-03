@@ -47,6 +47,7 @@ async function loadSettings() {
     const obsVis = {};
     OBS_OPTIONS.forEach(([k]) => { obsVis[k] = (s['obsBtn_'+k] !== 'false'); });
     OBS_SELECT_CONFIG.forEach((c) => { obsVis[c.key] = (s['obsBtn_'+c.key] !== 'false'); });
+    ENTRY_RATING_CONFIG.forEach((c) => { obsVis[c.key] = (s['obsBtn_'+c.key] !== 'false'); });
     window._obsBtnVis = obsVis;
     const homeVis = {};
     HOME_BTN_CONFIG.forEach(c => { homeVis[c.key] = (s['homeBtn_'+c.key] !== 'false'); });
@@ -527,6 +528,21 @@ const OBS_SELECT_CONFIG = [
   { key:'waben',     field:'wabenAnzahl',  label:'Anzahl Waben', idleLabel:'Anzahl Waben', chipPrefix:'Anzahl Waben: ',
     optionsCore: Array.from({length:12},(_,i)=>[String(i+1),String(i+1)]) },
 ];
+/* Bewertungen Sanftmut/Volksstaerke/Futter: liegen in eigenen Spalten des Eintrags
+   (temper/strength/food, '---' = nicht bewertet), erscheinen im Formular aber als
+   Auswahl-Buttons bei den Beobachtungen. Ein verstecktes Feld gleichen Namens traegt
+   den Wert, damit das Speichern unveraendert ueber die Formulardaten laeuft. */
+const TEMPER_OPTIONS   = ['---','5 – sehr sanft','4 – sanft','3 – mittel','2 – lebhaft','1 – stechlustig'];
+const STRENGTH_OPTIONS = ['---','5 – sehr stark','4 – stark','3 – mittel','2 – schwach','1 – sehr schwach'];
+const FOOD_OPTIONS     = ['---','5 – Zu viel','4 – Gut','3 – Mittel','2 – Gering','1 – Nichts'];
+const ENTRY_RATING_CONFIG = [
+  { key:'temper',   field:'temper',   label:'Sanftmut',    options:TEMPER_OPTIONS },
+  { key:'strength', field:'strength', label:'Volksstärke', options:STRENGTH_OPTIONS },
+  { key:'food',     field:'food',     label:'Futter',      options:FOOD_OPTIONS },
+];
+function ratingBtnLabel(cfg, value) {
+  return (value && value!=='---') ? `${cfg.label}: ${value}` : cfg.label;
+}
 function obsSelectLabel(cfg, value) {
   if(!value) return '';
   const found = cfg.optionsCore.find(([v])=>v===value);
@@ -633,6 +649,10 @@ function applyButtonVisibilityLive() {
     if(wrapper) wrapper.classList.toggle('hidden', hide);
     else btn.classList.toggle('hidden', hide);
   });
+  document.querySelectorAll('[data-obssel],[data-rating]').forEach((btn)=>{
+    const k=btn.dataset.obssel||btn.dataset.rating;
+    btn.classList.toggle('hidden', window._obsBtnVis?.[k]===false);
+  });
   OBS_SELECT_CONFIG.forEach((c)=>{
     ['btn-'+c.key,'mass-btn-'+c.key].forEach((id)=>{
       const el=document.getElementById(id);
@@ -651,7 +671,7 @@ function openButtonManager() {
     </div>
     <label class="lbl form-section-label" style="margin-top:1rem">Beobachtungen</label>
     <div class="check-list">
-      ${[...OBS_OPTIONS,...OBS_SELECT_CONFIG.map((c)=>[c.key,c.label])].map(([k,l])=>`<label class="check-item">
+      ${[...OBS_OPTIONS,...OBS_SELECT_CONFIG.map((c)=>[c.key,c.label]),...ENTRY_RATING_CONFIG.map((c)=>[c.key,c.label])].map(([k,l])=>`<label class="check-item">
         <input type="checkbox" class="mgr-obs-chk" data-key="${k}" ${window._obsBtnVis?.[k]!==false?'checked':''}><span>${esc(l)}</span>
       </label>`).join('')}
     </div>`,
@@ -1104,7 +1124,7 @@ function wirePhotos(photos, thumbsId='form-thumbs', allEntries, currentEntryId) 
 }
 
 /* ---------- Beobachtungs-Toggles ---------- */
-function obsTogglesHTML(selected, swarmCounts, selectValues) {
+function obsTogglesHTML(selected, swarmCounts, selectValues, ratingValues) {
   return `<label class="lbl">Beobachtungen</label>
     <div class="obs-toggles">${OBS_OPTIONS.map(([k,l])=>{
       const isSwarm = k in SWARM_COUNT_KEYS;
@@ -1121,7 +1141,11 @@ function obsTogglesHTML(selected, swarmCounts, selectValues) {
       const val=selectValues?.[cfg.field]||'';
       const label=val ? obsSelectLabel(cfg,val) : cfg.idleLabel;
       return `<button type="button" class="obs-btn ${obsBtnHidden(cfg.key)} ${val?'on':''}" data-obssel="${cfg.key}">${esc(label)}</button>`;
-    }).join('')}</div>`;
+    }).join('')}${ratingValues ? ENTRY_RATING_CONFIG.filter((cfg)=>cfg.field in ratingValues).map((cfg)=>{
+      const val=ratingValues[cfg.field]||'---';
+      return `<button type="button" class="obs-btn ${obsBtnHidden(cfg.key)} ${val!=='---'?'on':''}" data-rating="${cfg.key}">${esc(ratingBtnLabel(cfg,val))}</button>`+
+        `<input type="hidden" name="${cfg.field}" value="${esc(val)}">`;
+    }).join('') : ''}</div>`;
 }
 function wireObs(selected, swarmCounts, selectValues) {
   document.querySelectorAll('[data-obs]').forEach((b)=>b.onclick=()=>{
@@ -1151,6 +1175,21 @@ function wireObs(selected, swarmCounts, selectValues) {
       document.querySelector(`[data-cnt-val="${k}"]`).textContent=swarmCounts[ck];
     });
   }
+  document.querySelectorAll('[data-rating]').forEach((btn)=>{
+    const cfg=ENTRY_RATING_CONFIG.find((c)=>c.key===btn.dataset.rating);
+    const inp=btn.closest('form')?.querySelector(`input[type="hidden"][name="${cfg?.field}"]`);
+    if(!cfg || !inp) return;
+    btn.onclick=()=>{
+      openModal(cfg.label,
+        selectField(cfg.label,'ratingPick',inp.value||'---',cfg.options.map((t)=>[t,t])),
+        (data,close)=>{
+          inp.value=data.ratingPick||'---';
+          btn.textContent=ratingBtnLabel(cfg,inp.value);
+          btn.classList.toggle('on', inp.value!=='---');
+          close(); return Promise.resolve();
+        },null);
+    };
+  });
   if(selectValues){
     document.querySelectorAll('[data-obssel]').forEach((btn)=>{
       const cfg=OBS_SELECT_CONFIG.find((c)=>c.key===btn.dataset.obssel);
@@ -2478,9 +2517,6 @@ function entryForm(colonyId, existing, colony, allEntries) {
   };
   ['no_ss','ss_stark','ss_normal','ss_gering','wildbau'].forEach((k)=>obs.delete(k));
 
-  const TEMPER_OPTIONS   = ['---','5 – sehr sanft','4 – sanft','3 – mittel','2 – lebhaft','1 – stechlustig'];
-  const STRENGTH_OPTIONS = ['---','5 – sehr stark','4 – stark','3 – mittel','2 – schwach','1 – sehr schwach'];
-  const FOOD_OPTIONS     = ['---','5 – Zu viel','4 – Gut','3 – Mittel','2 – Gering','1 – Nichts'];
   const FUETTER_TYPES    = ['Zuckerwasser (1 : 1,2)','Zuckerwasser (1 : 1)','Zuckerwasser (3 : 2)','Sirup'];
 
   const curStage = colony ? (parseInt(colony.demareeStage)||0) : 0;
@@ -2501,7 +2537,7 @@ function entryForm(colonyId, existing, colony, allEntries) {
   let entryWabenPositions = (existingExtra.wabenPositions||[]).slice();
 
   openModal(existing?'Eintrag bearbeiten':'Neuer Eintrag',`
-    ${obsTogglesHTML(obs,swarmCounts,selectValues)}
+    ${obsTogglesHTML(obs,swarmCounts,selectValues,{temper:existing?.temper||'---', strength:existing?.strength||'---', food:existing?.food||'---'})}
     <label class="lbl">Aktionen</label>
     <div class="action-btns">
       <button type="button" class="obs-btn ${actionBtnHidden('demaree')} ${demareeActionVal?'on':''}" id="btn-demaree">${demareeButtonLabel}</button>
@@ -2523,9 +2559,6 @@ function entryForm(colonyId, existing, colony, allEntries) {
     ${selectField('Art','type',existing?.type||'',ENTRY_TYPES.map((t)=>[t,t]))}
     ${field('Datum','date',existing?.date||todayInput(),true,'date')}
     ${photoButtonsHTML()}
-    ${selectField('Sanftmut','temper',existing?.temper||'---',TEMPER_OPTIONS.map((t)=>[t,t]))}
-    ${selectField('Volksstärke','strength',existing?.strength||'---',STRENGTH_OPTIONS.map((t)=>[t,t]))}
-    ${selectField('Futter','food',existing?.food||'---',FOOD_OPTIONS.map((t)=>[t,t]))}
     ${field('Gewicht (kg)','gewicht',existingExtra.gewicht||'','','number')}
     ${textareaField('Notizen','notes',existing?.notes)}`,
     async(data,close)=>{
@@ -2732,13 +2765,12 @@ function massEntryForm(apiaryId, colonies) {
   let massWeiselprobe=false, massKaefigung=false, massKoeniginFrei=false;
   let massWabenPositions=[];
   const selectValues={swarmMood:'', wildbauLevel:'', wabenAnzahl:''};
-  const FOOD_OPTIONS=['---','5 – Zu viel','4 – Gut','3 – Mittel','2 – Gering','1 – Nichts'];
   const FUETTER_TYPES=['Zuckerwasser (1 : 1,2)','Zuckerwasser (1 : 1)','Zuckerwasser (3 : 2)','Sirup'];
   openModal('Sammeleintrag',`
     <label class="lbl">Völker auswählen *</label>
     <label class="check-item"><input type="checkbox" id="mass-select-all"><span><strong>Alle auswählen</strong></span></label>
     <div class="check-list">${colonies.map((c)=>`<label class="check-item"><input type="checkbox" class="col-check" value="${c.id}"><span>${esc(c.name)}</span></label>`).join('')}</div>
-    ${obsTogglesHTML(obs,swarmCounts,selectValues)}
+    ${obsTogglesHTML(obs,swarmCounts,selectValues,{food:'---'})}
     <label class="lbl">Aktionen</label>
     <div class="action-btns">
       <button type="button" class="obs-btn ${actionBtnHidden('weiselprobe')}" id="mass-btn-weiselprobe">🐝 + Weiselprobe</button>
@@ -2756,7 +2788,6 @@ function massEntryForm(apiaryId, colonies) {
     </div>
     ${selectField('Art','type',ENTRY_TYPES[0],ENTRY_TYPES.map((t)=>[t,t]))}
     ${field('Datum','date',todayInput(),true,'date')}
-    ${selectField('Futter','food','---',FOOD_OPTIONS.map((t)=>[t,t]))}
     ${textareaField('Notizen','notes')}
     <label class="lbl">Fotos</label>
     <div class="photo-grid" id="mass-thumbs"></div>
@@ -5591,52 +5622,61 @@ async function renderSettings() {
         </label>`).join('')}
       </div>
 
-      <div class="section-h" style="margin-top:1.2rem">Startseite – Angezeigte Buttons</div>
-      <p class="muted">Welche Buttons sollen erscheinen, wo (oben, in der Leiste unten oder unter „Mehr“), wie groß, mit oder ohne Text? Jeder Button einzeln einstellbar.</p>
-      <p class="muted" style="font-size:.8rem;margin-top:.2rem">„Start“ und „Mehr“ sind fest in der Leiste unten. Mehr als 4 Buttons in der Leiste werden auf dem Handy eng.</p>
-      <div class="home-btn-bulk-row">
-        <input type="color" id="home-btn-bulk-color" value="#ffd43b" title="Sammel-Farbe">
-        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-selectall">Alle markieren</button>
-        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-apply">Für markierte übernehmen</button>
-        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-reset">Markierte zurücksetzen</button>
-      </div>
-      <p class="muted" style="font-size:.8rem;margin-top:.2rem">Buttons unten markieren (Kästchen links), dann Farbe wählen und übernehmen - für alle auf einmal oder nur bestimmte.</p>
-      <div id="home-btns-cfg">
+      `)}
+    ${settingsSection('startbuttons','Startseite – Buttons',`
+      <p class="muted">Wo soll jeder Button erscheinen? Ein Button steht immer nur an einer Stelle.</p>
+      <p class="muted" style="font-size:.8rem;margin-top:.2rem">„Start“ und „Mehr“ sind fest in der Leiste unten. „Mehr“ erscheint nur, wenn dort mindestens ein Button einsortiert ist. Mehr als 4 Buttons in der Leiste werden auf dem Handy eng.</p>
+      <div class="cfg-list">
         ${HOME_BTN_SIZE_CONFIG.map(c=>`
-        <div class="home-btn-cfg-row" data-key="${c.key}">
-          <div style="display:flex;align-items:center;gap:.5rem">
-            <input type="checkbox" class="home-btn-bulk-chk" data-key="${c.key}" title="Für Sammel-Farbe markieren">
-            ${c.noHide ? `<div class="home-btn-cfg-name">${esc(c.label)}</div>` : `
-            <label class="check-item" style="padding:0">
-              <input type="checkbox" class="home-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
-            </label>`}
+        <div class="cfg-row">
+          <span class="cfg-name">${esc(c.label)}</span>
+          <select class="inp home-btn-place-sel" data-key="${c.key}">
+            <option value="top">Oben</option>
+            <option value="bar">Leiste unten</option>
+            <option value="more">Unter „Mehr“</option>
+            ${c.noHide ? '' : '<option value="hidden">Ausgeblendet</option>'}
+          </select>
+        </div>`).join('')}
+      </div>`)}
+    ${settingsSection('startgroesse','Startseite – Kachelgröße',`
+      <p class="muted">Gilt für die Kacheln oben auf der Startseite und im „Mehr“-Menü. Die Breite bestimmt, wie viele Kacheln nebeneinander passen. Die Höhe steuert auch die Größe von Icon und Schrift.</p>
+      <div class="cfg-list">
+        ${HOME_BTN_SIZE_CONFIG.map(c=>`
+        <div class="cfg-row cfg-row-wrap">
+          <span class="cfg-name">${esc(c.label)}</span>
+          <div class="cfg-controls">
+            <select class="inp home-btn-size-sel" data-key="${c.key}" title="Breite">
+              <option value="klein">Klein (4 pro Reihe)</option>
+              <option value="mittel">Mittel (3 pro Reihe)</option>
+              <option value="gross">Groß (2 pro Reihe)</option>
+            </select>
+            <label class="cfg-height"><input class="inp home-btn-height-inp" data-key="${c.key}" type="number" min="30" max="200" title="Höhe in Pixel"><span>px hoch</span></label>
+            <label class="check-item cfg-check"><input type="checkbox" class="home-btn-text-chk" data-key="${c.key}" checked><span>Text</span></label>
           </div>
-          <div class="home-btn-cfg-controls">
-            <select class="inp home-btn-place-sel" data-key="${c.key}" title="Position">
-              <option value="top">Oben</option>
-              <option value="bar">Leiste unten</option>
-              <option value="more">Unter „Mehr“</option>
-            </select>
-            <select class="inp home-btn-size-sel" data-key="${c.key}">
-              <option value="klein">Klein (4/Reihe)</option>
-              <option value="mittel">Mittel (3/Reihe)</option>
-              <option value="gross">Groß (2/Reihe)</option>
-            </select>
-            <input class="inp home-btn-height-inp" data-key="${c.key}" type="number" min="30" max="200" placeholder="Höhe (px)" title="Höhe (px)">
-            <label class="check-item home-btn-text-label">
-              <input type="checkbox" class="home-btn-text-chk" data-key="${c.key}" checked><span>Text</span>
-            </label>
-            <label class="check-item home-btn-color-label">
-              <input type="checkbox" class="home-btn-color-chk" data-key="${c.key}"><span>Farbe</span>
-            </label>
-            <input class="inp home-btn-color-inp" data-key="${c.key}" type="color" value="#ffd43b" style="width:2.4rem;height:2.2rem;padding:.15rem;display:none">
+        </div>`).join('')}
+      </div>`)}
+    ${settingsSection('farben','Farben',`
+      <div class="section-h">Startseiten-Buttons</div>
+      <p class="muted">Eigene Farbe je Button, gilt oben und im „Mehr“-Menü. Antippen des Farbfelds wählt eine Farbe, „Zurücksetzen“ stellt die normale Farbe wieder her.</p>
+      <div class="cfg-bulk">
+        <input type="color" id="home-btn-bulk-color" value="#ffd43b" title="Farbe für alle">
+        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-apply">Für alle übernehmen</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-reset">Alle zurücksetzen</button>
+      </div>
+      <div class="cfg-list">
+        ${HOME_BTN_SIZE_CONFIG.map(c=>`
+        <div class="cfg-row">
+          <span class="cfg-name">${esc(c.label)}</span>
+          <div class="cfg-controls">
+            <input class="home-btn-color-inp" data-key="${c.key}" data-custom="0" type="color" value="#ffd43b" title="Farbe wählen">
+            <button type="button" class="btn btn-ghost btn-sm home-btn-color-reset" data-key="${c.key}">Zurücksetzen</button>
+            <span class="cfg-std">Standard</span>
           </div>
         </div>`).join('')}
       </div>
 
-      <div class="section-h" style="margin-top:1.2rem">Button-Farben (übrige Menüs)</div>
-      <p class="muted">Gilt für alle Buttons außerhalb der Startseite (dort gelten die einzeln
-      eingestellten Farben oben weiterhin unverändert). Nur zwei Farben für die ganze App:</p>
+      <div class="section-h">Übrige Buttons der App</div>
+      <p class="muted">Gilt für alle Buttons außerhalb der Startseite. Nur zwei Farben für die ganze App:</p>
       <label class="check-item" style="margin-top:.4rem">
         <input type="checkbox" id="btn-ghost-color-chk"><span>Standard-Buttons (z. B. "Einnahmen")</span>
       </label>
@@ -5661,7 +5701,7 @@ async function renderSettings() {
     ${settingsSection('obsbtns','Beobachtungs-Buttons im Eintrag',`
       <p class="muted">Welche Beobachtungs-Buttons sollen im Eintragsformular erscheinen?</p>
       <div class="check-list" id="obs-btns-cfg">
-        ${[...OBS_OPTIONS,...OBS_SELECT_CONFIG.map((c)=>[c.key,c.label])].map(([k,l])=>`<label class="check-item">
+        ${[...OBS_OPTIONS,...OBS_SELECT_CONFIG.map((c)=>[c.key,c.label]),...ENTRY_RATING_CONFIG.map((c)=>[c.key,c.label])].map(([k,l])=>`<label class="check-item">
           <input type="checkbox" class="obs-btn-chk" data-key="${k}" checked><span>${esc(l)}</span>
         </label>`).join('')}
       </div>`)}
@@ -5921,14 +5961,11 @@ async function renderSettings() {
   apiGet('./api/settings').then(s=>{
     const allColsCfg=getAllCols(s);
     document.querySelectorAll('.all-col-chk').forEach(chk=>{ chk.checked=!!allColsCfg[chk.dataset.key]; });
-    document.querySelectorAll('.home-btn-chk').forEach(chk=>{
-      const k=chk.dataset.key;
-      const stored=s['homeBtn_'+k];
-      chk.checked=(stored!=='false');
-    });
+    /* Position + Ausblenden stecken in EINEM Auswahlfeld ("Ausgeblendet" = homeBtn_<key>=false) */
     document.querySelectorAll('.home-btn-place-sel').forEach(sel=>{
       const k=sel.dataset.key;
-      sel.value = s['homeBtnPlace_'+k] || HOME_BTN_PLACE_DEFAULT[k] || 'top';
+      const hidden = s['homeBtn_'+k]==='false' && sel.querySelector('option[value="hidden"]');
+      sel.value = hidden ? 'hidden' : (s['homeBtnPlace_'+k] || HOME_BTN_PLACE_DEFAULT[k] || 'top');
     });
     document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
       const k=sel.dataset.key;
@@ -5943,22 +5980,25 @@ async function renderSettings() {
     document.querySelectorAll('.home-btn-text-chk').forEach(chk=>{
       chk.checked = (s['homeBtnShowText_'+chk.dataset.key] !== 'false');
     });
-    document.querySelectorAll('.home-btn-color-chk').forEach(chk=>{
-      const k=chk.dataset.key;
-      const stored=s['homeBtnColor_'+k];
-      chk.checked=!!stored;
-      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
-      if(colorInp){ colorInp.value=stored||'#ffd43b'; colorInp.style.display=stored?'':'none'; }
+    document.querySelectorAll('.home-btn-color-inp').forEach(inp=>{
+      const stored=s['homeBtnColor_'+inp.dataset.key];
+      inp.value=stored||'#ffd43b';
+      inp.dataset.custom=stored?'1':'0';
     });
     const ghostChk=document.getElementById('btn-ghost-color-chk'), ghostInp=document.getElementById('btn-ghost-color-inp');
     if(ghostChk){ ghostChk.checked=!!s.btnGhostColor; ghostInp.value=s.btnGhostColor||'#ffffff'; ghostInp.style.display=s.btnGhostColor?'':'none'; }
     const primaryChk=document.getElementById('btn-primary-color-chk'), primaryInp=document.getElementById('btn-primary-color-inp');
     if(primaryChk){ primaryChk.checked=!!s.btnPrimaryColor; primaryInp.value=s.btnPrimaryColor||'#ffd43b'; primaryInp.style.display=s.btnPrimaryColor?'':'none'; }
   }).catch(()=>{});
-  document.querySelectorAll('.home-btn-color-chk').forEach(chk=>{
-    chk.onchange=()=>{
-      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${chk.dataset.key}"]`);
-      if(colorInp) colorInp.style.display=chk.checked?'':'none';
+  /* Farbfeld antippen = eigene Farbe, "Zurücksetzen" = wieder Standardfarbe.
+     data-custom merkt sich, ob eine eigene Farbe gesetzt ist. */
+  document.querySelectorAll('.home-btn-color-inp').forEach(inp=>{
+    inp.addEventListener('input', ()=>{ inp.dataset.custom='1'; });
+  });
+  document.querySelectorAll('.home-btn-color-reset').forEach(b=>{
+    b.onclick=()=>{
+      const inp=document.querySelector(`.home-btn-color-inp[data-key="${b.dataset.key}"]`);
+      if(inp) inp.dataset.custom='0';
     };
   });
   document.getElementById('btn-ghost-color-chk')?.addEventListener('change', (e)=>{
@@ -5967,36 +6007,14 @@ async function renderSettings() {
   document.getElementById('btn-primary-color-chk')?.addEventListener('change', (e)=>{
     document.getElementById('btn-primary-color-inp').style.display = e.target.checked?'':'none';
   });
-  /* Sammel-Farbe: fuer alle per Kaestchen markierten Buttons auf einmal setzen bzw.
-     zuruecksetzen, statt jeden Button einzeln umzustellen. Wirkt nur auf die Formularfelder -
-     gespeichert wird wie gewohnt erst ueber den normalen "Speichern"-Button unten. */
-  document.getElementById('home-btn-bulk-selectall')?.addEventListener('click', ()=>{
-    const chks=[...document.querySelectorAll('.home-btn-bulk-chk')];
-    const allChecked=chks.every(c=>c.checked);
-    chks.forEach(c=>{ c.checked=!allChecked; });
-  });
+  /* Sammel-Farbe: dieselbe Farbe fuer alle Startseiten-Buttons bzw. alle zuruecksetzen.
+     Wirkt nur auf die Formularfelder - gespeichert wird erst ueber "Speichern". */
   document.getElementById('home-btn-bulk-apply')?.addEventListener('click', ()=>{
     const color=document.getElementById('home-btn-bulk-color').value;
-    const marked=[...document.querySelectorAll('.home-btn-bulk-chk:checked')];
-    if(!marked.length) return alert('Bitte zuerst mindestens einen Button markieren.');
-    marked.forEach(chk=>{
-      const k=chk.dataset.key;
-      const colorChk=document.querySelector(`.home-btn-color-chk[data-key="${k}"]`);
-      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
-      if(colorChk) colorChk.checked=true;
-      if(colorInp){ colorInp.value=color; colorInp.style.display=''; }
-    });
+    document.querySelectorAll('.home-btn-color-inp').forEach(inp=>{ inp.value=color; inp.dataset.custom='1'; });
   });
   document.getElementById('home-btn-bulk-reset')?.addEventListener('click', ()=>{
-    const marked=[...document.querySelectorAll('.home-btn-bulk-chk:checked')];
-    if(!marked.length) return alert('Bitte zuerst mindestens einen Button markieren.');
-    marked.forEach(chk=>{
-      const k=chk.dataset.key;
-      const colorChk=document.querySelector(`.home-btn-color-chk[data-key="${k}"]`);
-      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
-      if(colorChk) colorChk.checked=false;
-      if(colorInp) colorInp.style.display='none';
-    });
+    document.querySelectorAll('.home-btn-color-inp').forEach(inp=>{ inp.dataset.custom='0'; });
   });
   document.getElementById('save-all-settings')?.addEventListener('click', async()=>{
     const payload={};
@@ -6031,11 +6049,12 @@ async function renderSettings() {
       payload['allCol_'+chk.dataset.key]=chk.checked?'true':'false';
     });
     // Startseite-Buttons
-    document.querySelectorAll('.home-btn-chk').forEach(chk=>{
-      payload['homeBtn_'+chk.dataset.key]=chk.checked?'true':'false';
-    });
     document.querySelectorAll('.home-btn-place-sel').forEach(sel=>{
-      payload['homeBtnPlace_'+sel.dataset.key]=sel.value;
+      const k=sel.dataset.key;
+      const canHide=!!sel.querySelector('option[value="hidden"]');
+      if(sel.value==='hidden'){ payload['homeBtn_'+k]='false'; return; }
+      payload['homeBtnPlace_'+k]=sel.value;
+      if(canHide) payload['homeBtn_'+k]='true';
     });
     document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
       payload['homeBtnSize_'+sel.dataset.key]=sel.value;
@@ -6046,10 +6065,8 @@ async function renderSettings() {
     document.querySelectorAll('.home-btn-text-chk').forEach(chk=>{
       payload['homeBtnShowText_'+chk.dataset.key]=chk.checked?'true':'false';
     });
-    document.querySelectorAll('.home-btn-color-chk').forEach(chk=>{
-      const k=chk.dataset.key;
-      const colorInp=document.querySelector(`.home-btn-color-inp[data-key="${k}"]`);
-      payload['homeBtnColor_'+k]=(chk.checked && colorInp)?colorInp.value:'';
+    document.querySelectorAll('.home-btn-color-inp').forEach(inp=>{
+      payload['homeBtnColor_'+inp.dataset.key]=inp.dataset.custom==='1'?inp.value:'';
     });
     // Globale Button-Farben (uebrige Menues)
     const ghostChkSave=document.getElementById('btn-ghost-color-chk'), ghostInpSave=document.getElementById('btn-ghost-color-inp');

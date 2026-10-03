@@ -923,3 +923,40 @@ body.has-bottom-nav #app{padding-bottom:calc(5.5rem + var(--safe-bottom))}
 .bn-item.active .ui-icon{background:color-mix(in srgb, var(--honey) 16%, transparent); border-radius:999px; padding:.15rem .9rem; box-sizing:content-box; margin:-.15rem 0}
 .bn-item:active{transform:scale(.94)}
 .more-sheet-grid{margin-bottom:.5rem}
+
+
+/* ---------- v2.9.40: Einstellungen - aufgeklappter Bereich als Karte ---------- */
+.settings-section[open]{background:var(--surface); border:1px solid var(--chip-line); border-radius:14px;
+  margin:.7rem 0; box-shadow:var(--shadow); overflow:hidden}
+.settings-section[open]:last-of-type{border-bottom:1px solid var(--chip-line)}
+.settings-section[open] > summary.section-h{background:var(--chip-bg); color:var(--chip-ink);
+  padding:.85rem 1rem; border-bottom:1px solid var(--chip-line)}
+.settings-section[open] > summary.section-h::after{color:var(--chip-ink)}
+.settings-section[open] > .settings-section-body{padding:.7rem 1rem 1.1rem}
+/* Bereichstitel ohne Unterstreichung (sonst identisch mit Zwischenueberschriften/Labels,
+   siehe globale .section-h-Regel v1.9.13 mit !important) */
+.settings-section > summary.section-h{text-decoration:none}
+/* Zwischenueberschriften innerhalb eines Bereichs - bewusst anders als die Bereichstitel */
+.settings-section-body .section-h{text-transform:none; letter-spacing:0; font-size:.95rem !important; font-weight:700 !important;
+  color:var(--ink) !important; text-decoration:none; margin:1.4rem 0 .35rem; padding-top:1rem; border-top:1px dashed var(--line)}
+.settings-section-body > .section-h:first-child{margin-top:.2rem; padding-top:0; border-top:none}
+
+/* ---------- v2.9.40: Konfigurations-Listen (Startseite/Farben) ---------- */
+.cfg-list{display:flex; flex-direction:column; margin-top:.4rem}
+.cfg-row{display:flex; align-items:center; justify-content:space-between; gap:.6rem; padding:.55rem 0; border-bottom:1px solid var(--line)}
+.cfg-row:last-child{border-bottom:none}
+.cfg-name{font-weight:600; font-size:.93rem; min-width:0}
+.cfg-row select.inp{width:auto; min-width:9.5rem; font-size:.88rem; padding:.4rem .5rem; min-height:auto}
+.cfg-row-wrap{flex-wrap:wrap}
+.cfg-row-wrap .cfg-name{flex-basis:100%}
+.cfg-controls{display:flex; align-items:center; gap:.5rem; flex-wrap:wrap}
+.cfg-height{display:inline-flex; align-items:center; gap:.3rem; font-size:.85rem; color:var(--ink-soft)}
+.cfg-height input.inp{width:4.3rem; padding:.4rem .5rem; font-size:.88rem; min-height:auto}
+.check-item.cfg-check{padding:0; border:none; background:none; gap:.3rem}
+.cfg-bulk{display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin:.5rem 0 .2rem}
+.cfg-bulk input[type="color"], .home-btn-color-inp{width:2.6rem; height:2.2rem; padding:.15rem;
+  border:1px solid var(--line); border-radius:8px; background:var(--input-bg); cursor:pointer}
+.home-btn-color-inp[data-custom="0"]{opacity:.3}
+.home-btn-color-inp[data-custom="0"] ~ .home-btn-color-reset{display:none}
+.home-btn-color-inp[data-custom="1"] ~ .cfg-std{display:none}
+.cfg-std{font-size:.82rem; color:var(--ink-soft)}
