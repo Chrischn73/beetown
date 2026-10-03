@@ -890,3 +890,36 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 .rq-actions{display:flex;flex-direction:column;gap:.3rem;flex-shrink:0}
 .rq-done{opacity:.55}
 .rq-done .card-title{text-decoration:line-through}
+
+
+/* ---------- v2.9.39: Standortkarten mit Statusbalken ---------- */
+.ui-icon{width:1.25em; height:1.25em; flex:none; vertical-align:-.22em}
+.apiary-card{flex-direction:column; align-items:stretch; gap:.55rem; padding:.95rem 1rem; border-radius:18px; transition:transform .12s ease}
+.apiary-card:active{transform:scale(.985)}
+.apiary-row{display:flex; align-items:center; gap:.7rem}
+.card-sub-icon{width:1em; height:1em; vertical-align:-.12em; opacity:.8}
+.apiary-count{display:flex; flex-direction:column; align-items:flex-end; line-height:1}
+.apiary-num{font-size:1.55rem; font-weight:750; color:var(--honey)}
+.apiary-unit{font-size:.72rem; color:var(--ink-soft); margin-top:.15rem}
+.apiary-chev{color:var(--ink-soft); width:1.1rem; height:1.1rem}
+.status-bar{display:flex; gap:3px; height:7px; border-radius:4px; overflow:hidden}
+.sb-seg{display:block; height:100%}
+.sb-ok{background:var(--ok)} .sb-watch{background:var(--watch)} .sb-varroa{background:var(--varroa)} .sb-weak{background:var(--weak)}
+.status-legend{display:flex; flex-wrap:wrap; gap:.25rem .8rem; font-size:.74rem; color:var(--ink-soft)}
+.sb-lg{display:inline-flex; align-items:center; gap:.3rem}
+.sb-dot{display:inline-block; width:8px; height:8px; border-radius:50%}
+
+/* ---------- v2.9.39: Untere Navigationsleiste + "Mehr"-Menue ---------- */
+body.has-bottom-nav #app{padding-bottom:calc(5.5rem + var(--safe-bottom))}
+.bottom-nav{position:fixed; left:0; right:0; bottom:0; z-index:30; display:flex; justify-content:space-around;
+  max-width:680px; margin:0 auto; padding:.35rem .15rem calc(.45rem + var(--safe-bottom));
+  background:color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border-top:1px solid var(--line)}
+.bn-item{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; align-items:center; gap:.15rem; background:none; border:0; font:inherit;
+  font-size:.7rem; font-weight:600; color:var(--ink-soft); padding:.35rem .1rem; cursor:pointer; border-radius:12px}
+.bn-item span{max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.bn-item .ui-icon{width:1.45rem; height:1.45rem}
+.bn-item.active{color:var(--honey)}
+.bn-item.active .ui-icon{background:color-mix(in srgb, var(--honey) 16%, transparent); border-radius:999px; padding:.15rem .9rem; box-sizing:content-box; margin:-.15rem 0}
+.bn-item:active{transform:scale(.94)}
+.more-sheet-grid{margin-bottom:.5rem}

@@ -51,8 +51,9 @@ async function loadSettings() {
     const homeVis = {};
     HOME_BTN_CONFIG.forEach(c => { homeVis[c.key] = (s['homeBtn_'+c.key] !== 'false'); });
     window._homeBtnVis = homeVis;
-    const homeSize = {}, homeHeight = {}, homeShowText = {}, homeColor = {};
+    const homeSize = {}, homeHeight = {}, homeShowText = {}, homeColor = {}, homePlace = {};
     HOME_BTN_SIZE_CONFIG.forEach(c => {
+      homePlace[c.key] = s['homeBtnPlace_'+c.key] || '';
       homeSize[c.key] = s['homeBtnSize_'+c.key] || c.defaultSize;
       homeHeight[c.key] = parseInt(s['homeBtnHeight_'+c.key]) || c.defaultHeight;
       homeShowText[c.key] = (s['homeBtnShowText_'+c.key] !== 'false');
@@ -62,6 +63,7 @@ async function loadSettings() {
     window._homeBtnHeight = homeHeight;
     window._homeBtnShowText = homeShowText;
     window._homeBtnColor = homeColor;
+    window._homeBtnPlace = homePlace;
     window._bkPrefix = s.bkPrefix !== undefined ? s.bkPrefix : 'BK';
     window._vkTilesPerRow = s.vkTilesPerRow || 'auto';
     window._lastEntriesLimit = parseInt(s.lastEntriesLimit) || 90;
@@ -88,7 +90,7 @@ const HOME_BTN_CONFIG = [
   {key:'requeue',     label:'Umweiselung'},
 ];
 function homeBtnHidden(key) {
-  return (window._homeBtnVis && window._homeBtnVis[key]===false) ? 'hidden' : '';
+  return ((window._homeBtnVis && window._homeBtnVis[key]===false) || homeBtnPlace(key)!=='top') ? 'hidden' : '';
 }
 /* Breite (klein/mittel/groß) und Höhe (freie Pixelzahl) sind bewusst unabhängig
    voneinander einstellbar: die Breite bestimmt nur, wie viele Kacheln pro Reihe
@@ -106,6 +108,44 @@ const HOME_BTN_SIZE_CONFIG = [
   {key:'settings', label:'Einstellungen', defaultSize:'klein', defaultHeight:38, noHide:true},
   {key:'hilfe',    label:'Hilfe',         defaultSize:'klein', defaultHeight:38, noHide:true},
 ];
+/* Position je Startseiten-Button: 'top' = oben im Kachel-Raster, 'bar' = untere
+   Navigationsleiste, 'more' = im "Mehr"-Menue der Leiste. Ein Button erscheint
+   immer nur an EINER Stelle. "Start" und "Mehr" sind fest in der Leiste, "Mehr"
+   aber nur, wenn dort mindestens ein Button einsortiert ist. */
+const HOME_BTN_PLACE_DEFAULT = { all:'bar', lastentries:'bar', settings:'bar', archive:'more', hilfe:'more' };
+function homeBtnPlace(key) {
+  return (window._homeBtnPlace && window._homeBtnPlace[key]) || HOME_BTN_PLACE_DEFAULT[key] || 'top';
+}
+/* Kurze Beschriftung in der Leiste (dort ist pro Button nur ~1/5 der Breite Platz) */
+const HOME_BTN_BAR_LABEL = { all:'Völker', lastentries:'Verlauf', varroacount:'Varroa', requeue:'Umweiseln' };
+/* Emoji/Bild-Icons der Kacheln (oben und im "Mehr"-Menue) */
+const HOME_BTN_ICON = {
+  all:'🐝', honey:'🍯', honeystir:'<img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain">',
+  verkauf:'💰', fuetterung:'🍬', lastentries:'🕒',
+  varroacount:'<img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain">',
+  archive:'📦', requeue:'⚠', settings:'⚙︎', hilfe:'❓'
+};
+/* Linien-Icons fuer die untere Leiste (stroke=currentColor, damit die aktive Farbe greift) */
+const BAR_ICONS = {
+  home:'<path d="M4 11.2L12 4l8 7.2"/><path d="M6.2 9.4V20h11.6V9.4"/><path d="M10 20v-5h4v5"/>',
+  all:'<ellipse cx="12" cy="13.5" rx="3.2" ry="4.5"/><path d="M8.9 12.5h6.2M8.9 15h6.2"/><path d="M10.2 9.4C8.6 7 5.6 6.8 5 8.4s1.6 3.2 4.3 2.7M13.8 9.4c1.6-2.4 4.6-2.6 5.2-1s-1.6 3.2-4.3 2.7"/><path d="M11 5.5l-.8-1.8M13 5.5l.8-1.8"/>',
+  honey:'<path d="M7 3.5h10M8.2 3.5v2.3C6 6.8 5 8.4 5 11v7a2.5 2.5 0 002.5 2.5h9A2.5 2.5 0 0019 18v-7c0-2.6-1-4.2-3.2-5.2V3.5"/><path d="M5 12h14"/><path d="M10 15.5c.8.8 3.2.8 4 0"/>',
+  honeystir:'<path d="M3.5 20.5l7-7"/><path d="M11.6 7.4a4.2 4.2 0 015.9 0 4.2 4.2 0 010 5.9l-1.8 1.8a4.2 4.2 0 01-5.9 0 4.2 4.2 0 010-5.9z"/><path d="M11 10.3l3.7 3.7M13 8.4l3.6 3.6"/>',
+  verkauf:'<ellipse cx="9" cy="6.5" rx="5" ry="2.5"/><path d="M4 6.5v4c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-4"/><path d="M4 10.5v4c0 1.4 2.2 2.5 5 2.5"/><ellipse cx="15" cy="13.5" rx="5" ry="2.5"/><path d="M10 13.5v4c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-4"/>',
+  fuetterung:'<path d="M12 3.2c3.2 4.1 6 7.3 6 11a6 6 0 01-12 0c0-3.7 2.8-6.9 6-11z"/><path d="M9.3 14.6a2.8 2.8 0 002.7 2.6"/>',
+  lastentries:'<path d="M4.5 12a7.5 7.5 0 107.5-7.5 7.6 7.6 0 00-6 3"/><path d="M5.5 3.8v3.9h3.9"/><path d="M12 8v4.3l2.8 1.7"/>',
+  varroacount:'<ellipse cx="12" cy="13" rx="5.5" ry="4.6"/><path d="M6.6 11.2L3.2 9.2M6.5 13.8L3 14.9M7.6 16.3l-2.3 2.9M17.4 11.2l3.4-2M17.5 13.8l3.5 1.1M16.4 16.3l2.3 2.9"/><path d="M10 8.7l-.8-2M14 8.7l.8-2"/>',
+  archive:'<rect x="3.5" y="4" width="17" height="4.5" rx="1.2"/><path d="M5 8.5v9.8A1.7 1.7 0 006.7 20h10.6a1.7 1.7 0 001.7-1.7V8.5"/><path d="M10 12.5h4"/>',
+  requeue:'<path d="M4 18.5h16"/><path d="M5.2 15.5L4 7.5l4.8 3.6L12 5l3.2 6.1L20 7.5l-1.2 8z"/>',
+  settings:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.1"/><circle cx="9" cy="17" r="2.1"/>',
+  hilfe:'<circle cx="12" cy="12" r="8.5"/><path d="M9.7 9.6a2.4 2.4 0 114.2 1.5c-.8.8-1.9 1.3-1.9 2.7"/><path d="M12 16.8v.01"/>',
+  more:'<circle cx="5.5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18.5" cy="12" r="1.4"/>',
+  pin:'<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0113 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  chevron:'<path d="M9.5 6l6 6-6 6"/>'
+};
+function barIcon(key, cls) {
+  return `<svg class="ui-icon ${cls||''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BAR_ICONS[key]||''}</svg>`;
+}
 function homeBtnSizeVars(key) {
   const widthKey = (window._homeBtnSize && window._homeBtnSize[key]) || 'mittel';
   const span = HOME_BTN_WIDTH_SPANS[widthKey] || HOME_BTN_WIDTH_SPANS.mittel;
@@ -1188,9 +1228,91 @@ function go(view, params={}) {
   });
 }
 
+/* ---------- Untere Navigationsleiste ---------- */
+/* Zusaetzliche Ansichten, in denen ein Leisten-Button als "aktiv" gilt */
+const BAR_ACTIVE_EXTRA = {
+  varroacount:['varroahistory'], honeystir:['honeystirbatch'],
+  fuetterung:['sirupcalc','fuetterungsvorschlag']
+};
+function homeBtnLabel(key) {
+  const c = HOME_BTN_SIZE_CONFIG.find(x => x.key===key);
+  return c ? c.label : key;
+}
+/* Sichtbare Buttons an einer Position, in der Reihenfolge der Einstellungen.
+   Ausgeblendete Buttons erscheinen nirgends, Hilfe nur mit Setup-Portal. */
+function homeBtnKeysAt(place) {
+  return HOME_BTN_SIZE_CONFIG.map(c => c.key).filter(k =>
+    homeBtnPlace(k)===place &&
+    !(window._homeBtnVis && window._homeBtnVis[k]===false) &&
+    (k!=='hilfe' || window._setupPortal));
+}
+function homeBtnGo(key) {
+  if(key==='hilfe'){ window.location.href=setupPortalUrl(setupLandingPort,'/hilfe'); return; }
+  go(key);
+}
+function barViewActive(key) {
+  return nav.view===key || (BAR_ACTIVE_EXTRA[key]||[]).includes(nav.view);
+}
+function updateBottomNav() {
+  const barKeys = homeBtnKeysAt('bar');
+  const moreKeys = homeBtnKeysAt('more');
+  let el = document.getElementById('bottom-nav');
+  if(!barKeys.length && !moreKeys.length){
+    if(el) el.remove();
+    document.body.classList.remove('has-bottom-nav');
+    return;
+  }
+  if(!el){
+    el = document.createElement('nav');
+    el.id = 'bottom-nav';
+    el.className = 'bottom-nav';
+    document.body.appendChild(el);
+  }
+  document.body.classList.add('has-bottom-nav');
+  const startActive = ['apiaries','colonies','colony'].includes(nav.view);
+  const moreActive = moreKeys.some(barViewActive);
+  el.innerHTML =
+    `<button type="button" class="bn-item${startActive?' active':''}" data-bar="start">${barIcon('home')}<span>Start</span></button>` +
+    barKeys.map(k => `<button type="button" class="bn-item${barViewActive(k)?' active':''}" data-bar="${k}">${barIcon(k)}<span>${esc(HOME_BTN_BAR_LABEL[k]||homeBtnLabel(k))}</span></button>`).join('') +
+    (moreKeys.length ? `<button type="button" class="bn-item${moreActive?' active':''}" data-bar="more">${barIcon('more')}<span>Mehr</span></button>` : '');
+  el.querySelectorAll('.bn-item').forEach(b => b.onclick = () => {
+    const k = b.dataset.bar;
+    if(k==='start') go('apiaries');
+    else if(k==='more') openMoreSheet();
+    else homeBtnGo(k);
+  });
+}
+/* "Mehr"-Menue: dieselben Kacheln wie oben auf der Startseite (gleiche Groesse/Farbe) */
+function openMoreSheet() {
+  const keys = homeBtnKeysAt('more');
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head"><h2>Mehr</h2><button class="btn btn-ghost modal-close" aria-label="Schließen">✕</button></div>
+    <div class="modal-body"><div class="toolbar home-toolbar more-sheet-grid">
+      ${keys.map(k => `<button type="button" class="btn btn-ghost home-btn" data-home-key="${k}" style="${homeBtnSizeVars(k)}${homeBtnColorStyle(k)}"><span class="home-btn-icon">${HOME_BTN_ICON[k]||''}</span>${homeBtnLabelHTML(k, homeBtnLabel(k))}</button>`).join('')}
+    </div></div></div>`;
+  document.body.appendChild(back);
+  const close = () => back.remove();
+  back.querySelector('.modal-close').onclick = close;
+  back.onclick = (e) => { if(e.target===back) close(); };
+  back.querySelectorAll('[data-home-key]').forEach(b => b.onclick = () => { close(); homeBtnGo(b.dataset.homeKey); });
+}
+/* Statusbalken unter einer Standortkarte: Anteile ok/beobachten/Varroa?/schwach */
+function apiaryStatusBarHTML(st) {
+  if(!st) return '';
+  const tot = (st.ok||0)+(st.watch||0)+(st.varroa||0)+(st.weak||0);
+  if(!tot) return '';
+  const seg = (k) => st[k] ? `<span class="sb-seg sb-${k}" style="flex:${st[k]}"></span>` : '';
+  const lg = (k,t) => st[k] ? `<span class="sb-lg"><i class="sb-dot sb-${k}"></i>${st[k]} ${t}</span>` : '';
+  return `<div class="status-bar">${seg('ok')}${seg('watch')}${seg('varroa')}${seg('weak')}</div>
+    <div class="status-legend">${lg('ok','ok')}${lg('watch','beobachten')}${lg('varroa','Varroa?')}${lg('weak','schwach')}</div>`;
+}
+
 async function render() {
   try {
     await loadSettings();
+    updateBottomNav();
     if(nav.view==='apiaries') return await renderApiaries();
     if(nav.view==='colonies') return await renderColonies();
     if(nav.view==='colony')   return await renderColony();
@@ -1238,7 +1360,9 @@ function updatePiUpdateBadge(){
     const d=await r.json();
     piUpdateAvailable=!!(d && d.setupPortal && d.updateAvailable);
     setupLandingPort=d.landingPort||80;
+    window._setupPortal=!!(d && d.setupPortal);
     updatePiUpdateBadge();
+    updateBottomNav();
   }catch(_){}
 })();
 
@@ -1294,10 +1418,15 @@ async function renderApiaries() {
   const reminders = await apiGet('./api/reminders');
   const counts={};
   const bkCounts={};
+  const statusCounts={};
   await Promise.all(apiaries.map(async(a)=>{
     const cols = await apiGet('./api/colonies?apiaryId='+a.id);
     counts[a.id] = cols.length;
     bkCounts[a.id] = cols.filter(c => isBkName(c.name)).length;
+    /* Zustand je Standort fuer den Statusbalken (Tot/Aufgeloest zaehlen nicht mit) */
+    const st={ok:0,watch:0,varroa:0,weak:0};
+    cols.forEach(c=>{ const s=c.status||'ok'; if(s in st) st[s]++; });
+    statusCounts[a.id]=st;
   }));
 
   /* Logo-URL mit Cache-Buster */
@@ -1318,7 +1447,7 @@ async function renderApiaries() {
     const pr=await fetch('./api/platform');
     const pd=await pr.json();
     if(pd && pd.setupPortal){
-      hilfeLinkHTML=`<button class="btn btn-ghost home-btn" id="open-hilfe" title="Hilfe" style="${homeBtnSizeVars('hilfe')}${homeBtnColorStyle('hilfe')}"><span class="home-btn-icon">❓</span>${homeBtnLabelHTML('hilfe','Hilfe')}</button>`;
+      hilfeLinkHTML=`<button class="btn btn-ghost home-btn ${homeBtnHidden('hilfe')}" id="open-hilfe" title="Hilfe" style="${homeBtnSizeVars('hilfe')}${homeBtnColorStyle('hilfe')}"><span class="home-btn-icon">❓</span>${homeBtnLabelHTML('hilfe','Hilfe')}</button>`;
     }
     if(pd && pd.pi && pd.usbBackupMissing){
       usbWarningHTML=`<div class="banner-error" style="margin-bottom:1rem">
@@ -1386,7 +1515,7 @@ async function renderApiaries() {
       <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="${homeBtnSizeVars('varroacount')}${homeBtnColorStyle('varroacount')}"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('varroacount','Varroazählung')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive" style="${homeBtnSizeVars('archive')}${homeBtnColorStyle('archive')}"><span class="home-btn-icon">📦</span>${homeBtnLabelHTML('archive','Archiv')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('requeue')}" id="open-requeue" title="Umweiselung" style="${homeBtnSizeVars('requeue')}${homeBtnColorStyle('requeue')}"><span class="home-btn-icon">⚠</span>${homeBtnLabelHTML('requeue','Umweiselung')}</button>
-      <button class="btn btn-ghost home-btn" id="open-settings" title="Einstellungen" style="${homeBtnSizeVars('settings')}${homeBtnColorStyle('settings')}"><span class="home-btn-icon">⚙︎</span>${homeBtnLabelHTML('settings','Einstellungen')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('settings')}" id="open-settings" title="Einstellungen" style="${homeBtnSizeVars('settings')}${homeBtnColorStyle('settings')}"><span class="home-btn-icon">⚙︎</span>${homeBtnLabelHTML('settings','Einstellungen')}</button>
       ${hilfeLinkHTML}
     </div>
     ${window._showSearch!==false?`
@@ -1403,12 +1532,19 @@ async function renderApiaries() {
       <button class="btn btn-primary block" id="add-apiary-empty">+ Standort anlegen</button>`:`
     <ul class="card-list">
       ${apiaries.map((a)=>`
-        <li class="card" data-open="${a.id}">
-          <div class="card-main">
-            <div class="card-title">${esc(a.name)}</div>
-            <div class="card-sub">${esc(a.location||'–')}</div>
+        <li class="card apiary-card" data-open="${a.id}">
+          <div class="apiary-row">
+            <div class="card-main">
+              <div class="card-title">${esc(a.name)}</div>
+              <div class="card-sub">${barIcon('pin','card-sub-icon')} ${esc(a.location||'–')}</div>
+            </div>
+            <div class="apiary-count">
+              <span class="apiary-num">${isBkName(a.name) ? bkCounts[a.id] : counts[a.id]}</span>
+              <span class="apiary-unit">${isBkName(a.name) ? esc(window._bkPrefix||'BK')+'s' : (counts[a.id]===1?'Volk':'Völker')}</span>
+            </div>
+            ${barIcon('chevron','apiary-chev')}
           </div>
-          <div class="badge">${isBkName(a.name) ? `${bkCounts[a.id]} ${esc(window._bkPrefix||'BK')}s` : `${counts[a.id]} ${counts[a.id]===1?'Volk':'Völker'}`}</div>
+          ${apiaryStatusBarHTML(isBkName(a.name) ? null : statusCounts[a.id])}
         </li>`).join('')}
     </ul>`}
     <div class="reminders-section">
@@ -5456,7 +5592,8 @@ async function renderSettings() {
       </div>
 
       <div class="section-h" style="margin-top:1.2rem">Startseite – Angezeigte Buttons</div>
-      <p class="muted">Welche Buttons sollen erscheinen, wie groß, mit oder ohne Text? Jeder Button einzeln einstellbar.</p>
+      <p class="muted">Welche Buttons sollen erscheinen, wo (oben, in der Leiste unten oder unter „Mehr“), wie groß, mit oder ohne Text? Jeder Button einzeln einstellbar.</p>
+      <p class="muted" style="font-size:.8rem;margin-top:.2rem">„Start“ und „Mehr“ sind fest in der Leiste unten. Mehr als 4 Buttons in der Leiste werden auf dem Handy eng.</p>
       <div class="home-btn-bulk-row">
         <input type="color" id="home-btn-bulk-color" value="#ffd43b" title="Sammel-Farbe">
         <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-selectall">Alle markieren</button>
@@ -5475,6 +5612,11 @@ async function renderSettings() {
             </label>`}
           </div>
           <div class="home-btn-cfg-controls">
+            <select class="inp home-btn-place-sel" data-key="${c.key}" title="Position">
+              <option value="top">Oben</option>
+              <option value="bar">Leiste unten</option>
+              <option value="more">Unter „Mehr“</option>
+            </select>
             <select class="inp home-btn-size-sel" data-key="${c.key}">
               <option value="klein">Klein (4/Reihe)</option>
               <option value="mittel">Mittel (3/Reihe)</option>
@@ -5784,6 +5926,10 @@ async function renderSettings() {
       const stored=s['homeBtn_'+k];
       chk.checked=(stored!=='false');
     });
+    document.querySelectorAll('.home-btn-place-sel').forEach(sel=>{
+      const k=sel.dataset.key;
+      sel.value = s['homeBtnPlace_'+k] || HOME_BTN_PLACE_DEFAULT[k] || 'top';
+    });
     document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
       const k=sel.dataset.key;
       const cfg=HOME_BTN_SIZE_CONFIG.find(c=>c.key===k);
@@ -5887,6 +6033,9 @@ async function renderSettings() {
     // Startseite-Buttons
     document.querySelectorAll('.home-btn-chk').forEach(chk=>{
       payload['homeBtn_'+chk.dataset.key]=chk.checked?'true':'false';
+    });
+    document.querySelectorAll('.home-btn-place-sel').forEach(sel=>{
+      payload['homeBtnPlace_'+sel.dataset.key]=sel.value;
     });
     document.querySelectorAll('.home-btn-size-sel').forEach(sel=>{
       payload['homeBtnSize_'+sel.dataset.key]=sel.value;
