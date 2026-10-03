@@ -80,12 +80,12 @@ async function loadSettings() {
    "Einstellungen" selbst bleibt bewusst immer sichtbar (sonst kein Weg
    zurück, um Buttons wieder einzublenden). */
 const HOME_BTN_CONFIG = [
-  {key:'all',         label:'Alle'},
+  {key:'all',         label:'Völker'},
   {key:'honey',       label:'Ernte'},
   {key:'honeystir',   label:'Rühren'},
   {key:'verkauf',     label:'Verkauf'},
   {key:'fuetterung',  label:'Fütterung'},
-  {key:'lastentries', label:'Letzte Einträge'},
+  {key:'lastentries', label:'Verlauf'},
   {key:'varroacount', label:'Varroazählung'},
   {key:'archive',     label:'Archiv'},
   {key:'requeue',     label:'Umweiselung'},
@@ -118,7 +118,7 @@ function homeBtnPlace(key) {
   return (window._homeBtnPlace && window._homeBtnPlace[key]) || HOME_BTN_PLACE_DEFAULT[key] || 'top';
 }
 /* Kurze Beschriftung in der Leiste (dort ist pro Button nur ~1/5 der Breite Platz) */
-const HOME_BTN_BAR_LABEL = { all:'Völker', lastentries:'Verlauf', varroacount:'Varroa', requeue:'Umweiseln' };
+const HOME_BTN_BAR_LABEL = { varroacount:'Varroa', requeue:'Umweiseln' };
 /* Emoji/Bild-Icons der Kacheln (oben und im "Mehr"-Menue) */
 const HOME_BTN_ICON = {
   all:'🐝', honey:'🍯', honeystir:'<img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain">',
@@ -1545,12 +1545,12 @@ async function renderApiaries() {
       ${logoHTML ? `<div class="brand-logo-wrap">${logoHTML}</div>` : ''}
     </div>
     <div class="toolbar home-toolbar">
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all" style="${homeBtnSizeVars('all')}${homeBtnColorStyle('all')}"><span class="home-btn-icon">🐝</span>${homeBtnLabelHTML('all','Alle')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all" style="${homeBtnSizeVars('all')}${homeBtnColorStyle('all')}"><span class="home-btn-icon">🐝</span>${homeBtnLabelHTML('all','Völker')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('honey')}" id="open-honey" style="${homeBtnSizeVars('honey')}${homeBtnColorStyle('honey')}"><span class="home-btn-icon">🍯</span>${homeBtnLabelHTML('honey','Ernte')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('honeystir')}" id="open-honeystir" style="${homeBtnSizeVars('honeystir')}${homeBtnColorStyle('honeystir')}"><span class="home-btn-icon"><img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('honeystir','Rühren')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('verkauf')}" id="open-verkauf" style="${homeBtnSizeVars('verkauf')}${homeBtnColorStyle('verkauf')}"><span class="home-btn-icon">💰</span>${homeBtnLabelHTML('verkauf','Verkauf')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('fuetterung')}" id="open-fuetterung" style="${homeBtnSizeVars('fuetterung')}${homeBtnColorStyle('fuetterung')}"><span class="home-btn-icon">🍬</span>${homeBtnLabelHTML('fuetterung','Fütterung')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Letzte Einträge" style="${homeBtnSizeVars('lastentries')}${homeBtnColorStyle('lastentries')}"><span class="home-btn-icon">🕒</span>${homeBtnLabelHTML('lastentries','Letzte Einträge')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Verlauf" style="${homeBtnSizeVars('lastentries')}${homeBtnColorStyle('lastentries')}"><span class="home-btn-icon">🕒</span>${homeBtnLabelHTML('lastentries','Verlauf')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="${homeBtnSizeVars('varroacount')}${homeBtnColorStyle('varroacount')}"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('varroacount','Varroazählung')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('archive')}" id="open-archive" style="${homeBtnSizeVars('archive')}${homeBtnColorStyle('archive')}"><span class="home-btn-icon">📦</span>${homeBtnLabelHTML('archive','Archiv')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('requeue')}" id="open-requeue" title="Umweiselung" style="${homeBtnSizeVars('requeue')}${homeBtnColorStyle('requeue')}"><span class="home-btn-icon">⚠</span>${homeBtnLabelHTML('requeue','Umweiselung')}</button>
@@ -3991,7 +3991,7 @@ function attachColonyLongPress(li, resolveColony, fromView){
 /* ---------- Gewicht ---------- */
 
 async function renderLastEntries() {
-  setHeader('Letzte Einträge', true);
+  setHeader('Verlauf', true);
   const items = await apiGet('./api/entries/latest?limit='+(window._lastEntriesLimit||90));
 
   app.innerHTML = `
@@ -5689,8 +5689,8 @@ async function renderSettings() {
         </label>`).join('')}
       </div>
 
-      <div class="section-h">„Letzte Einträge“</div>
-      <label class="lbl">Anzahl Einträge (über alle Völker)</label>
+      <div class="section-h">Verlauf</div>
+      <label class="lbl">Anzahl Einträge im Verlauf (über alle Völker)</label>
       <input class="inp" id="last-entries-limit" type="number" min="1" max="500" value="90">
       <div class="section-h">Verkauf – Erfassen</div>
       <label class="lbl">Produkt-Kacheln pro Zeile</label>
