@@ -960,3 +960,8 @@ body.has-bottom-nav #app{padding-bottom:calc(5.5rem + var(--safe-bottom))}
 .home-btn-color-inp[data-custom="0"] ~ .home-btn-color-reset{display:none}
 .home-btn-color-inp[data-custom="1"] ~ .cfg-std{display:none}
 .cfg-std{font-size:.82rem; color:var(--ink-soft)}
+
+
+/* ---------- v2.9.41: Einstellungen mit automatischem Speichern ---------- */
+.settings-sticky-toolbar{justify-content:space-between}
+.settings-autosave-hint{font-size:.78rem; color:var(--ink-soft)}

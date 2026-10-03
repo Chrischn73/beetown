@@ -5561,17 +5561,19 @@ async function renderSettings() {
   setHeader('Einstellungen',true);
   const scales=await apiGet('./api/scales');
   const trachten=await apiGet('./api/trachten');
+  const apiaries=await apiGet('./api/apiaries');
   const settingsSection = (id,title,body) => `<details class="settings-section" data-sec="${id}">
       <summary class="section-h">${title}</summary>
       <div class="settings-section-body">${body}</div>
     </details>`;
   app.innerHTML=`<div class="settings">
     <div class="settings-sticky-toolbar">
+      <span class="settings-autosave-hint">Änderungen werden automatisch gespeichert</span>
       <a class="btn btn-ghost btn-sm" id="setup-portal-link" style="display:none">⚙️ Setup / Update / Backup</a>
-      <button class="btn btn-save-settings" id="save-all-settings">💾 Speichern</button>
     </div>
-    <div class="settings-group-label first">Betrieb &amp; Stammdaten</div>
-    ${settingsSection('betrieb','Betrieb',`
+
+    <div class="settings-group-label first">Betrieb</div>
+    ${settingsSection('betrieb','Name &amp; Logo',`
       <label class="lbl">Betriebsname (wird oben angezeigt)</label>
       <input class="inp" id="apiary-name-input" type="text" placeholder="z. B. Imkerei Frerichs" value="">
       <label class="lbl" style="margin-top:1rem">Betriebslogo</label>
@@ -5586,7 +5588,12 @@ async function renderSettings() {
         <button class="btn btn-ghost btn-sm" id="logo-delete-btn" style="display:none">Logo löschen</button>
       </div>`)}
     ${settingsSection('standorte','Standorte',`
-      <button class="btn btn-primary block" id="add-apiary">+ Neuen Standort anlegen</button>`)}
+      <p class="muted">Zum Bearbeiten antippen.</p>
+      <ul class="card-list">
+        ${apiaries.map(a=>`<li class="card" data-edit-apiary="${esc(a.id)}" style="cursor:pointer"><div class="card-main"><div class="card-title">${esc(a.name)}</div><div class="card-sub">${esc(a.location||'–')}</div></div></li>`).join('')}
+        ${apiaries.length===0?'<li class="card muted" style="justify-content:center">Noch keine Standorte</li>':''}
+      </ul>
+      <button class="btn btn-ghost block" id="add-apiary" style="margin-top:.5rem">+ Standort anlegen</button>`)}
     ${settingsSection('waagen','Stockwaagen',`
       <p class="muted">Bis zu 5 Beelogger-Waagen eintragen.</p>
       <ul class="card-list">${scales.map((s)=>`<li class="card"><div class="card-main"><div class="card-title">${esc(s.name)}</div><div class="card-sub scale-url-preview">${esc(s.url||'–')}</div></div><button class="btn btn-ghost btn-sm" data-edit-scale="${s.id}">Bearbeiten</button></li>`).join('')}${scales.length===0?'<li class="card muted" style="justify-content:center">Noch keine Waagen</li>':''}</ul>
@@ -5599,30 +5606,43 @@ async function renderSettings() {
       </ul>
       <button type="button" class="btn btn-ghost block" id="trachten-add" style="margin-top:.5rem">+ Tracht hinzufügen</button>`)}
 
-    <div class="settings-group-label">Darstellung &amp; Übersichten</div>
-    ${settingsSection('darstellung','Darstellung',`
+    <div class="settings-group-label">Aussehen</div>
+    ${settingsSection('designfarben','Design &amp; Farben',`
       <label class="lbl">Design</label>
-      <select class="inp" id="theme-select">
+      <select class="inp" id="theme-select" data-own-save>
         <option value="system">System (automatisch)</option>
         <option value="light">Hell</option>
         <option value="dark">Dunkel</option>
       </select>
-      <label class="check-item" style="margin-top:.7rem">
-        <input type="checkbox" id="toggle-hr-nrs"> <span>Honigraum-Nummern in Übersicht anzeigen</span>
-      </label>
-      <label class="check-item" style="margin-top:.5rem">
-        <input type="checkbox" id="toggle-show-search"> <span>Suchfeld auf Startseite anzeigen</span>
-      </label>
-
-      <div class="section-h" style="margin-top:1.2rem">„Alle Völker" – Angezeigte Felder</div>
-      <p class="muted">Welche Spalten sollen in der Gesamtübersicht erscheinen?</p>
-      <div class="check-list" id="all-cols-cfg">
-        ${ALL_COLS.map(c=>`<label class="check-item">
-          <input type="checkbox" class="all-col-chk" data-key="${c.key}" ${c.def?'checked':''}><span>${esc(c.label)}</span>
-        </label>`).join('')}
+      <div class="section-h">Startseiten-Buttons</div>
+      <p class="muted">Eigene Farbe je Button, gilt oben und im „Mehr“-Menü. Antippen des Farbfelds wählt eine Farbe, „Zurücksetzen“ stellt die normale Farbe wieder her.</p>
+      <div class="cfg-bulk">
+        <input type="color" id="home-btn-bulk-color" value="#ffd43b" title="Farbe für alle">
+        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-apply">Für alle übernehmen</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-reset">Alle zurücksetzen</button>
+      </div>
+      <div class="cfg-list">
+        ${HOME_BTN_SIZE_CONFIG.map(c=>`
+        <div class="cfg-row">
+          <span class="cfg-name">${esc(c.label)}</span>
+          <div class="cfg-controls">
+            <input class="home-btn-color-inp" data-key="${c.key}" data-custom="0" type="color" value="#ffd43b" title="Farbe wählen">
+            <button type="button" class="btn btn-ghost btn-sm home-btn-color-reset" data-key="${c.key}">Zurücksetzen</button>
+            <span class="cfg-std">Standard</span>
+          </div>
+        </div>`).join('')}
       </div>
 
-      `)}
+      <div class="section-h">Übrige Buttons der App</div>
+      <p class="muted">Gilt für alle Buttons außerhalb der Startseite. Nur zwei Farben für die ganze App:</p>
+      <label class="check-item" style="margin-top:.4rem">
+        <input type="checkbox" id="btn-ghost-color-chk"><span>Standard-Buttons (z. B. "Einnahmen")</span>
+      </label>
+      <input class="inp" id="btn-ghost-color-inp" type="color" value="#ffffff" style="width:2.4rem;height:2.2rem;padding:.15rem;margin-top:.3rem;display:none">
+      <label class="check-item" style="margin-top:.7rem">
+        <input type="checkbox" id="btn-primary-color-chk"><span>Hervorgehobene Buttons (z. B. "Erfassen")</span>
+      </label>
+      <input class="inp" id="btn-primary-color-inp" type="color" value="#ffd43b" style="width:2.4rem;height:2.2rem;padding:.15rem;margin-top:.3rem;display:none">`)}
     ${settingsSection('startbuttons','Startseite – Buttons',`
       <p class="muted">Wo soll jeder Button erscheinen? Ein Button steht immer nur an einer Stelle.</p>
       <p class="muted" style="font-size:.8rem;margin-top:.2rem">„Start“ und „Mehr“ sind fest in der Leiste unten. „Mehr“ erscheint nur, wenn dort mindestens ein Button einsortiert ist. Mehr als 4 Buttons in der Leiste werden auf dem Handy eng.</p>
@@ -5655,110 +5675,25 @@ async function renderSettings() {
           </div>
         </div>`).join('')}
       </div>`)}
-    ${settingsSection('farben','Farben',`
-      <div class="section-h">Startseiten-Buttons</div>
-      <p class="muted">Eigene Farbe je Button, gilt oben und im „Mehr“-Menü. Antippen des Farbfelds wählt eine Farbe, „Zurücksetzen“ stellt die normale Farbe wieder her.</p>
-      <div class="cfg-bulk">
-        <input type="color" id="home-btn-bulk-color" value="#ffd43b" title="Farbe für alle">
-        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-apply">Für alle übernehmen</button>
-        <button type="button" class="btn btn-ghost btn-sm" id="home-btn-bulk-reset">Alle zurücksetzen</button>
-      </div>
-      <div class="cfg-list">
-        ${HOME_BTN_SIZE_CONFIG.map(c=>`
-        <div class="cfg-row">
-          <span class="cfg-name">${esc(c.label)}</span>
-          <div class="cfg-controls">
-            <input class="home-btn-color-inp" data-key="${c.key}" data-custom="0" type="color" value="#ffd43b" title="Farbe wählen">
-            <button type="button" class="btn btn-ghost btn-sm home-btn-color-reset" data-key="${c.key}">Zurücksetzen</button>
-            <span class="cfg-std">Standard</span>
-          </div>
-        </div>`).join('')}
+    ${settingsSection('uebersichten','Übersichten',`
+      <label class="check-item">
+        <input type="checkbox" id="toggle-show-search"> <span>Suchfeld auf der Startseite</span>
+      </label>
+      <label class="check-item" style="margin-top:.5rem">
+        <input type="checkbox" id="toggle-hr-nrs"> <span>Honigraum-Nummern in der Völker-Übersicht</span>
+      </label>
+      <div class="section-h">„Alle Völker“ – Spalten</div>
+      <div class="check-list" id="all-cols-cfg">
+        ${ALL_COLS.map(c=>`<label class="check-item">
+          <input type="checkbox" class="all-col-chk" data-key="${c.key}" ${c.def?'checked':''}><span>${esc(c.label)}</span>
+        </label>`).join('')}
       </div>
 
-      <div class="section-h">Übrige Buttons der App</div>
-      <p class="muted">Gilt für alle Buttons außerhalb der Startseite. Nur zwei Farben für die ganze App:</p>
-      <label class="check-item" style="margin-top:.4rem">
-        <input type="checkbox" id="btn-ghost-color-chk"><span>Standard-Buttons (z. B. "Einnahmen")</span>
-      </label>
-      <input class="inp" id="btn-ghost-color-inp" type="color" value="#ffffff" style="width:2.4rem;height:2.2rem;padding:.15rem;margin-top:.3rem;display:none">
-      <label class="check-item" style="margin-top:.7rem">
-        <input type="checkbox" id="btn-primary-color-chk"><span>Hervorgehobene Buttons (z. B. "Erfassen")</span>
-      </label>
-      <input class="inp" id="btn-primary-color-inp" type="color" value="#ffd43b" style="width:2.4rem;height:2.2rem;padding:.15rem;margin-top:.3rem;display:none">`)}
-    ${settingsSection('lastentries','Letzte Einträge',`
-      <p class="muted">Wie viele Einträge sollen in "Letzte Einträge" (über alle Völker hinweg) angezeigt werden?</p>
-      <label class="lbl">Anzahl</label>
-      <input class="inp" id="last-entries-limit" type="number" min="1" max="500" value="90">`)}
-
-    <div class="settings-group-label">Eintragsformular</div>
-    ${settingsSection('aktionbtns','Aktions-Buttons im Eintrag',`
-      <p class="muted">Welche Aktions-Buttons sollen im Eintragsformular erscheinen?</p>
-      <div class="check-list" id="action-btns-cfg">
-        ${ACTION_BTN_CONFIG.map(c=>`<label class="check-item">
-          <input type="checkbox" class="action-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
-        </label>`).join('')}
-      </div>`)}
-    ${settingsSection('obsbtns','Beobachtungs-Buttons im Eintrag',`
-      <p class="muted">Welche Beobachtungs-Buttons sollen im Eintragsformular erscheinen?</p>
-      <div class="check-list" id="obs-btns-cfg">
-        ${[...OBS_OPTIONS,...OBS_SELECT_CONFIG.map((c)=>[c.key,c.label]),...ENTRY_RATING_CONFIG.map((c)=>[c.key,c.label])].map(([k,l])=>`<label class="check-item">
-          <input type="checkbox" class="obs-btn-chk" data-key="${k}" checked><span>${esc(l)}</span>
-        </label>`).join('')}
-      </div>`)}
-
-    <div class="settings-group-label">Volk-Anzeigen – Zeitschwellen</div>
-    ${settingsSection('demaree','Demaree-Anzeige',`
-      <p class="muted">Wie lange soll das Demaree-Badge (Stufe/Tage) in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden, falls es nie als "beendet" markiert wurde?</p>
-      <label class="lbl">Anzahl Tage</label>
-      <input class="inp" id="demaree-show-days" type="number" min="1" max="365" value="40">`)}
-    ${settingsSection('kaefigung','Käfigung-Anzeige',`
-      <p class="muted">Wie viele Tage nach der Freilassung soll der "freigelassen"-Hinweis in der Volk-Übersicht und auf der Volk-Seite noch angezeigt werden? Solange noch nicht freigelassen wurde, bleibt der Käfigung-Hinweis unbegrenzt (orange) sichtbar.</p>
-      <label class="lbl">Anzahl Tage nach Freilassung</label>
-      <input class="inp" id="kaefigung-frei-show-days" type="number" min="1" max="365" value="60">`)}
-    ${settingsSection('oxalblockgap','Oxalsäure-Blockbehandlung',`
-      <p class="muted">Nach jeder gespeicherten Blockstufe wird automatisch eine Erinnerung für die
-      nächste fällige Stufe angelegt (und die vorherige Auto-Erinnerung entfernt).</p>
-      <label class="lbl">Tage zwischen den Stufen</label>
-      <input class="inp" id="oxal-block-gap-days" type="number" min="1" max="30" value="4">
-      <p class="muted" style="margin-top:1rem">Wie lange soll der "Block Stufe X abgeschlossen"-Hinweis in der
-      Volk-Übersicht und auf der Volk-Seite noch angezeigt werden (gerechnet ab Bedampfungsbeginn)?
-      Läuft der Block noch, bleibt der Hinweis unbegrenzt sichtbar.</p>
-      <label class="lbl">Anzahl Tage</label>
-      <input class="inp" id="oxal-block-show-days" type="number" min="1" max="365" value="40">`)}
-    ${settingsSection('zucht','Königinnenzucht – Zeitabstände',`
-      <p class="muted">Wird für die Berechnung von Schlupf und erster Eilage verwendet.</p>
-      <label class="lbl">Umlarven → Schlupf (Tage)</label>
-      <input class="inp" id="schlupf-days" type="number" min="1" max="30" value="11">
-      <label class="lbl" style="margin-top:.5rem">Schlupf → Erste Eilage (Tage)</label>
-      <input class="inp" id="eilage-days" type="number" min="1" max="60" value="28">`)}
-    ${settingsSection('gewicht','Gewicht',`
-      <p class="muted">Ziel-Gewicht, das neuen Völkern automatisch zugewiesen wird.</p>
-      <label class="lbl">Ziel-Gewicht (kg)</label>
-      <input class="inp" id="ziel-gewicht" type="number" step="0.1" min="0" placeholder="z.B. 44">
-      <p class="muted" style="margin-top:1rem">Rundgang-Modus auf der Gewicht-Seite: Völker, deren letzte Wägung
-      höchstens so viele Tage zurückliegt, gelten als "erledigt" (grün hervorgehoben).</p>
-      <label class="lbl">Tage-Schwelle</label>
-      <input class="inp" id="gewicht-rundgang-tage" type="number" min="1" max="60" value="4">
-      <p class="muted" style="margin-top:1rem">Bei den Teilgewichten das Komma automatisch setzen:
-      1234 wird zu 12,34 · 123 zu 12,3 · 12 zu 12,0. Tippt man selbst ein Komma, bleibt die Eingabe unverändert.</p>
-      <label class="check-item">
-        <input type="checkbox" id="toggle-auto-komma"> <span>Komma automatisch setzen</span>
-      </label>`)}
-
-    <div class="settings-group-label">Arbeitsabläufe</div>
-    ${settingsSection('varroa','Varroa Zählung',`
-      <label class="check-item">
-        <input type="checkbox" id="toggle-varroa-autonext"> <span>Nach dem Speichern automatisch zum nächsten Volk springen</span>
-      </label>`)}
-    ${settingsSection('bkfilter','Sonderbehandlung „BK"-Völker',`
-      <p class="muted">Völker bzw. Standorte, deren Name mit diesem Präfix beginnt, werden in
-      Übersichten (Alle Völker, Gewicht, Varroa-Zählung, Varroa-Historie, Ziel-Gewicht setzen)
-      gesondert behandelt bzw. ausgeblendet. Präfix leer lassen, um die Sonderbehandlung
-      abzuschalten.</p>
-      <label class="lbl">Präfix</label>
-      <input class="inp" id="bk-prefix" type="text" maxlength="10" placeholder="BK">`)}
-    ${settingsSection('verkaufErfassen','Verkauf – Erfassen',`
-      <p class="muted">Wie viele Produkt-Kacheln sollen pro Zeile angezeigt werden?</p>
+      <div class="section-h">„Letzte Einträge“</div>
+      <label class="lbl">Anzahl Einträge (über alle Völker)</label>
+      <input class="inp" id="last-entries-limit" type="number" min="1" max="500" value="90">
+      <div class="section-h">Verkauf – Erfassen</div>
+      <label class="lbl">Produkt-Kacheln pro Zeile</label>
       <select class="inp" id="vk-tiles-per-row">
         <option value="auto">Automatisch (je nach Bildschirmbreite)</option>
         <option value="2">2 pro Zeile</option>
@@ -5766,14 +5701,67 @@ async function renderSettings() {
         <option value="4">4 pro Zeile</option>
       </select>`)}
 
-    <div class="settings-group-label">System &amp; Daten</div>
-    ${settingsSection('system','System',`
-      <label class="check-item">
-        <input type="checkbox" id="toggle-zugangsschutz"> <span>Passwort-Abfrage beim Öffnen der App aktiv</span>
+    <div class="settings-group-label">Eintragen &amp; Erfassen</div>
+    ${settingsSection('eintragsformular','Eintragsformular',`
+      <p class="muted">Welche Buttons sollen im Eintrag erscheinen? Geht auch direkt im Eintrag über „Buttons“.</p>
+      <div class="section-h">Beobachtungen</div>
+      <div class="check-list" id="obs-btns-cfg">
+        ${[...OBS_OPTIONS,...OBS_SELECT_CONFIG.map((c)=>[c.key,c.label]),...ENTRY_RATING_CONFIG.map((c)=>[c.key,c.label])].map(([k,l])=>`<label class="check-item">
+          <input type="checkbox" class="obs-btn-chk" data-key="${k}" checked><span>${esc(l)}</span>
+        </label>`).join('')}
+      </div>
+      <div class="section-h">Aktionen</div>
+      <div class="check-list" id="action-btns-cfg">
+        ${ACTION_BTN_CONFIG.map(c=>`<label class="check-item">
+          <input type="checkbox" class="action-btn-chk" data-key="${c.key}" checked><span>${esc(c.label)}</span>
+        </label>`).join('')}
+      </div>`)}
+    ${settingsSection('gewicht','Gewicht',`
+      <label class="lbl">Ziel-Gewicht für neue Völker (kg)</label>
+      <input class="inp" id="ziel-gewicht" type="number" step="0.1" min="0" placeholder="z.B. 44">
+      <label class="lbl">Rundgang: „erledigt“, wenn letzte Wägung höchstens … Tage alt</label>
+      <input class="inp" id="gewicht-rundgang-tage" type="number" min="1" max="60" value="4">
+      <label class="check-item" style="margin-top:.8rem">
+        <input type="checkbox" id="toggle-auto-komma"> <span>Komma bei Teilgewichten automatisch setzen</span>
       </label>
-      <p class="muted" style="margin-top:.4rem">Schützt den Browser-Zugriff auf diese App mit einem gemeinsamen
-      Passwort (kein Benutzerkonto, keine E-Mail). Beim Deaktivieren ist die App für jeden im selben Netzwerk ohne
-      Passwort erreichbar - wirkt sofort nach dem Speichern.</p>`)}
+      <p class="muted" style="font-size:.8rem;margin-top:.3rem">1234 → 12,34 · 123 → 12,3 · 12 → 12,0. Ein selbst getipptes Komma bleibt.</p>`)}
+    ${settingsSection('varroa','Varroa-Zählung',`
+      <label class="check-item">
+        <input type="checkbox" id="toggle-varroa-autonext"> <span>Nach dem Speichern automatisch zum nächsten Volk</span>
+      </label>`)}
+
+    <div class="settings-group-label">Völker</div>
+    ${settingsSection('bkfilter','BK-Völker',`
+      <p class="muted">Völker und Standorte mit diesem Namens-Anfang werden in Übersichten (Alle Völker, Gewicht, Varroa) gesondert behandelt. Leer = aus.</p>
+      <label class="lbl">Präfix</label>
+      <input class="inp" id="bk-prefix" type="text" maxlength="10" placeholder="BK">`)}
+    ${settingsSection('fristen','Fristen &amp; Zeitabstände',`
+      <p class="muted">Wie lange Hinweise in der Volk-Übersicht stehen bleiben und welche Abstände für Berechnungen gelten.</p>
+      <div class="section-h">Demaree</div>
+      <label class="lbl">Hinweis anzeigen für … Tage (falls nie „beendet“)</label>
+      <input class="inp" id="demaree-show-days" type="number" min="1" max="365" value="40">
+      <div class="section-h">Käfigung</div>
+      <label class="lbl">„freigelassen“ anzeigen für … Tage</label>
+      <input class="inp" id="kaefigung-frei-show-days" type="number" min="1" max="365" value="60">
+      <p class="muted" style="font-size:.8rem;margin-top:.3rem">Solange die Königin gekäfigt ist, bleibt der Hinweis immer sichtbar.</p>
+      <div class="section-h">Oxalsäure-Blockbehandlung</div>
+      <label class="lbl">Tage zwischen den Stufen</label>
+      <input class="inp" id="oxal-block-gap-days" type="number" min="1" max="30" value="4">
+      <p class="muted" style="font-size:.8rem;margin-top:.3rem">Nach jeder Stufe wird automatisch eine Erinnerung für die nächste angelegt.</p>
+      <label class="lbl">„Block abgeschlossen“ anzeigen für … Tage</label>
+      <input class="inp" id="oxal-block-show-days" type="number" min="1" max="365" value="40">
+      <div class="section-h">Königinnenzucht</div>
+      <label class="lbl">Umlarven → Schlupf (Tage)</label>
+      <input class="inp" id="schlupf-days" type="number" min="1" max="30" value="11">
+      <label class="lbl">Schlupf → erste Eilage (Tage)</label>
+      <input class="inp" id="eilage-days" type="number" min="1" max="60" value="28">`)}
+
+    <div class="settings-group-label">System &amp; Daten</div>
+    ${settingsSection('system','Passwortschutz',`
+      <label class="check-item">
+        <input type="checkbox" id="toggle-zugangsschutz" data-own-save> <span>Passwort-Abfrage beim Öffnen der App</span>
+      </label>
+      <p class="muted" style="margin-top:.4rem">Ein gemeinsames Passwort für den Browser-Zugriff. Ohne ist die App für jeden im Netzwerk erreichbar.</p>`)}
     <div id="backup-section-wrap">${settingsSection('datensicherung','Backup',`
       <a class="btn btn-ghost block" href="./api/backup" download>Backup exportieren (.json)</a>
       <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>`)}</div>
@@ -5790,7 +5778,7 @@ async function renderSettings() {
       <button type="button" class="btn btn-danger block bereinigen-btn" id="btn-clear-umlarv" style="margin-top:.5rem">Königinnenzucht-Datum (Volkseinstellungen) zurücksetzen</button>
       <p class="muted" style="margin-top:.5rem">Setzt nur die Felder am Volk zurück – vorhandene Einträge in der Stockkarte bleiben erhalten.</p>`)}
   </div>`;
-  /* Sticky-Leiste (Setup/Backup + Speichern) muss direkt unter der (ebenfalls sticky)
+  /* Sticky-Leiste (Hinweis Auto-Speichern + Setup/Backup) muss direkt unter der (ebenfalls sticky)
      Kopfzeile "einrasten" - deren Höhe ist je nach Geraet (Safe-Area-Inset oben bei
      Notch-Displays) unterschiedlich, daher hier gemessen statt fest verdrahtet. */
   const topbarEl = document.querySelector('.topbar');
@@ -5904,7 +5892,10 @@ async function renderSettings() {
   const nameInp = document.getElementById('apiary-name-input');
   if(nameInp) nameInp.value = getApiaryName();
 
-  $('#add-apiary').onclick=()=>apiaryForm();
+  $('#add-apiary').onclick=()=>apiaryForm(null,()=>renderSettings());
+  document.querySelectorAll('[data-edit-apiary]').forEach(li=>{
+    li.onclick=()=>apiaryForm(apiaries.find(x=>x.id===li.dataset.editApiary),()=>renderSettings());
+  });
   const addScale=$('#add-scale'); if(addScale) addScale.onclick=()=>scaleForm(null,()=>renderSettings());
 
   document.getElementById('trachten-add')?.addEventListener('click', ()=>trachtForm(null, ()=>renderSettings()));
@@ -5993,12 +5984,15 @@ async function renderSettings() {
   /* Farbfeld antippen = eigene Farbe, "Zurücksetzen" = wieder Standardfarbe.
      data-custom merkt sich, ob eine eigene Farbe gesetzt ist. */
   document.querySelectorAll('.home-btn-color-inp').forEach(inp=>{
+    /* manche Mobil-Browser feuern beim Farbwaehler nur 'change', nicht 'input' */
     inp.addEventListener('input', ()=>{ inp.dataset.custom='1'; });
+    inp.addEventListener('change', ()=>{ inp.dataset.custom='1'; });
   });
   document.querySelectorAll('.home-btn-color-reset').forEach(b=>{
     b.onclick=()=>{
       const inp=document.querySelector(`.home-btn-color-inp[data-key="${b.dataset.key}"]`);
       if(inp) inp.dataset.custom='0';
+      scheduleSettingsSave();
     };
   });
   document.getElementById('btn-ghost-color-chk')?.addEventListener('change', (e)=>{
@@ -6007,20 +6001,20 @@ async function renderSettings() {
   document.getElementById('btn-primary-color-chk')?.addEventListener('change', (e)=>{
     document.getElementById('btn-primary-color-inp').style.display = e.target.checked?'':'none';
   });
-  /* Sammel-Farbe: dieselbe Farbe fuer alle Startseiten-Buttons bzw. alle zuruecksetzen.
-     Wirkt nur auf die Formularfelder - gespeichert wird erst ueber "Speichern". */
+  /* Sammel-Farbe: dieselbe Farbe fuer alle Startseiten-Buttons bzw. alle zuruecksetzen. */
   document.getElementById('home-btn-bulk-apply')?.addEventListener('click', ()=>{
     const color=document.getElementById('home-btn-bulk-color').value;
     document.querySelectorAll('.home-btn-color-inp').forEach(inp=>{ inp.value=color; inp.dataset.custom='1'; });
+    scheduleSettingsSave();
   });
   document.getElementById('home-btn-bulk-reset')?.addEventListener('click', ()=>{
     document.querySelectorAll('.home-btn-color-inp').forEach(inp=>{ inp.dataset.custom='0'; });
+    scheduleSettingsSave();
   });
-  document.getElementById('save-all-settings')?.addEventListener('click', async()=>{
+  /* Alle Einstellungen aus dem Formular einsammeln (Passwortschutz nicht -
+     der hat wegen der Rueckfrage einen eigenen Handler). */
+  function collectSettingsPayload(){
     const payload={};
-    // Betriebsname
-    const nameInpV=document.getElementById('apiary-name-input');
-    if(nameInpV?.value.trim()) setApiaryName(nameInpV.value.trim());
     // Zucht-Einstellungen
     const sd=document.getElementById('schlupf-days')?.value;
     const ed=document.getElementById('eilage-days')?.value;
@@ -6082,9 +6076,6 @@ async function renderSettings() {
     // Automatische Kommasetzung bei Teilgewichten
     const autoKommaToggleSave=document.getElementById('toggle-auto-komma');
     if(autoKommaToggleSave) payload.autoKomma=autoKommaToggleSave.checked?'true':'false';
-    // Passwort-Zugangsschutz (invertiert: Haekchen=Schutz AN -> zugangDeaktiviert='false')
-    const zugangToggle=document.getElementById('toggle-zugangsschutz');
-    if(zugangToggle) payload.zugangDeaktiviert=zugangToggle.checked?'false':'true';
     // Aktions-Buttons
     document.querySelectorAll('.action-btn-chk').forEach(chk=>{
       payload['actionBtn_'+chk.dataset.key]=chk.checked?'true':'false';
@@ -6093,9 +6084,51 @@ async function renderSettings() {
     document.querySelectorAll('.obs-btn-chk').forEach(chk=>{
       payload['obsBtn_'+chk.dataset.key]=chk.checked?'true':'false';
     });
-    if(Object.keys(payload).length) await api('POST','./api/settings',payload);
-    await loadSettings();
-    alert('Einstellungen gespeichert.');
+    const varroaAutoNextEl=document.getElementById('toggle-varroa-autonext');
+    if(varroaAutoNextEl) payload.varroaAutoNext=varroaAutoNextEl.checked?'true':'false';
+    return payload;
+  }
+  /* Automatisch speichern statt "Speichern"-Button: Aenderungen werden kurz
+     gesammelt und dann gemeinsam gespeichert. Ausstehendes wird beim Verlassen
+     der Seite sofort gespeichert (go() ruft dafuer window._leaveGuard auf).
+     Ausgenommen: Datei-Felder, die Sammelfarbe (wirkt erst ueber ihren Button)
+     und Felder mit eigener Logik (data-own-save). */
+  let settingsSaveTimer=null;
+  async function saveSettingsNow(){
+    clearTimeout(settingsSaveTimer); settingsSaveTimer=null;
+    const nameInpV=document.getElementById('apiary-name-input');
+    if(nameInpV?.value.trim()) setApiaryName(nameInpV.value.trim());
+    const payload=collectSettingsPayload();
+    try{
+      if(Object.keys(payload).length) await api('POST','./api/settings',payload);
+      await loadSettings();
+      updateBottomNav();
+      showToast('Gespeichert ✓',1200);
+    }catch(err){ alert('Speichern fehlgeschlagen: '+err.message); }
+  }
+  function scheduleSettingsSave(delay=500){
+    clearTimeout(settingsSaveTimer);
+    settingsSaveTimer=setTimeout(saveSettingsNow, delay);
+  }
+  const isAutoSaveField=(el)=>el.matches('input,select,textarea') && el.type!=='file'
+    && el.id!=='home-btn-bulk-color' && !el.hasAttribute('data-own-save');
+  const settingsRoot=document.querySelector('.settings');
+  settingsRoot.addEventListener('change', (e)=>{ if(isAutoSaveField(e.target)) scheduleSettingsSave(); });
+  settingsRoot.addEventListener('input', (e)=>{
+    const t=e.target;
+    if(isAutoSaveField(t) && (t.type==='text' || t.type==='number')) scheduleSettingsSave(1200);
+  });
+  window._leaveGuard=()=>{ if(settingsSaveTimer) saveSettingsNow(); return false; };
+  /* Passwortschutz: Abschalten nur nach Rueckfrage, dann sofort speichern */
+  document.getElementById('toggle-zugangsschutz')?.addEventListener('change', async(e)=>{
+    const on=e.target.checked;
+    if(!on && !confirm('Passwort-Abfrage wirklich abschalten? Dann ist die App für jeden im Netzwerk ohne Passwort erreichbar.')){
+      e.target.checked=true; return;
+    }
+    try{
+      await api('POST','./api/settings',{zugangDeaktiviert: on?'false':'true'});
+      showToast('Gespeichert ✓',1200);
+    }catch(err){ e.target.checked=!on; alert('Speichern fehlgeschlagen: '+err.message); }
   });
   const ts=$('#theme-select'); ts.value=currentTheme(); ts.onchange=()=>applyTheme(ts.value);
   const hrNrsToggle=document.getElementById('toggle-hr-nrs');
@@ -6103,30 +6136,18 @@ async function renderSettings() {
     apiGet('./api/settings').then(s => {
       hrNrsToggle.checked = (s.showHrNrs !== 'false');
     }).catch(()=>{ hrNrsToggle.checked = true; });
-    hrNrsToggle.onchange = async () => {
-      await api('POST','./api/settings',{showHrNrs: hrNrsToggle.checked ? 'true' : 'false'});
-      window._showHrNrs = hrNrsToggle.checked;
-    };
   }
   const autoKommaToggle=document.getElementById('toggle-auto-komma');
   if(autoKommaToggle){
     apiGet('./api/settings').then(s => {
       autoKommaToggle.checked = (s.autoKomma !== 'false');
     }).catch(()=>{ autoKommaToggle.checked = true; });
-    autoKommaToggle.onchange = async () => {
-      await api('POST','./api/settings',{autoKomma: autoKommaToggle.checked ? 'true' : 'false'});
-      window._autoKomma = autoKommaToggle.checked;
-    };
   }
   const showSearchToggle=document.getElementById('toggle-show-search');
   if(showSearchToggle){
     apiGet('./api/settings').then(s => {
       showSearchToggle.checked = (s.showSearch !== 'false');
     }).catch(()=>{ showSearchToggle.checked = true; });
-    showSearchToggle.onchange = async () => {
-      await api('POST','./api/settings',{showSearch: showSearchToggle.checked ? 'true' : 'false'});
-      window._showSearch = showSearchToggle.checked;
-    };
   }
   const zugangToggleLoad=document.getElementById('toggle-zugangsschutz');
   if(zugangToggleLoad){
@@ -6139,9 +6160,6 @@ async function renderSettings() {
     apiGet('./api/settings').then(s => {
       varroaAutoNextToggle.checked = (s.varroaAutoNext === 'true');
     }).catch(()=>{ varroaAutoNextToggle.checked = false; });
-    varroaAutoNextToggle.onchange = async () => {
-      await api('POST','./api/settings',{varroaAutoNext: varroaAutoNextToggle.checked ? 'true' : 'false'});
-    };
   }
   // Aktions- und Beobachtungs-Buttons: Checkbox-Zustand laden (Default: alle an)
   apiGet('./api/settings').then(s=>{
