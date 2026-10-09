@@ -90,7 +90,8 @@ log() { echo; echo "==> $*"; }
 log "Pruefe benoetigte Dateien in $APP_SRC_DIR bzw. $SCRIPT_DIR"
 for f in imkerei.service \
          imkerei-backup.sh imkerei-backup-rotate.py imkerei-backup-fingerprint.py imkerei-backup.service imkerei-backup.timer \
-         imkerei-update-check.service imkerei-update-check.timer; do
+         imkerei-update-check.service imkerei-update-check.timer \
+         imkerei-systemneustart.service imkerei-systemneustart.timer imkerei-systemneustart.py; do
     if [ ! -e "$SCRIPT_DIR/$f" ]; then
         echo "FEHLER: $SCRIPT_DIR/$f fehlt. Wurde der komplette setup-Ordner uebertragen?"
         exit 1
@@ -113,6 +114,12 @@ sleep 5
 log "Systemupdate (kann einige Minuten dauern)"
 export DEBIAN_FRONTEND=noninteractive
 
+# Alle apt-get-Aufrufe in diesem Skript warten bis zu 10 Min. auf die dpkg-Sperre,
+# statt sofort mit "Could not get lock" abzubrechen (set -e!): auf einem Pi
+# laeuft taeglich apt-daily-upgrade (unattended-upgrades) und kann die Sperre
+# gerade halten, wenn ein Komplett-Lauf dieses Skripts startet.
+apt-get() { command apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+
 apt_tries=0
 until apt-get update; do
     apt_tries=$((apt_tries + 1))
@@ -125,6 +132,38 @@ until apt-get update; do
 done
 
 apt-get -y upgrade
+
+# Automatische Sicherheitsupdates - NUR auf dem Raspberry Pi (ein Linux-Server
+# wird vom Betreiber selbst gepflegt). Nutzer einer unbeaufsichtigten Pi-Box
+# greifen nie selbst per apt ein, ohne das bliebe das System bis zum naechsten
+# Komplett-Lauf auf dem Stand von heute. Nur Debian-Security, kein Raspberry-Pi-
+# Repo (Kernel/Firmware), kein apt-eigener Auto-Reboot (siehe Neustart-Timer
+# weiter unten). Dateiname und Inhalt sind IDENTISCH mit HonigBox (install.sh):
+# sind beide Apps auf einem Pi, schreibt die zweite dieselbe Datei nur erneut.
+if [ "$IS_PI" -eq 1 ]; then
+    log "Automatische Sicherheitsupdates einrichten (Raspberry Pi)"
+    apt-get install -y unattended-upgrades || \
+        echo "WARNUNG: Konnte unattended-upgrades nicht installieren - es gibt dann keine automatischen Sicherheitsupdates."
+    rm -f /etc/apt/apt.conf.d/52honigbox-unattended-upgrades
+    cat > /etc/apt/apt.conf.d/52pi-unattended-upgrades << 'UUEOF'
+// Angelegt von setup/install.sh (HonigBox/BeeTown). Rueckbau: Datei loeschen.
+Unattended-Upgrade::Origins-Pattern {
+        "origin=Debian,codename=${distro_codename},label=Debian-Security";
+        "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+};
+// Eigene Config-Dateien nie ueberschreiben/nachfragen - sonst haengt das Update.
+Dpkg::Options { "--force-confdef"; "--force-confold"; };
+// Neustart macht NICHT apt, sondern der Neustart-Timer (kontrolliert, nachts).
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+UUEOF
+    cat > /etc/apt/apt.conf.d/20auto-upgrades << 'AUEOF'
+// Angelegt von setup/install.sh (HonigBox/BeeTown): Paketlisten + Sicherheitsupdates woechentlich.
+APT::Periodic::Update-Package-Lists "7";
+APT::Periodic::Unattended-Upgrade "7";
+APT::Periodic::AutocleanInterval "7";
+AUEOF
+fi
 
 # ---------------------------------------------------------------------------
 log "SSH aktivieren"
@@ -286,6 +325,23 @@ cp "$SCRIPT_DIR/imkerei-update-check.service" /etc/systemd/system/imkerei-update
 cp "$SCRIPT_DIR/imkerei-update-check.timer" /etc/systemd/system/imkerei-update-check.timer
 
 # ---------------------------------------------------------------------------
+# Systemupdate-Check mit kontrolliertem Neustart. Das Skript laeuft als root,
+# liegt deshalb bewusst NICHT unter /opt/imkerei (dort darf der Dienst-/
+# aufrufende Benutzer schreiben), sondern root-eigen unter /usr/local/lib/imkerei.
+# Skript wird IMMER kopiert (der Descriptor-file_map unten verweist darauf, das
+# Ziel-Verzeichnis muss deshalb auch auf einem Linux-Server existieren) - Timer
+# und Dienst gibt es aber NUR auf dem Raspberry Pi.
+mkdir -p /usr/local/lib/imkerei
+cp "$SCRIPT_DIR/imkerei-systemneustart.py" /usr/local/lib/imkerei/systemneustart.py
+chown root:root /usr/local/lib/imkerei/systemneustart.py
+chmod 755 /usr/local/lib/imkerei/systemneustart.py
+if [ "$IS_PI" -eq 1 ]; then
+    log "Systemupdate-Check einrichten (Raspberry Pi)"
+    cp "$SCRIPT_DIR/imkerei-systemneustart.service" /etc/systemd/system/imkerei-systemneustart.service
+    cp "$SCRIPT_DIR/imkerei-systemneustart.timer" /etc/systemd/system/imkerei-systemneustart.timer
+fi
+
+# ---------------------------------------------------------------------------
 log "apt-Paket-Cache nur im RAM aufbauen - schont SD-Karte/USB-Stick"
 # Nach jedem 'apt update' schreibt apt pkgcache.bin + srcpkgcache.bin
 # (zusammen ~140 MB) komplett neu. Mit einem Monitoring-Agent, der stuendlich
@@ -350,7 +406,8 @@ cat > /opt/setup-portal/apps.d/imkerei.json << JSONEOF
     "version_regex": "APP_VERSION = '([^']+)'",
     "file_map": [
       {"src": "server.py", "dest": "/opt/imkerei/server.py", "mode": "0644", "chown": "imkerei:imkerei"},
-      {"src": "static", "dest": "/opt/imkerei/static", "mode": "dir", "chown": "imkerei:imkerei"}
+      {"src": "static", "dest": "/opt/imkerei/static", "mode": "dir", "chown": "imkerei:imkerei"},
+      {"src": "setup/imkerei-systemneustart.py", "dest": "/usr/local/lib/imkerei/systemneustart.py", "mode": "0755", "chown": "root:root"}
     ],
     "services_to_restart": ["imkerei.service"]
   },
@@ -383,6 +440,7 @@ systemctl restart imkerei.service
 # taegliche Selbst-Update-Timer des Portals.
 systemctl enable --now imkerei-backup.timer
 systemctl enable --now imkerei-update-check.timer
+[ "$IS_PI" -eq 1 ] && systemctl enable --now imkerei-systemneustart.timer
 # Einmaligen ersten Check gleich jetzt anstossen, damit die Startseite nicht
 # bis zum ersten Timer-Lauf ohne Update-Information dasteht.
 systemctl start imkerei-update-check.service || true

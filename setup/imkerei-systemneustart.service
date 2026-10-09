@@ -1,0 +1,7 @@
+[Unit]
+Description=BeeTown – Systemupdate-Check und kontrollierter Neustart (nur Raspberry Pi)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/imkerei/systemneustart.py

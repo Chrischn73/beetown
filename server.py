@@ -224,6 +224,8 @@ def _is_raspberry_pi():
 # App-eigenen Unterordner (state/<app-id>/), da das Portal jetzt mehrere
 # Apps (z. B. auch HonigBox) gleichzeitig verwalten kann.
 UPDATE_CHECK_STATE_PATH = os.path.join(PI_MARKER_DIR, "state", "imkerei", "update_check.json")
+# Vom root-Skript setup/imkerei-systemneustart.py geschrieben (siehe /api/systemupdate).
+SYSTEMUPDATE_STATUS_PATH = os.path.join(DATA_DIR, ".systemupdate-status.json")
 # Gleicher Pfad wie BACKUP_DIR im Setup-Portal (setup_portal.py) - der
 # taegliche Backup-Timer legt dort Archive ab, ohne ueber /api/backup zu
 # laufen. Wird hier nur mitgelesen, um "gibt es ein aktuelles Backup?" auch
@@ -707,6 +709,20 @@ class Handler(BaseHTTPRequestHandler):
         with open(full,"rb") as f: self._bytes(f.read(),ct)
 
     def api_get(self, path):
+        if path=="/api/systemupdate":
+            # Status des naechtlichen Systemupdate-Checks (setup/imkerei-systemneustart.py,
+            # laeuft als root und schreibt die Datei - der Dienst liest nur). Nur auf
+            # einem Raspberry Pi relevant; "honigbox": HonigBox auf derselben Box
+            # steuert dann den Neustart.
+            status={}
+            try:
+                with open(SYSTEMUPDATE_STATUS_PATH) as f:
+                    status=json.load(f)
+            except Exception:
+                pass
+            return self._json({"pi":_is_raspberry_pi(),
+                               "honigbox":os.path.exists("/opt/honigbox/systemneustart.py"),
+                               "status":status})
         if path=="/api/platform":
             is_pi=_is_raspberry_pi()
             has_setup_portal=os.path.isdir(PI_MARKER_DIR)

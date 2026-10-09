@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.42';
+const APP_VERSION = 'v2.9.43';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -5762,6 +5762,22 @@ async function renderSettings() {
         <input type="checkbox" id="toggle-zugangsschutz" data-own-save> <span>Passwort-Abfrage beim Öffnen der App</span>
       </label>
       <p class="muted" style="margin-top:.4rem">Ein gemeinsames Passwort für den Browser-Zugriff. Ohne ist die App für jeden im Netzwerk erreichbar.</p>`)}
+    <div id="sysupd-wrap" style="display:none">${settingsSection('systemupdates','Systemupdates',`
+      <p class="muted">Sicherheitsupdates für das Betriebssystem werden automatisch installiert (ca. wöchentlich).
+      Damit sie vollständig wirken, startet die Box gelegentlich nachts um 4 Uhr neu – nur bei Bedarf und frühestens nach dem eingestellten Abstand.</p>
+      <p class="muted" id="sysupd-honigbox" style="display:none">Auf dieser Box läuft auch HonigBox – der Neustart wird von dort gesteuert (Einstellungen unter „Systemupdates“ in der HonigBox).</p>
+      <div id="sysupd-felder">
+        <label class="check-item">
+          <input type="checkbox" id="sysupd-auto" data-own-save checked> <span>Automatischer Neustart nach Systemupdates</span>
+        </label>
+        <label class="lbl" for="sysupd-intervall">Frühestens alle</label>
+        <select class="inp" id="sysupd-intervall" data-own-save>
+          <option value="4">4 Wochen</option>
+          <option value="8">8 Wochen</option>
+          <option value="12">12 Wochen</option>
+        </select>
+      </div>
+      <p class="muted" id="sysupd-status" style="margin-top:.6rem"></p>`)}</div>
     <div id="backup-section-wrap">${settingsSection('datensicherung','Backup',`
       <a class="btn btn-ghost block" href="./api/backup" download>Backup exportieren (.json)</a>
       <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>`)}</div>
@@ -6149,6 +6165,41 @@ async function renderSettings() {
       showSearchToggle.checked = (s.showSearch !== 'false');
     }).catch(()=>{ showSearchToggle.checked = true; });
   }
+  /* Systemupdates: nur auf einem Raspberry Pi sichtbar. Einstellungen liegen in der
+     settings-Tabelle (sysAutoNeustart/sysIntervallWochen), der Status kommt vom
+     root-Skript ueber /api/systemupdate. */
+  (async()=>{
+    try{
+      const d=await apiGet('./api/systemupdate');
+      if(!d || !d.pi) return;
+      const s=await apiGet('./api/settings').catch(()=>({}));
+      const autoEl=document.getElementById('sysupd-auto'), intEl=document.getElementById('sysupd-intervall');
+      autoEl.checked=(s.sysAutoNeustart!=='false');
+      intEl.value=['4','8','12'].includes(s.sysIntervallWochen)?s.sysIntervallWochen:'4';
+      const save=async()=>{
+        try{
+          await api('POST','./api/settings',{sysAutoNeustart:autoEl.checked?'true':'false',sysIntervallWochen:intEl.value});
+          showToast('Gespeichert ✓',1200);
+        }catch(err){ alert('Speichern fehlgeschlagen: '+err.message); }
+      };
+      autoEl.addEventListener('change',save); intEl.addEventListener('change',save);
+      if(d.honigbox){
+        document.getElementById('sysupd-honigbox').style.display='';
+        document.getElementById('sysupd-felder').style.display='none';
+      }
+      const st=d.status||{}, teile=[];
+      const fmt=(ts)=>new Date(ts*1000).toLocaleString('de-DE',{dateStyle:'medium',timeStyle:'short'});
+      if(st.geprueft){
+        teile.push('Letzte Prüfung: '+fmt(st.geprueft));
+        if(st.letztes_update) teile.push('Letztes Systemupdate: '+fmt(st.letztes_update));
+        teile.push(st.neustart_noetig?'Neustart nötig ('+(st.grund||'Systemupdate')+')':'Kein Neustart nötig');
+        if(st.laufzeit_tage!=null) teile.push('Läuft seit '+st.laufzeit_tage+' Tagen');
+        if(st.notiz) teile.push(st.notiz);
+      }else teile.push('Noch keine Prüfung durchgeführt (läuft nachts um 4 Uhr).');
+      document.getElementById('sysupd-status').textContent=teile.join(' · ');
+      document.getElementById('sysupd-wrap').style.display='';
+    }catch(_){}
+  })();
   const zugangToggleLoad=document.getElementById('toggle-zugangsschutz');
   if(zugangToggleLoad){
     apiGet('./api/settings').then(s => {
