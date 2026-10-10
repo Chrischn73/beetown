@@ -1,5 +1,5 @@
 /* Service-Worker: App-Hülle offline verfügbar, API-Aufrufe immer live (Netzwerk). */
-const CACHE = 'beetown-shell-v2.9.47';
+const CACHE = 'beetown-shell-v2.9.48';
 const SHELL = [
   './', './index.html', './app.js', './styles.css', './manifest.json',
   './icon-192.png', './icon-512.png',
@@ -21,6 +21,12 @@ self.addEventListener('fetch', (e) => {
   // API & Fotos: nie cachen, immer frisch vom Server
   if (url.pathname.startsWith('/api/')) return;
   if (e.request.method !== 'GET') return;
-  // App-Hülle: zuerst Cache, sonst Netzwerk
+  // Seitenaufrufe: zuerst Netzwerk (so erscheint bei abgelaufenem Login die
+  // Anmeldeseite), nur offline aus dem Cache.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(fetch(e.request).catch(() => caches.match('./index.html').then((hit) => hit || caches.match('./'))));
+    return;
+  }
+  // Restliche App-Hülle: zuerst Cache, sonst Netzwerk
   e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
 });

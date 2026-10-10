@@ -21,7 +21,10 @@ import sqlite3
 import sys
 
 DB_REL = os.path.join("data", "app.db")
-DB_SKIP_FILES = {"app.db", "app.db-wal", "app.db-shm", "app.db-journal"}
+DB_SKIP_FILES = {"app.db", "app.db-wal", "app.db-shm", "app.db-journal",
+                 # schreibt imkerei-systemneustart.py taeglich neu (05:00 + nach
+                 # dem Boot) - sonst greift "nur bei Aenderung" auf dem Pi nie
+                 ".systemupdate-status.json", ".systemupdate-status.json.tmp"}
 # (tabelle, schluessel) - Eintraege, die die App selbst schreibt
 IGNORED_SETTINGS = {"_lastBackupAt"}
 

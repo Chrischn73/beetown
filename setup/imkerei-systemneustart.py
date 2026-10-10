@@ -29,6 +29,7 @@ DATA_DIR = os.environ.get("IMKEREI_DATA", "/opt/imkerei/data")
 DB_PATH = os.path.join(DATA_DIR, "app.db")
 STATUS_PATH = os.path.join(DATA_DIR, ".systemupdate-status.json")
 HONIGBOX_SKRIPT = "/opt/honigbox/systemneustart.py"
+AUTO_NEUSTART_DIR = os.environ.get("AUTO_NEUSTART_DIR", "/var/lib/beetown-auto-neustart")
 APT_STAMP = "/var/lib/apt/periodic/unattended-upgrades-stamp"
 DPKG_LOG = "/var/log/dpkg.log"
 GUELTIGE_INTERVALLE = (4, 8, 12)
@@ -103,9 +104,16 @@ def schreibe_status(einstellungen, grund, notiz=None, honigbox=False):
     }
     try:
         tmp = STATUS_PATH + ".tmp"
-        with open(tmp, "w") as f:
+        # Laeuft als root in data/, das dem Dienstbenutzer gehoert: keinem dort
+        # abgelegten Symlink folgen (O_NOFOLLOW + O_EXCL nach dem Entfernen).
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(fd, "w") as f:
             json.dump(daten, f)
-        os.chmod(tmp, 0o644)
+            os.fchmod(f.fileno(), 0o644)
         os.replace(tmp, STATUS_PATH)
     except OSError as e:
         print(f"Konnte {STATUS_PATH} nicht schreiben: {e}")
@@ -149,6 +157,17 @@ def dienst_neu_starten_noetig():
     return start_mono > 0 and dpkg_mono > start_mono
 
 
+def markiere_auto_neustart(name):
+    """Zeitpunkt eines automatischen Neustarts hinterlegen - die App oeffnet
+    danach kein Passwort-Reset-Fenster (server.py _automatisch_gestartet())."""
+    try:
+        os.makedirs(AUTO_NEUSTART_DIR, mode=0o755, exist_ok=True)
+        with open(os.path.join(AUTO_NEUSTART_DIR, name), "w") as f:
+            f.write(f"{int(time.time())}\n")
+    except OSError:
+        pass
+
+
 def main():
     einstellungen = lade_einstellungen()
     grund = neustart_grund()
@@ -172,10 +191,12 @@ def main():
             schreibe_status(einstellungen, grund, f"Neustart zurückgestellt: {grund_beschaeftigt}.")
             return 0
         schreibe_status(einstellungen, grund, "Neustart wird ausgeführt.")
+        markiere_auto_neustart("reboot")
         subprocess.run(["systemctl", "reboot"], check=False)
         return 0
     if dienst_neu_starten_noetig() and not grund_beschaeftigt:
         schreibe_status(einstellungen, grund, "Dienst wurde nach Paket-Updates neu gestartet.")
+        markiere_auto_neustart("imkerei.service")
         subprocess.run(["systemctl", "restart", "imkerei.service"], check=False)
         return 0
     schreibe_status(einstellungen, grund)

@@ -111,8 +111,41 @@ def zugang_cookie_gueltig(cookie_header):
     return hmac.compare_digest(morsel.value, sollwert)
 
 
+# Automatische bzw. ohne Login ausloesbare Neustarts (Update ueber das
+# Setup-Portal, naechtlicher Systemcheck, "Neu starten" im Portal)
+# hinterlegen hier vorher eine Markierung ("imkerei.service", "alle" fuer
+# install.sh-Laeufe oder "reboot"). Ein so ausgeloester Dienststart oeffnet
+# das Reset-Fenster NICHT - sonst koennte jeder, der Port 8080 erreicht, das
+# Auto-Update um 04:00 abpassen und ein neues Passwort setzen. Ein Neustart
+# von Hand (systemctl restart, Strom) oeffnet es weiterhin.
+AUTO_NEUSTART_DIR = os.environ.get("AUTO_NEUSTART_DIR", "/var/lib/beetown-auto-neustart")
+
+
+def _automatisch_gestartet():
+    def markiert(name):
+        try: return os.path.getmtime(os.path.join(AUTO_NEUSTART_DIR, name))
+        except OSError: return None
+    for name in ("imkerei.service", "alle"):
+        m = markiert(name)
+        # 40 Min. Spielraum: ein install.sh-Lauf markiert am Anfang und
+        # startet den Dienst erst spaeter neu.
+        if m is not None and m >= _ZUGANG_PROZESS_START - 40 * 60:
+            return True
+    m = markiert("reboot")
+    if m is not None:
+        try:
+            with open("/proc/uptime") as f:
+                boot = time.time() - float(f.read().split()[0])
+        except (OSError, ValueError, IndexError):
+            return False
+        if _ZUGANG_PROZESS_START - boot < ZUGANG_RESET_FENSTER_SEKUNDEN and m >= boot - 3600:
+            return True
+    return False
+
+
 def zugang_reset_moeglich():
-    return zugang_eingerichtet() and (time.time() - _ZUGANG_PROZESS_START) < ZUGANG_RESET_FENSTER_SEKUNDEN
+    return (zugang_eingerichtet() and (time.time() - _ZUGANG_PROZESS_START) < ZUGANG_RESET_FENSTER_SEKUNDEN
+            and not _automatisch_gestartet())
 
 
 def zugang_per_einstellung_deaktiviert():
@@ -182,8 +215,9 @@ def _seite_login(fehler=None):
         formular += ('<p class="muted zugang-hinweis">Passwort vergessen? '
                      '<a href="/zuruecksetzen">Jetzt zurücksetzen</a>.</p>')
     else:
-        formular += ('<p class="muted zugang-hinweis">Passwort vergessen? Server neu starten - '
-                     'direkt danach erscheint hier für 10 Minuten ein Link zum Zurücksetzen.</p>')
+        formular += ('<p class="muted zugang-hinweis">Passwort vergessen? Server bzw. Dienst '
+                     'von Hand neu starten - direkt danach erscheint hier für 10 Minuten ein Link zum '
+                     'Zurücksetzen. Nach automatischen Updates und Neustarts erscheint er bewusst nicht.</p>')
     return _zugang_seite("Bitte Passwort eingeben.", formular, fehler)
 
 
@@ -525,17 +559,34 @@ def entry_photos(row):
         except: pass
     return []
 
-def delete_photos(ids):
-    for pid in (ids or []):
-        if ID_RE.match(str(pid)):
-            try: os.remove(os.path.join(PHOTO_DIR, pid+".jpg"))
-            except FileNotFoundError: pass
+def referenced_photo_ids(con):
+    refs=set()
+    for r in con.execute("SELECT photos,photoIds FROM entries").fetchall():
+        refs.update(photo_ids(entry_photos(r)))
+    for r in con.execute("SELECT photos FROM honey_stir_entries").fetchall():
+        try: refs.update(photo_ids(json.loads(r["photos"] or "[]")))
+        except Exception: pass
+    return refs
+
+def delete_photos(con, ids):
+    # Erst NACH der DB-Aenderung aufrufen: loescht nur Dateien, auf die kein
+    # Eintrag mehr zeigt. Ein per "Foto verschieben" an einen anderen Eintrag
+    # gehaengtes Foto bleibt so erhalten, auch wenn der alte Eintrag es abgibt.
+    ids=[p for p in (ids or []) if ID_RE.match(str(p))]
+    if not ids: return
+    refs=referenced_photo_ids(con)
+    for pid in ids:
+        if pid in refs: continue
+        try: os.remove(os.path.join(PHOTO_DIR, pid+".jpg"))
+        except FileNotFoundError: pass
 
 def delete_colony_cascade(con, cid):
+    ids=[]
     for e in con.execute("SELECT photos,photoIds FROM entries WHERE colonyId=?",(cid,)).fetchall():
-        delete_photos(photo_ids(entry_photos(e)))
+        ids+=photo_ids(entry_photos(e))
     con.execute("DELETE FROM entries WHERE colonyId=?",(cid,))
     con.execute("DELETE FROM colonies WHERE id=?",(cid,))
+    delete_photos(con, ids)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -659,6 +710,11 @@ class Handler(BaseHTTPRequestHandler):
         # styles.css muss auch ohne Zugangs-Cookie erreichbar sein, sonst
         # liesse sich die Login-/Ersteinrichtungs-Seite selbst nicht stylen.
         if p=="/styles.css": return self.serve_static(p)
+        # Service-Worker, Manifest und Icons enthalten keine Daten. Ohne Login
+        # erreichbar, damit eine installierte PWA sich auch nach abgelaufenem
+        # Cookie aktualisieren kann (ein Service-Worker-Skript darf nicht auf
+        # /login umgeleitet werden, sonst schlaegt jedes SW-Update fehl).
+        if p in ("/sw.js","/manifest.json","/icon-192.png","/icon-512.png"): return self.serve_static(p)
         zugang=self._zugang_pruefen()
         if p=="/einrichten":
             if zugang_eingerichtet(): return self._redirect("/")
@@ -671,6 +727,10 @@ class Handler(BaseHTTPRequestHandler):
             if not zugang_eingerichtet(): return self._redirect("/einrichten")
             if not zugang_reset_moeglich(): return self._redirect("/login")
             return self._html(_seite_zuruecksetzen())
+        # API-Abfragen ohne Login bekommen 401 statt einer Umleitung: fetch()
+        # wuerde der Umleitung folgen und die Login-Seite als "Daten" erhalten,
+        # die App erkennt am 401, dass sie zur Anmeldung wechseln muss.
+        if p.startswith("/api/") and zugang is not True: return self._err(401,"Nicht angemeldet")
         if zugang is None: return self._redirect("/einrichten")
         if zugang is False: return self._redirect("/login")
         if p.startswith("/api/"): return self.api_get(p)
@@ -1075,14 +1135,15 @@ class Handler(BaseHTTPRequestHandler):
 
             if path=="/api/entries/clear-fuetterung":
                 rows_=con.execute("SELECT id,obs_extra,photos,photoIds FROM entries").fetchall()
-                deleted=0
+                deleted=0; ids=[]
                 for r in rows_:
                     try: extra=json.loads(r["obs_extra"] or "{}")
                     except: extra={}
                     if extra.get("fuetterType"):
-                        delete_photos(photo_ids(entry_photos(r)))
+                        ids+=photo_ids(entry_photos(r))
                         con.execute("DELETE FROM entries WHERE id=?",(r["id"],))
                         deleted+=1
+                delete_photos(con, ids)
                 con.commit()
                 return self._json({"ok":True,"deleted":deleted})
 
@@ -1148,7 +1209,6 @@ class Handler(BaseHTTPRequestHandler):
                 old=con.execute("SELECT photos,photoIds FROM entries WHERE id=?",(rid,)).fetchone()
                 old_ids=photo_ids(entry_photos(old)) if old else []
                 new_photos=body.get("photos",[])
-                delete_photos([p for p in old_ids if p not in photo_ids(new_photos)])
                 con.execute("""UPDATE entries SET
                     date=?,type=?,notes=?,photos=?,obs=?,obs_extra=?,temper=?,strength=?,food=?,demareeAction=?,entryHrNr=?,oxalBlockAction=?,varroaCount=?,varroaAnts=?
                     WHERE id=?""",
@@ -1158,6 +1218,7 @@ class Handler(BaseHTTPRequestHandler):
                      body.get("temper",""),body.get("strength",""),body.get("food",""),
                      body.get("demareeAction",""),body.get("entryHrNr",""),body.get("oxalBlockAction",""),
                      body.get("varroaCount",""),int(body.get("varroaAnts",0) or 0),rid))
+                delete_photos(con,[p for p in old_ids if p not in photo_ids(new_photos)])
             elif kind=="reminders":
                 con.execute("UPDATE reminders SET text=?,apiaryId=?,apiaryName=?,dueDate=?,remindDaysBefore=?,repeatMode=?,repeatWeekdays=?,repeatIntervalWeeks=?,repeatMonthDay=? WHERE id=?",
                     (body.get("text",""),body.get("apiaryId",""),body.get("apiaryName",""),
@@ -1184,10 +1245,10 @@ class Handler(BaseHTTPRequestHandler):
                 old=con.execute("SELECT photos FROM honey_stir_entries WHERE id=?",(rid,)).fetchone()
                 old_ids=photo_ids(json.loads(old["photos"] or "[]")) if old else []
                 new_photos=body.get("photos",[])
-                delete_photos([p for p in old_ids if p not in photo_ids(new_photos)])
                 con.execute("UPDATE honey_stir_entries SET date=?,temp=?,appearance=?,photos=?,notes=? WHERE id=?",
                     (body.get("date",""),body.get("temp",""),body.get("appearance",""),
                      json.dumps(new_photos),body.get("notes",""),rid))
+                delete_photos(con,[p for p in old_ids if p not in photo_ids(new_photos)])
             elif kind=="honey_products":
                 con.execute("UPDATE honey_products SET name=?,price=?,sizeGrams=?,active=?,sortOrder=?,color=?,kind=?,giftSetVarieties=?,giftSetProductIds=? WHERE id=?",
                     (body.get("name",""),float(body.get("price",0) or 0),int(body.get("sizeGrams",0) or 0),
@@ -1222,8 +1283,8 @@ class Handler(BaseHTTPRequestHandler):
             elif kind=="colonies": delete_colony_cascade(con,rid)
             elif kind=="entries":
                 e=con.execute("SELECT photos,photoIds FROM entries WHERE id=?",(rid,)).fetchone()
-                if e: delete_photos(photo_ids(entry_photos(e)))
                 con.execute("DELETE FROM entries WHERE id=?",(rid,))
+                if e: delete_photos(con,photo_ids(entry_photos(e)))
             elif kind=="reminders":
                 con.execute("DELETE FROM reminders WHERE id=?",(rid,))
             elif kind=="honey_harvests":
@@ -1236,14 +1297,16 @@ class Handler(BaseHTTPRequestHandler):
             elif kind=="trachten":
                 con.execute("DELETE FROM trachten WHERE id=?",(rid,))
             elif kind=="honey_stir_batches":
+                ids=[]
                 for e in con.execute("SELECT photos FROM honey_stir_entries WHERE batchId=?",(rid,)).fetchall():
-                    delete_photos(photo_ids(json.loads(e["photos"] or "[]")))
+                    ids+=photo_ids(json.loads(e["photos"] or "[]"))
                 con.execute("DELETE FROM honey_stir_entries WHERE batchId=?",(rid,))
                 con.execute("DELETE FROM honey_stir_batches WHERE id=?",(rid,))
+                delete_photos(con,ids)
             elif kind=="honey_stir_entries":
                 e=con.execute("SELECT photos FROM honey_stir_entries WHERE id=?",(rid,)).fetchone()
-                if e: delete_photos(photo_ids(json.loads(e["photos"] or "[]")))
                 con.execute("DELETE FROM honey_stir_entries WHERE id=?",(rid,))
+                if e: delete_photos(con,photo_ids(json.loads(e["photos"] or "[]")))
             elif kind=="honey_products":
                 con.execute("DELETE FROM honey_products WHERE id=?",(rid,))
             elif kind=="honey_sales":

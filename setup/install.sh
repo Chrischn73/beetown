@@ -118,7 +118,11 @@ export DEBIAN_FRONTEND=noninteractive
 # statt sofort mit "Could not get lock" abzubrechen (set -e!): auf einem Pi
 # laeuft taeglich apt-daily-upgrade (unattended-upgrades) und kann die Sperre
 # gerade halten, wenn ein Komplett-Lauf dieses Skripts startet.
-apt-get() { command apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+# confdef/confold: Hat der Betreiber eine Konfigurationsdatei angepasst, fuer
+# die ein Paket eine neue Fassung mitbringt, behaelt dpkg die vorhandene, statt
+# nachzufragen. Ohne Terminal (Lauf aus dem Setup-Portal) wuerde die Frage mit
+# "EOF on stdin at conffile prompt" scheitern und set -e den Lauf abbrechen.
+apt-get() { command apt-get -o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@"; }
 
 apt_tries=0
 until apt-get update; do
@@ -166,8 +170,13 @@ AUEOF
 fi
 
 # ---------------------------------------------------------------------------
-log "SSH aktivieren"
-systemctl enable --now ssh
+# Nur auf dem Pi: Auf einem Linux-Server entscheidet der Betreiber selbst ueber
+# SSH (evtl. bewusst aus, evtl. gar nicht installiert - dann brach dieser
+# Befehl wegen set -e die ganze Installation ab).
+if [ "$IS_PI" -eq 1 ]; then
+    log "SSH aktivieren"
+    systemctl enable --now ssh || echo "WARNUNG: SSH konnte nicht aktiviert werden."
+fi
 
 if [ "$IS_PI" -eq 0 ]; then
     # -----------------------------------------------------------------------
@@ -479,7 +488,10 @@ mkdir -p /opt/setup-portal/state/imkerei
 sha256sum "${BASH_SOURCE[0]}" | cut -d' ' -f1 > /opt/setup-portal/state/imkerei/install_sh.sha256
 # Einmaligen ersten Check gleich jetzt anstossen, damit die Startseite nicht
 # bis zum ersten Timer-Lauf ohne Update-Information dasteht.
-systemctl start imkerei-update-check.service || true
+# --no-block: Ist ein Update faellig, wartet der Check bis zu 15 Min. auf die
+# Update-Sperre - die haelt das Portal aber, solange es dieses install.sh
+# ausfuehrt. Blockierend hiess das: 15 Min. Stillstand am Ende des Laufs.
+systemctl start --no-block imkerei-update-check.service || true
 
 is_wifi_connected() {
     nmcli -t -f DEVICE,STATE device status 2>/dev/null \
@@ -533,11 +545,16 @@ if [ "$IS_PI" -eq 1 ]; then
     # $SETUP_URL statt der Werte von VOR der Hostname-Entscheidung. agetty
     # wertet \4{iface} bei jeder Anzeige live aus (siehe regen-issue.sh) -
     # immer aktuelle IP, kein zusaetzlicher Dienst noetig.
+    # 00- byte-gleich mit HonigBox (setup/install.sh): live aufgeloeste IP
+    # (\4) statt .local - mDNS ist je nach Router/Mesh unzuverlaessig, und auf
+    # einer Box mit beiden Apps wechselte die Zeile sonst je nach letztem Lauf.
+    ISSUE_PORT_SUFFIX=""
+    [ "$LANDING_PORT" -ne 80 ] && ISSUE_PORT_SUFFIX=":$LANDING_PORT"
     cat > /opt/setup-portal/issue.d/00-setup-url.txt << EOF
-   Setup / Übersicht:   $SETUP_URL
+   Setup / WLAN:        http://\4$ISSUE_PORT_SUFFIX
 EOF
     cat > /opt/setup-portal/issue.d/20-imkerei.txt << EOF
-   BeeTown:             http://$EFFECTIVE_HOSTNAME.local:$APP_PORT
+   BeeTown:             http://\4:$APP_PORT
 EOF
     /opt/setup-portal/regen-issue.sh
 

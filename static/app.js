@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.47';
+const APP_VERSION = 'v2.9.48';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -207,6 +207,13 @@ async function api(method, path, body, isRaw) {
   try { res = await fetch(path, opts); }
   catch (e) { _beeBusy(false); throw new Error('Server nicht erreichbar – ist das VPN aktiv?'); }
   _beeBusy(false);
+  /* Nicht (mehr) angemeldet: Cookie abgelaufen oder Passwort geaendert. Statt mit
+     der Login-Seite als "Daten" weiterzurechnen, zur Anmeldung wechseln. */
+  const zielPfad = res.redirected ? new URL(res.url).pathname : '';
+  if (res.status === 401 || zielPfad === '/login' || zielPfad === '/einrichten') {
+    location.href = zielPfad === '/einrichten' ? '/einrichten' : '/login';
+    throw new Error('Nicht angemeldet – Weiterleitung zur Anmeldung …');
+  }
   if (!res.ok) {
     let msg = 'Fehler ' + res.status;
     try { msg = (await res.json()).error || msg; } catch (_) {}
@@ -299,9 +306,12 @@ function sirupFromSugar(ratioKey, sugarKg) {
 /* ---------- Umlarv-Berechnung ---------- */
 function addDays(dateStr, days) {
   if (!dateStr) return '';
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  /* Lokal rechnen und formatieren: ueber UTC (new Date('JJJJ-MM-TT') +
+     toISOString) kam bei der Sommerzeit-Umstellung ein Tag zu frueh heraus. */
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  if (!m) return '';
+  const d = new Date(+m[1], +m[2] - 1, +m[3] + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function umlarvInfo(colony, settings) {
   if (!colony.umlarvDate) return '';
@@ -309,7 +319,7 @@ function umlarvInfo(colony, settings) {
   const eilageDays  = parseInt(settings.eilageDays  || '28');
   const schlupf = addDays(colony.umlarvDate, schlupfDays);
   const eilage  = addDays(colony.umlarvDate, schlupfDays + eilageDays);
-  const today   = new Date().toISOString().slice(0, 10);
+  const today   = todayInput();
   const schlupfPast = schlupf < today;
   const eilagePast  = eilage  < today;
   return `<div class="umlarv-info">
@@ -2556,7 +2566,7 @@ function entryForm(colonyId, existing, colony, allEntries) {
       ${selectField('Fütterungsart','fuetterType',existingExtra.fuetterType||FUETTER_TYPES[0],FUETTER_TYPES.map(t=>[t,t]))}
       ${field('Menge (Liter)','fuetterMenge',existingExtra.fuetterMenge||'','','number')}
     </div>
-    ${selectField('Art','type',existing?.type||'',ENTRY_TYPES.map((t)=>[t,t]))}
+    ${selectField('Art','type',existing?.type||'',(existing?.type && !ENTRY_TYPES.includes(existing.type) ? [...ENTRY_TYPES, existing.type] : ENTRY_TYPES).map((t)=>[t,t]))}
     ${field('Datum','date',existing?.date||todayInput(),true,'date')}
     ${photoButtonsHTML()}
     ${field('Gewicht (kg)','gewicht',existingExtra.gewicht||'','','number')}
@@ -2589,49 +2599,49 @@ function entryForm(colonyId, existing, colony, allEntries) {
       if(colony){
         let colonyUpdate = {...colony};
         let needsUpdate = false;
-        if(demareeActionVal){
+        /* Beim Bearbeiten eines alten Eintrags nur das ans Volk weitergeben, was sich an
+           diesem Eintrag tatsaechlich geaendert hat – sonst wuerde z. B. eine Notiz-Korrektur
+           die Demaree-Stufe erneut erhoehen oder ein altes Gewicht zurueckschreiben. */
+        const entryDate = data.date || todayInput();
+        const dateChanged = !!existing && (existing.date||'') !== entryDate;
+        if(demareeActionVal && !existing?.demareeAction){
           colonyUpdate.demareeStage = String(nextStage);
-          colonyUpdate.demareedAt   = data.date || todayInput();
+          colonyUpdate.demareedAt   = entryDate;
           colonyUpdate.demareeEndedAt = '';
           needsUpdate = true;
         }
-        if(oxalBlockActionVal){
+        if(oxalBlockActionVal && !existing?.oxalBlockAction){
           colonyUpdate.oxalBlockStage = String(oxNextStage);
-          colonyUpdate.oxalBlockLastAt = data.date || todayInput();
-          if(oxNextStage === 1){ colonyUpdate.oxalBlockStartAt = data.date || todayInput(); }
+          colonyUpdate.oxalBlockLastAt = entryDate;
+          if(oxNextStage === 1){ colonyUpdate.oxalBlockStartAt = entryDate; }
           needsUpdate = true;
-          await scheduleOxalBlockReminder(colony, data.date || todayInput(), oxNextStage);
+          await scheduleOxalBlockReminder(colony, entryDate, oxNextStage);
         }
-        if(entryWeiselprobe){
-          colonyUpdate.weiselprobeDate = data.date || todayInput();
-          needsUpdate = true;
-        } else if(existing?.obs?.includes('weiselprobe')) {
-          colonyUpdate.weiselprobeDate = '';
-          needsUpdate = true;
-        }
-        if(entryKaefigung){
-          colonyUpdate.kaefigungDate = data.date || todayInput();
-          needsUpdate = true;
-        } else if(existing?.obs?.includes('kaefigung')) {
-          colonyUpdate.kaefigungDate = '';
-          needsUpdate = true;
-        }
-        if(entryKoeniginFrei){
-          colonyUpdate.koeniginFreiDate = data.date || todayInput();
-          needsUpdate = true;
-        } else if(existing?.obs?.includes('koeniginFrei')) {
-          colonyUpdate.koeniginFreiDate = '';
-          needsUpdate = true;
-        }
+        /* Datumsfelder am Volk: neu gesetzt -> eintragen; Datum des Eintrags geaendert oder
+           Haken entfernt -> nur anpassen, wenn das Volk-Datum noch von DIESEM Eintrag stammt. */
+        const syncDateField = (isOn, obsKey, fieldName) => {
+          const wasOn = !!existing?.obs?.includes(obsKey);
+          const fromThisEntry = wasOn && (colony[fieldName]||'') === (existing.date||'');
+          if(isOn && !wasOn){ colonyUpdate[fieldName] = entryDate; needsUpdate = true; }
+          else if(isOn && dateChanged && fromThisEntry){ colonyUpdate[fieldName] = entryDate; needsUpdate = true; }
+          else if(!isOn && fromThisEntry){ colonyUpdate[fieldName] = ''; needsUpdate = true; }
+        };
+        syncDateField(entryWeiselprobe,  'weiselprobe',  'weiselprobeDate');
+        syncDateField(entryKaefigung,    'kaefigung',    'kaefigungDate');
+        syncDateField(entryKoeniginFrei, 'koeniginFrei', 'koeniginFreiDate');
         if(data.gewicht){
-          colonyUpdate.currentWeight = data.gewicht;
-          colonyUpdate.currentWeightDate = data.date || todayInput();
-          needsUpdate = true;
+          const unveraendert = !!existing && String(existingExtra.gewicht||'') === String(data.gewicht) && !dateChanged;
+          const nichtAelter = !colony.currentWeightDate || entryDate >= colony.currentWeightDate;
+          if(!unveraendert && nichtAelter){
+            colonyUpdate.currentWeight = data.gewicht;
+            colonyUpdate.currentWeightDate = entryDate;
+            needsUpdate = true;
+          }
         }
-        if(entryHrNr){
+        if(entryHrNr && entryHrNr !== (existing?.entryHrNr||'')){
           const hrs = parseHR(colony);
           if(!hrs.find(h=>h.nr===entryHrNr) && hrs.length<5){
-            hrs.push({nr:entryHrNr, date:data.date||todayInput()});
+            hrs.push({nr:entryHrNr, date:entryDate});
             colonyUpdate.honigRaeume = JSON.stringify(hrs);
             needsUpdate = true;
           }
@@ -2943,7 +2953,7 @@ async function renderAll() {
   const STATUS_ICON = { ok:'🟢', watch:'🟡', varroa:'<img class="status-varroa-icon-sm" src="./icons/varroa.png" alt="Varroa?">', weak:'🟠', dead:'💀', dissolved:'✕' };
   const schlupfDays = parseInt(settings.schlupfDays || '11');
   const eilageDays  = parseInt(settings.eilageDays  || '28');
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayInput();
 
   app.innerHTML = `
     <div class="toolbar" style="justify-content:space-between;align-items:center">
@@ -3031,7 +3041,7 @@ function printAllList(all, settings) {
   const cols = getAllCols(settings);
   const schlupfDays = parseInt(settings.schlupfDays || '11');
   const eilageDays  = parseInt(settings.eilageDays  || '28');
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayInput();
   const dateStr = new Date().toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
 
   const rows = all.map(c => {
@@ -3254,6 +3264,7 @@ async function renderHoney() {
       renderHoney();
     },
     existing ? async (close) => {
+      if(!confirm('Diese Ernte löschen?')) return;
       await api('DELETE', './api/honey_harvests/' + existing.id);
       close();
       renderHoney();
@@ -3385,6 +3396,7 @@ async function renderHoneyStirBatch() {
         renderHoneyStirBatch();
       },
       existing ? async (close) => {
+        if(!confirm('Diesen Rühr-Eintrag samt Fotos löschen?')) return;
         await api('DELETE', './api/honey_stir_entries/'+existing.id);
         close();
         renderHoneyStirBatch();
@@ -3471,7 +3483,8 @@ async function renderFuetterung() {
   const fmtKgZ = (n) => n.toFixed(2).replace('.',',');
   const fmtL = (n) => n.toFixed(1).replace('.',',');
 
-  // Struktur: byColony[colonyName] = { apiaryName, byType: { typ: {liter, zuckerKg} } }
+  // Struktur: byColony[colonyId] = { name, apiaryName, byType: { typ: {liter, zuckerKg} } }
+  // (nach ID, nicht Name: gleichnamige Voelker an verschiedenen Standorten getrennt)
   const byColony = {};
   await Promise.all(apiaries.map(async a => {
     const colonies = await apiGet('./api/colonies?apiaryId=' + a.id);
@@ -3482,18 +3495,20 @@ async function renderFuetterung() {
         if(!extra.fuetterType) return;
         const year = e.date ? parseInt(e.date.slice(0,4)) : 0;
         if(year !== curYear) return;
-        if(!byColony[c.name]) byColony[c.name] = { apiaryName: a.name, byType: {} };
+        if(!byColony[c.id]) byColony[c.id] = { name: c.name, apiaryName: a.name, byType: {} };
         const t = extra.fuetterType;
         const liter = parseFloat(extra.fuetterMenge) || 0;
         const zuckerKg = liter * (SUGAR_PER_LITER[t] || 0);
-        if(!byColony[c.name].byType[t]) byColony[c.name].byType[t] = { liter: 0, zuckerKg: 0 };
-        byColony[c.name].byType[t].liter += liter;
-        byColony[c.name].byType[t].zuckerKg += zuckerKg;
+        if(!byColony[c.id].byType[t]) byColony[c.id].byType[t] = { liter: 0, zuckerKg: 0 };
+        byColony[c.id].byType[t].liter += liter;
+        byColony[c.id].byType[t].zuckerKg += zuckerKg;
       });
     }));
   }));
 
-  const colonyNames = Object.keys(byColony).sort();
+  const colonyNames = Object.keys(byColony).sort((x, y) =>
+    (byColony[x].name||'').localeCompare(byColony[y].name||'', 'de', {numeric:true}) ||
+    (byColony[x].apiaryName||'').localeCompare(byColony[y].apiaryName||'', 'de'));
 
   const gesamtByType = {};
   colonyNames.forEach(cn => {
@@ -3526,11 +3541,11 @@ async function renderFuetterung() {
     ${colonyNames.length === 0
       ? emptyState('Keine Fütterungen', 'Noch keine Fütterungen in ' + curYear + ' erfasst.')
       : colonyNames.map(cn => {
-          const { apiaryName, byType } = byColony[cn];
+          const { name, apiaryName, byType } = byColony[cn];
           const volksLiter = Object.values(byType).reduce((s,v) => s+v.liter, 0);
           const volksZucker = Object.values(byType).reduce((s,v) => s+v.zuckerKg, 0);
           return `
-            <h2 class="section-h">${esc(cn)} <span class="muted" style="font-weight:normal;font-size:.85em">${esc(apiaryName)}</span></h2>
+            <h2 class="section-h">${esc(name)} <span class="muted" style="font-weight:normal;font-size:.85em">${esc(apiaryName)}</span></h2>
             <div class="card" style="margin-bottom:1rem">
               <div class="card-main" style="width:100%">
                 ${Object.entries(byType).map(([t, v]) => row(esc(t), v.liter, v.zuckerKg)).join('')}
