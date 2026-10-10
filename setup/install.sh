@@ -180,14 +180,40 @@ if [ "$IS_PI" -eq 0 ]; then
     systemctl enable --now avahi-daemon
 fi
 
+if [ "$IS_PI" -eq 0 ]; then
+    # -----------------------------------------------------------------------
+    # Server: Zeitzone nur anfassen, wenn sie noch im Auslieferungszustand
+    # UTC steht (z. B. frischer Proxmox-LXC - so lief .205 bis 10.10.2026
+    # in UTC, die naechtlichen Timer kamen 2 h spaeter, das Portal zeigte
+    # UTC-Zeiten). Eine bewusst gewaehlte andere Zeitzone bleibt. NTP nicht
+    # anfassen: im Container macht das der Host, set-ntp scheitert dort.
+    AKTUELLE_ZEITZONE="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+    if [ -z "$AKTUELLE_ZEITZONE" ]; then
+        AKTUELLE_ZEITZONE="$(readlink /etc/localtime 2>/dev/null | sed 's|.*zoneinfo/||' || true)"
+    fi
+    case "$AKTUELLE_ZEITZONE" in
+        ""|UTC|Etc/UTC|Etc/Universal|Universal|Zulu|Etc/Zulu)
+            log "Zeitzone steht auf '${AKTUELLE_ZEITZONE:-nicht gesetzt}' (Auslieferungszustand) - stelle auf Europe/Berlin"
+            if timedatectl set-timezone Europe/Berlin 2>/dev/null \
+               || ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime; then
+                echo "Zeitzone jetzt: $(date +%Z) ($(date '+%H:%M'))"
+            else
+                echo "WARNUNG: Zeitzone konnte nicht umgestellt werden - Zeiten bleiben in UTC."
+            fi
+            ;;
+        *)
+            echo "Zeitzone '$AKTUELLE_ZEITZONE' bewusst gesetzt - bleibt unveraendert."
+            ;;
+    esac
+fi
+
 if [ "$IS_PI" -eq 1 ]; then
     # -----------------------------------------------------------------------
     log "Zeitzone auf Europe/Berlin setzen und Zeit-Synchronisation aktivieren"
     # Frisch installierte Raspberry Pi OS Lite/Core-Systeme starten oft mit
     # Zeitzone UTC statt Europe/Berlin (dadurch wirkt die Uhrzeit 1-2h
     # "falsch", obwohl die Zeit selbst per NTP korrekt synchronisiert ist).
-    # Auf einem Linux-Server verwaltet der Betreiber die Zeitzone bereits
-    # selbst - dort nicht anfassen.
+    # Auf einem Linux-Server nur, wenn sie noch auf UTC steht (siehe oben).
     timedatectl set-timezone Europe/Berlin
     timedatectl set-ntp true
     sleep 2
