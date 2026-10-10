@@ -592,7 +592,9 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 
 /* ---------- v1.9.5 ---------- */
 .brand{ display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
-.brand-text-col{ display:flex; flex-direction:column; line-height:1.2; }
+.brand-text-col{ display:flex; flex-direction:column; align-items:flex-start; line-height:1.2; }
+.brand-text-col .apiary-name-tag{ align-self:flex-start; margin-left:.3rem; }
+.brand .name .name-sub{ font-size:.72em; font-weight:650; letter-spacing:0; }
 .brand-logo-wrap{ margin-left:auto; display:flex; align-items:center; }
 .brand-logo-custom{ max-height:52px; max-width:160px; object-fit:contain; border-radius:4px; }
 .brand-bee{ width:48px; height:48px; flex-shrink:0; }
