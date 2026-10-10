@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.44';
+const APP_VERSION = 'v2.9.45';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -5764,7 +5764,7 @@ async function renderSettings() {
       <p class="muted" style="margin-top:.4rem">Ein gemeinsames Passwort für den Browser-Zugriff. Ohne ist die App für jeden im Netzwerk erreichbar.</p>`)}
     <div id="sysupd-wrap" style="display:none">${settingsSection('systemupdates','Systemupdates',`
       <p class="muted">Sicherheitsupdates für das Betriebssystem werden automatisch installiert (ca. wöchentlich).
-      Damit sie vollständig wirken, startet die Box gelegentlich nachts um 4 Uhr neu – nur bei Bedarf und frühestens nach dem eingestellten Abstand.</p>
+      Damit sie vollständig wirken, startet die Box gelegentlich nachts um 5 Uhr neu – nur bei Bedarf und frühestens nach dem eingestellten Abstand.</p>
       <p class="muted" id="sysupd-honigbox" style="display:none">Auf dieser Box läuft auch HonigBox – der Neustart wird von dort gesteuert (Einstellungen unter „Systemupdates“ in der HonigBox).</p>
       <div id="sysupd-felder">
         <label class="check-item">
@@ -6195,7 +6195,7 @@ async function renderSettings() {
         teile.push(st.neustart_noetig?'Neustart nötig ('+(st.grund||'Systemupdate')+')':'Kein Neustart nötig');
         if(st.laufzeit_tage!=null) teile.push('Läuft seit '+st.laufzeit_tage+' Tagen');
         if(st.notiz) teile.push(st.notiz);
-      }else teile.push('Noch keine Prüfung durchgeführt (läuft nachts um 4 Uhr).');
+      }else teile.push('Noch keine Prüfung durchgeführt (läuft nachts um 5 Uhr).');
       document.getElementById('sysupd-status').textContent=teile.join(' · ');
       document.getElementById('sysupd-wrap').style.display='';
     }catch(_){}

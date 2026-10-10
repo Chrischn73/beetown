@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 BeeTown - naechtlicher Systemcheck nach Sicherheitsupdates (nur Raspberry Pi,
-laeuft als root ueber imkerei-systemneustart.timer, taeglich 04:00 und 10 Min.
-nach dem Boot). Sicherheitsupdates selbst macht unattended-upgrades (install.sh).
+laeuft als root ueber imkerei-systemneustart.timer, taeglich 05:00 und 10 Min.
+nach dem Boot - bewusst nach den App-Updates um 04:00-04:05, siehe
+portal_vorgang_laeuft()). Sicherheitsupdates selbst macht unattended-upgrades
+(install.sh).
 
 - Ist HonigBox auf derselben Box installiert, besitzt DEREN systemneustart.py den
   Neustart (Fotos/Archiv-Schutz) - dieses Skript schreibt dann nur den Status.
@@ -13,6 +15,7 @@ nach dem Boot). Sicherheitsupdates selbst macht unattended-upgrades (install.sh)
 Einstellungen stehen in der App-Datenbank (Tabelle settings: sysAutoNeustart,
 sysIntervallWochen), Status geht nach data/.systemupdate-status.json.
 """
+import fcntl
 import glob
 import json
 import os
@@ -29,6 +32,11 @@ HONIGBOX_SKRIPT = "/opt/honigbox/systemneustart.py"
 APT_STAMP = "/var/lib/apt/periodic/unattended-upgrades-stamp"
 DPKG_LOG = "/var/log/dpkg.log"
 GUELTIGE_INTERVALLE = (4, 8, 12)
+# Gemeinsame Update-Sperre des Setup-Portals (flock, siehe setup_portal.py
+# try_acquire_update_lock()).
+PORTAL_SPERRE = "/run/setup-portal/update.lock"
+# Units, die waehrenddessen App-Dateien umbauen oder das Portal neu starten.
+UPDATE_UNITS = ("*-update-check.service", "setup-portal-install-*")
 
 
 def lade_einstellungen():
@@ -103,9 +111,29 @@ def schreibe_status(einstellungen, grund, notiz=None, honigbox=False):
         print(f"Konnte {STATUS_PATH} nicht schreiben: {e}")
 
 
+def portal_vorgang_laeuft():
+    """True, solange das Setup-Portal eine App aktualisiert/installiert oder
+    sich selbst aktualisiert - ein Neustart wuerde das mittendrin abbrechen.
+    Fragt die Portal-Sperre und die zugehoerigen systemd-Units ab."""
+    try:
+        with open(PORTAL_SPERRE) as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except OSError:
+                return True
+    except OSError:
+        pass
+    erg = subprocess.run(["systemctl", "list-units", "--no-legend", "--plain",
+                          "--state=activating,active,deactivating", *UPDATE_UNITS],
+                         capture_output=True, text=True)
+    return bool(erg.stdout.strip())
+
+
 def beschaeftigt():
     if subprocess.run(["systemctl", "is-active", "--quiet", "imkerei-backup.service"]).returncode == 0:
         return "Backup läuft gerade"
+    if portal_vorgang_laeuft():
+        return "App-Update im Setup-Portal läuft gerade"
     return None
 
 

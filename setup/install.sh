@@ -407,7 +407,8 @@ cat > /opt/setup-portal/apps.d/imkerei.json << JSONEOF
     "file_map": [
       {"src": "server.py", "dest": "/opt/imkerei/server.py", "mode": "0644", "chown": "imkerei:imkerei"},
       {"src": "static", "dest": "/opt/imkerei/static", "mode": "dir", "chown": "imkerei:imkerei"},
-      {"src": "setup/imkerei-systemneustart.py", "dest": "/usr/local/lib/imkerei/systemneustart.py", "mode": "0755", "chown": "root:root"}
+      {"src": "setup/imkerei-systemneustart.py", "dest": "/usr/local/lib/imkerei/systemneustart.py", "mode": "0755", "chown": "root:root"},
+      {"src": "setup/imkerei-systemneustart.timer", "dest": "/etc/systemd/system/imkerei-systemneustart.timer", "mode": "0644"}
     ],
     "services_to_restart": ["imkerei.service"]
   },
