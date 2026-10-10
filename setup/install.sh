@@ -443,6 +443,14 @@ systemctl restart imkerei.service
 systemctl enable --now imkerei-backup.timer
 systemctl enable --now imkerei-update-check.timer
 [ "$IS_PI" -eq 1 ] && systemctl enable --now imkerei-systemneustart.timer
+# Vergleichswert fuer das Setup-Portal ("Setup unvollstaendig" bzw. naecht-
+# licher Nachhol-Lauf nach einem reinen Datei-Update) selbst hinterlegen -
+# auch bei einem Lauf per Hand ueber SSH, nicht nur, wenn das Portal
+# install.sh startet. Ohne Hash meldete das Portal frueher nie etwas, ein
+# per SSH installiertes Geraet blieb so dauerhaft auf altem Setup-Stand.
+# Vor dem Update-Check-Start, damit der den Lauf nicht ein zweites Mal anstoesst.
+mkdir -p /opt/setup-portal/state/imkerei
+sha256sum "${BASH_SOURCE[0]}" | cut -d' ' -f1 > /opt/setup-portal/state/imkerei/install_sh.sha256
 # Einmaligen ersten Check gleich jetzt anstossen, damit die Startseite nicht
 # bis zum ersten Timer-Lauf ohne Update-Information dasteht.
 systemctl start imkerei-update-check.service || true
