@@ -1539,7 +1539,7 @@ async function renderApiaries() {
         <circle cx="70" cy="21" r="2.5" fill="#333"/>
       </svg>
       <div class="brand-text-col">
-        <span class="name">BeeTown</span>
+        <span class="name">BeeTown Imker-App</span>
         ${apiaryName ? `<span class="apiary-name-tag">${esc(apiaryName)}</span>` : ''}
       </div>
       ${logoHTML ? `<div class="brand-logo-wrap">${logoHTML}</div>` : ''}

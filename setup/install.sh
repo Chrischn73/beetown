@@ -384,7 +384,7 @@ log "BeeTown im gemeinsamen Setup-Portal registrieren"
 cat > /opt/setup-portal/apps.d/imkerei.json << JSONEOF
 {
   "id": "imkerei",
-  "label": "BeeTown",
+  "label": "BeeTown Imker-App",
   "emoji": "🐝",
   "beschreibung": "App für die Imkerei-Verwaltung: Bienenstände, Rühr-Vorgänge und Honigverkauf erfassen und dokumentieren.",
   "app_port_default": 8080,
@@ -418,7 +418,7 @@ cat > /opt/setup-portal/apps.d/imkerei.json << JSONEOF
   },
   "companion": {
     "app_id": "honigbox",
-    "label": "HonigBox",
+    "label": "BeeTown HonigBox",
     "emoji": "🍯",
     "github_repo": "Chrischn73/honigbox",
     "beschreibung": "Überwacht die Tür einer Honig-Verkaufsbox per Kontaktschalter, macht bei jeder Öffnung automatisch Fotos und schickt eine Push-Benachrichtigung ans Handy. Läuft direkt auf einem Raspberry Pi in der Box.",
