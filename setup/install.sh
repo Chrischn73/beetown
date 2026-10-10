@@ -421,7 +421,8 @@ cat > /opt/setup-portal/apps.d/imkerei.json << JSONEOF
     "label": "HonigBox",
     "emoji": "🍯",
     "github_repo": "Chrischn73/honigbox",
-    "beschreibung": "Überwacht die Tür einer Honig-Verkaufsbox per Kontaktschalter, macht bei jeder Öffnung automatisch Fotos und schickt eine Push-Benachrichtigung ans Handy. Läuft direkt auf einem Raspberry Pi in der Box."
+    "beschreibung": "Überwacht die Tür einer Honig-Verkaufsbox per Kontaktschalter, macht bei jeder Öffnung automatisch Fotos und schickt eine Push-Benachrichtigung ans Handy. Läuft direkt auf einem Raspberry Pi in der Box.",
+    "warnung_ohne_pi": "Die HonigBox wurde für einen Raspberry Pi entwickelt und benötigt eine kleine Kamera (Pi-Kamera oder USB-Kamera) sowie einen Türkontakt-Schalter. Dieses System ist kein Raspberry Pi – die Installation ist hier in der Regel nicht sinnvoll."
   }
 }
 JSONEOF
