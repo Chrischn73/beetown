@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.48';
+const APP_VERSION = 'v2.9.49';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -2764,7 +2764,9 @@ function entryForm(colonyId, existing, colony, allEntries) {
         close(); return Promise.resolve();
       },null);
   };
-  setTimeout(()=>{ const d=document.querySelector('.modal-body input[name="date"]'); if(d) d.focus(); },50);
+  /* Bewusst kein Auto-Fokus aufs Datumsfeld mehr: es liegt mitten im Formular, der Fokus
+     scrollte das Fenster dorthin (Handy: man musste erst nach oben; Chrome am PC trotz
+     preventScroll). Datum ist ohnehin mit heute vorbelegt. */
   wireObs(obs,swarmCounts,selectValues);
   wirePhotos(photos,'form-thumbs',allEntries,existing?.id);
 }
