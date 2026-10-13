@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.49';
+const APP_VERSION = 'v2.9.50';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -3007,11 +3007,14 @@ async function renderAll() {
         const notesSnip = cols.showNotes && c.notes ? `<span class="all-badge" style="color:var(--ink-soft)">${esc(c.notes.slice(0,20))}${c.notes.length>20?'…':''}</span>` : '';
         const lastEnt = cols.showLastEntry && lastEntryMap[c.id] ? `<span class="all-badge" style="background:#f1f3f5;color:var(--ink-soft)">📋 ${lastEntryMap[c.id]}</span>` : '';
         return `<li class="all-row" data-colony="${c.id}" data-apiary="${c._apiaryId||c.apiaryId}">
+          <div class="all-line1">
           ${cols.showStatus?`<span class="all-status">${status}${cols.showFlags?requeue+breed:''}</span>`:''}
           <span class="all-name">${esc(c.name)}</span>
           ${cols.showApiary?`<span class="all-sub">${esc(c._apiaryName)}</span>`:''}
           ${(cols.showQueenYear&&qBadge)||(cols.showQueenNr&&qNr)||(cols.showQueenGen&&qGen)?`<span class="all-queen">${cols.showQueenYear?qBadge:''}${cols.showQueenNr&&qNr ? qNr+' ' : ''}${cols.showQueenGen?qGen:''}</span>`:''}
-          ${cols.showSource&&c.source?`<span class="all-badge" style="background:transparent;color:var(--ink-soft)">${esc(c.source)}</span>`:''}
+          </div>
+          <div class="all-line2">
+          ${cols.showSource&&c.source?`<span class="all-badge all-source">${esc(c.source)}</span>`:''}
           <span class="all-badges">
             ${cols.showHr?hrBadge:''}
             ${cols.showDemaree?demaree:''}
@@ -3021,6 +3024,7 @@ async function renderAll() {
             ${cols.showKaef&&c.kaefigungDate&&(!c.koeniginFreiDate||c.koeniginFreiDate<c.kaefigungDate)?`<span class="all-badge all-kaef">${KAEFIG_SVG} ${Math.floor((Date.now()-new Date(c.kaefigungDate))/86400000)}T</span>`:''}
             ${lastEnt}${notesSnip}
           </span>
+          </div>
         </li>`;
       }).join('')}
     </ul>`;
