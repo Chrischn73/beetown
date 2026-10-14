@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.50';
+const APP_VERSION = 'v2.9.51';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -2962,7 +2962,7 @@ async function renderAll() {
       <span class="muted">${all.length} Völker · alphabetisch</span>
       <button class="btn btn-ghost btn-sm" id="print-all">🖨 Drucken</button>
     </div>
-    <ul class="all-list">
+    <ul class="all-list${cols.showStatus&&cols.showFlags&&all.some(c=>c.requeueFlag||c.breedFlag)?' has-flags':''}">
       ${all.map(c => {
         const status = STATUS_ICON[c.status||'ok'] || '🟢';
         const _reqReasons = c.requeueFlag ? (() => { try{ return JSON.parse(c.requeueReasons||'[]'); }catch(_){return [];} })() : [];
@@ -3008,13 +3008,12 @@ async function renderAll() {
         const lastEnt = cols.showLastEntry && lastEntryMap[c.id] ? `<span class="all-badge" style="background:#f1f3f5;color:var(--ink-soft)">📋 ${lastEntryMap[c.id]}</span>` : '';
         return `<li class="all-row" data-colony="${c.id}" data-apiary="${c._apiaryId||c.apiaryId}">
           <div class="all-line1">
+          <span class="all-head">
           ${cols.showStatus?`<span class="all-status">${status}${cols.showFlags?requeue+breed:''}</span>`:''}
           <span class="all-name">${esc(c.name)}</span>
           ${cols.showApiary?`<span class="all-sub">${esc(c._apiaryName)}</span>`:''}
           ${(cols.showQueenYear&&qBadge)||(cols.showQueenNr&&qNr)||(cols.showQueenGen&&qGen)?`<span class="all-queen">${cols.showQueenYear?qBadge:''}${cols.showQueenNr&&qNr ? qNr+' ' : ''}${cols.showQueenGen?qGen:''}</span>`:''}
-          </div>
-          <div class="all-line2">
-          ${cols.showSource&&c.source?`<span class="all-badge all-source">${esc(c.source)}</span>`:''}
+          </span>
           <span class="all-badges">
             ${cols.showHr?hrBadge:''}
             ${cols.showDemaree?demaree:''}
@@ -3025,6 +3024,7 @@ async function renderAll() {
             ${lastEnt}${notesSnip}
           </span>
           </div>
+          ${cols.showSource&&c.source?`<div class="all-source">${esc(c.source)}</div>`:''}
         </li>`;
       }).join('')}
     </ul>`;
