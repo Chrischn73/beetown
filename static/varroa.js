@@ -218,8 +218,8 @@
   }
 
   /* Kontrollbild: Kreise (blau = Milbe, lila = mehrere) + Raster 4x3 bzw.
-     3x4 mit Zaehlwert pro Feld zum Nachzaehlen. Liefert eine Blob-URL. */
-  function markedURL(canvas, result){
+     3x4 mit Zaehlwert pro Feld zum Nachzaehlen. Liefert ein JPEG-Blob. */
+  function markedBlob(canvas, result){
     const w = canvas.width, h = canvas.height, k = Math.max(w, h) / 1280;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -252,10 +252,10 @@
       }
     }
     return new Promise((resolve, reject) =>
-      c.toBlob(b => b ? resolve(URL.createObjectURL(b)) : reject(new Error('Bild fehlerhaft')), 'image/jpeg', 0.85));
+      c.toBlob(b => b ? resolve(b) : reject(new Error('Bild fehlerhaft')), 'image/jpeg', 0.85));
   }
 
-  const api = { count, analyze, markedURL };
+  const api = { count, analyze, markedBlob };
   if(typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Varroa = api;
 })(typeof window !== 'undefined' ? window : this);
