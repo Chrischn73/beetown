@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.53';
+const APP_VERSION = 'v2.9.54';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -1082,10 +1082,13 @@ async function uploadPhoto(file, highRes=false) {
    Gemeinsam fuer den Varroa-Dialog und "🔍 Varroa" im Eintragsformular.
    Zaehlt, zeigt das markierte Bild in autoEl und traegt die Zahl in countInp
    ein. Hochgeladen wird erst beim Speichern (varroaAutoUpload), sonst bliebe
-   bei "Abbrechen" ein verwaistes Foto auf dem Server. saveFotos = Einstellung
-   varroaFotoSpeichern (aus: nur die Anzahl wird gespeichert). */
-async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev) {
+   bei "Abbrechen" ein verwaistes Foto auf dem Server. Welche Bilder gespeichert
+   werden, waehlt man per Haken am Ergebnis: Original immer abgewaehlt, markiertes
+   Bild vorgewaehlt, wenn die Einstellung varroaFotoSpeichern an ist (saveFotos).
+   "Zaehlung verwerfen" stellt das Zahlfeld wieder her und ruft onDiscard. */
+async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev, onDiscard) {
   if(prev?.markUrl) URL.revokeObjectURL(prev.markUrl);
+  if(countInp && countInp.dataset.vorZaehlung === undefined) countInp.dataset.vorZaehlung = countInp.value;
   autoEl.hidden = false;
   autoEl.innerHTML = '<p class="muted">🔍 Milben werden gezählt …</p>';
   try {
@@ -1102,21 +1105,36 @@ async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev) {
       Bild antippen zum Vergrößern · <span style="color:#00a8d8">blau</span> = Milbe,
       <span style="color:#d000d0">lila</span> = mehrere zusammen.</p>
       ${result.lowRes ? '<p class="varroa-auto-warn">⚠ Foto hat wenig Auflösung – die Zählung ist ungenau.</p>' : ''}
-      <p class="muted" style="font-size:.75rem;margin:.2rem 0 0">${saveFotos
-        ? 'Beim Speichern werden Original und markiertes Bild am Eintrag abgelegt.'
-        : 'Fotos werden nicht gespeichert (Einstellung „Varroa-Zählung“), nur die Anzahl.'}</p>`;
+      <div class="varroa-auto-opts">
+        <label class="check-item cfg-check"><input type="checkbox" class="va-save-mark" ${saveFotos?'checked':''}> <span>Markiertes Bild speichern</span></label>
+        <label class="check-item cfg-check"><input type="checkbox" class="va-save-orig"> <span>Original speichern</span></label>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm va-discard">🗑 Zählung verwerfen</button>`;
     autoEl.querySelector('img').onclick = () => openLightbox(markUrl, `${result.total} Milben automatisch gezählt`);
-    return {blob, marked, markUrl, total: result.total};
+    const auto = {blob, marked, markUrl, total: result.total, el: autoEl};
+    autoEl.querySelector('.va-discard').onclick = () => {
+      URL.revokeObjectURL(markUrl);
+      autoEl.innerHTML = ''; autoEl.hidden = true;
+      if(countInp){ countInp.value = countInp.dataset.vorZaehlung || ''; delete countInp.dataset.vorZaehlung; }
+      if(onDiscard) onDiscard();
+    };
+    return auto;
   } catch(err) {
     autoEl.innerHTML = `<p class="varroa-auto-warn">Automatische Zählung nicht möglich: ${esc(err.message)}</p>`;
     return null;
   }
 }
 async function varroaAutoUpload(auto) {
-  const orig = await api('POST','./api/photos',auto.blob,true);
-  const mark = await api('POST','./api/photos',auto.marked,true);
-  return [{id: orig.id, caption: `Windelfoto – automatisch gezählt: ${auto.total}`},
-          {id: mark.id, caption: `Windelfoto markiert – ${auto.total} Milben`}];
+  const fotos = [];
+  if(auto.el.querySelector('.va-save-orig')?.checked){
+    const {id} = await api('POST','./api/photos',auto.blob,true);
+    fotos.push({id, caption: `Windelfoto – automatisch gezählt: ${auto.total}`});
+  }
+  if(auto.el.querySelector('.va-save-mark')?.checked){
+    const {id} = await api('POST','./api/photos',auto.marked,true);
+    fotos.push({id, caption: `Windelfoto markiert – ${auto.total} Milben`});
+  }
+  return fotos;
 }
 function photoButtonsHTML(thumbsId='form-thumbs', allEntries, colonyId) {
   return `<label class="lbl">Fotos</label>
@@ -2649,7 +2667,7 @@ function entryForm(colonyId, existing, colony, allEntries) {
       if(koeniginAbgedruecktBtn?.classList.contains('on')) obs.add('koeniginabgedrueckt');
       else obs.delete('koeniginabgedrueckt');
       // .uploaded: bei einem Fehler danach und erneutem Speichern nicht doppelt hochladen
-      if(varroaAuto && !varroaAuto.uploaded && (await settingsP).varroaFotoSpeichern !== 'false'){
+      if(varroaAuto && !varroaAuto.uploaded){
         varroaAuto.uploaded = await varroaAutoUpload(varroaAuto);
         photos.push(...varroaAuto.uploaded);
       }
@@ -2837,7 +2855,10 @@ function entryForm(colonyId, existing, colony, allEntries) {
     const s=await settingsP;
     document.getElementById('entry-varroa-wrap').hidden=false;
     varroaAuto=await varroaAutoCount(file, document.getElementById('entry-varroa-auto'),
-      document.querySelector('input[name="varroaCount"]'), s.varroaFotoSpeichern!=='false', varroaAuto);
+      document.querySelector('input[name="varroaCount"]'), s.varroaFotoSpeichern!=='false', varroaAuto, ()=>{
+        varroaAuto=null;
+        if(!hasVarroaCount) document.getElementById('entry-varroa-wrap').hidden=true;
+      });
   });
 }
 
@@ -4206,8 +4227,7 @@ async function renderVarroaCount() {
       const antsBtn = document.getElementById('btn-ants');
       if(antsBtn) antsVal = antsBtn.classList.contains('on');
       // .uploaded: bei einem Fehler danach und erneutem Speichern nicht doppelt hochladen
-      const fotos = (varroaAuto && settings.varroaFotoSpeichern !== 'false')
-        ? (varroaAuto.uploaded ||= await varroaAutoUpload(varroaAuto)) : [];
+      const fotos = varroaAuto ? (varroaAuto.uploaded ||= await varroaAutoUpload(varroaAuto)) : [];
       await api('POST','./api/entries',{
         colonyId: c.id, date: todayInput(), type: 'Varroa-Zählung',
         notes: infoText, varroaCount: data.varroaCount || '0', varroaAnts: antsVal, photos: fotos
@@ -4227,7 +4247,7 @@ async function renderVarroaCount() {
       inp.value = '';
       if(!file) return;
       varroaAuto = await varroaAutoCount(file, autoEl, document.querySelector('input[name="varroaCount"]'),
-        settings.varroaFotoSpeichern !== 'false', varroaAuto);
+        settings.varroaFotoSpeichern !== 'false', varroaAuto, () => { varroaAuto = null; });
     });
     document.querySelector('input[name="varroaCount"]')?.focus();
   };
@@ -5839,9 +5859,9 @@ async function renderSettings() {
         <input type="checkbox" id="toggle-varroa-autonext"> <span>Nach dem Speichern automatisch zum nächsten Volk</span>
       </label>
       <label class="check-item">
-        <input type="checkbox" id="toggle-varroa-foto"> <span>Fotos der automatischen Varroa-Zählung am Eintrag speichern</span>
+        <input type="checkbox" id="toggle-varroa-foto"> <span>Markiertes Bild der automatischen Varroa-Zählung speichern</span>
       </label>
-      <p class="muted" style="font-size:.8rem;margin-top:.3rem">Gilt für den Varroa-Dialog und „🔍 Varroa“ im Eintrag. Gespeichert werden Original und markiertes Bild (Kreise + Raster), ca. 2–4 MB pro Zählung. Aus = nur die Anzahl wird gespeichert, die Fotos werden verworfen.</p>`)}
+      <p class="muted" style="font-size:.8rem;margin-top:.3rem">Vorauswahl für den Varroa-Dialog und „🔍 Varroa“ im Eintrag: Haken beim markierten Bild (Kreise + Raster, ca. 1–2 MB) gesetzt. Das Original ist immer abgewählt. Beides lässt sich nach jeder Zählung einzeln an- oder abhaken. Aus = nur die Anzahl wird gespeichert.</p>`)}
 
     <div class="settings-group-label">Völker</div>
     ${settingsSection('bkfilter','BK-Völker',`
