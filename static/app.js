@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.51';
+const APP_VERSION = 'v2.9.52';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -4121,7 +4121,16 @@ async function renderVarroaCount() {
     if(idx < 0 || idx >= all.length) return;
     const c = all[idx];
     const infoText = document.getElementById('varroa-infotext')?.value || '';
+    /* Automatische Zaehlung (static/varroa.js): Windelfoto in HD, Zahl als
+       Vorschlag ins Feld. Das Foto wird erst beim Speichern hochgeladen (sonst
+       bliebe bei "Abbrechen" ein verwaistes Foto auf dem Server). */
+    let fotoBlob = null, fotoCount = null, markUrl = null;
     openModal(`Varroa Zählung – ${esc(c.name)}`, `
+      <div class="photo-row" style="margin-top:0">
+        <label class="btn btn-photo">📷 Windel fotografieren<input type="file" accept="image/*" capture="environment" class="varroa-auto-input" hidden></label>
+        <label class="btn btn-photo btn-sm photo-btn-hd">🖼 Galerie<input type="file" accept="image/*" class="varroa-auto-input" hidden></label>
+      </div>
+      <div id="varroa-auto" class="varroa-auto" hidden></div>
       <label class="lbl">Anzahl gezählter Varroen</label>
       <input class="inp" name="varroaCount" type="number" min="0" inputmode="numeric" autofocus>
       <button type="button" class="obs-btn" id="btn-ants" style="margin-top:.7rem">🐜 Ameisen gesehen</button>
@@ -4129,10 +4138,16 @@ async function renderVarroaCount() {
       let antsVal = false;
       const antsBtn = document.getElementById('btn-ants');
       if(antsBtn) antsVal = antsBtn.classList.contains('on');
+      const photos = [];
+      if(fotoBlob && settings.varroaFotoSpeichern !== 'false'){
+        const {id} = await api('POST','./api/photos',fotoBlob,true);
+        photos.push({id, caption: `Windelfoto – automatisch gezählt: ${fotoCount}`});
+      }
       await api('POST','./api/entries',{
         colonyId: c.id, date: todayInput(), type: 'Varroa-Zählung',
-        notes: infoText, varroaCount: data.varroaCount || '0', varroaAnts: antsVal
+        notes: infoText, varroaCount: data.varroaCount || '0', varroaAnts: antsVal, photos
       });
+      if(markUrl) URL.revokeObjectURL(markUrl);
       close();
       const sub = document.getElementById('varroa-sub-'+c.id);
       lastCountMap[c.id] = { varroaCount: data.varroaCount||'0', date: todayInput(), varroaAnts: antsVal };
@@ -4141,6 +4156,35 @@ async function renderVarroaCount() {
     });
     const antsBtn = document.getElementById('btn-ants');
     if(antsBtn) antsBtn.onclick = () => antsBtn.classList.toggle('on');
+    const autoEl = document.getElementById('varroa-auto');
+    document.querySelectorAll('.varroa-auto-input').forEach(inp => inp.onchange = async() => {
+      const file = inp.files[0];
+      inp.value = '';
+      if(!file) return;
+      autoEl.hidden = false;
+      autoEl.innerHTML = '<p class="muted">🔍 Milben werden gezählt …</p>';
+      try {
+        // Immer HD wie der "🔍 Varroa"-Button - bei 1280 px sind Milben nur 3-5 px gross
+        const blob = await resizeImage(file, 3000, 0.92);
+        await new Promise(r => setTimeout(r, 30)); // Hinweis erst anzeigen, Zaehlen blockiert kurz
+        const {result, canvas} = await Varroa.analyze(blob);
+        if(markUrl) URL.revokeObjectURL(markUrl);
+        markUrl = await Varroa.markedURL(canvas, result);
+        fotoBlob = blob; fotoCount = result.total;
+        const countInp = document.querySelector('input[name="varroaCount"]');
+        if(countInp) countInp.value = result.total;
+        autoEl.innerHTML = `
+          <img src="${markUrl}" class="varroa-auto-img" alt="Markiertes Windelfoto">
+          <p class="varroa-auto-hint"><b>${result.total}</b> Milben automatisch gezählt – bitte prüfen.
+          Bild antippen zum Vergrößern · <span style="color:#00a8d8">blau</span> = Milbe,
+          <span style="color:#d000d0">lila</span> = mehrere zusammen.</p>
+          ${result.lowRes ? '<p class="varroa-auto-warn">⚠ Foto hat wenig Auflösung – die Zählung ist ungenau.</p>' : ''}
+          ${settings.varroaFotoSpeichern === 'false' ? '' : '<p class="muted" style="font-size:.75rem;margin:.2rem 0 0">Das Foto wird beim Speichern am Eintrag abgelegt (ohne Markierungen).</p>'}`;
+        autoEl.querySelector('img').onclick = () => openLightbox(markUrl, `${result.total} Milben automatisch gezählt`);
+      } catch(err) {
+        autoEl.innerHTML = `<p class="varroa-auto-warn">Automatische Zählung nicht möglich: ${esc(err.message)}</p>`;
+      }
+    });
     document.querySelector('input[name="varroaCount"]')?.focus();
   };
 
@@ -5749,7 +5793,11 @@ async function renderSettings() {
     ${settingsSection('varroa','Varroa-Zählung',`
       <label class="check-item">
         <input type="checkbox" id="toggle-varroa-autonext"> <span>Nach dem Speichern automatisch zum nächsten Volk</span>
-      </label>`)}
+      </label>
+      <label class="check-item">
+        <input type="checkbox" id="toggle-varroa-foto"> <span>Windelfoto der automatischen Zählung am Eintrag speichern</span>
+      </label>
+      <p class="muted" style="font-size:.8rem;margin-top:.3rem">Ca. 1–3 MB pro Zählung. Aus = das Foto wird nur zum Zählen benutzt und danach verworfen.</p>`)}
 
     <div class="settings-group-label">Völker</div>
     ${settingsSection('bkfilter','BK-Völker',`
@@ -6123,6 +6171,8 @@ async function renderSettings() {
     });
     const varroaAutoNextEl=document.getElementById('toggle-varroa-autonext');
     if(varroaAutoNextEl) payload.varroaAutoNext=varroaAutoNextEl.checked?'true':'false';
+    const varroaFotoEl=document.getElementById('toggle-varroa-foto');
+    if(varroaFotoEl) payload.varroaFotoSpeichern=varroaFotoEl.checked?'true':'false';
     return payload;
   }
   /* Automatisch speichern statt "Speichern"-Button: Aenderungen werden kurz
@@ -6232,6 +6282,12 @@ async function renderSettings() {
     apiGet('./api/settings').then(s => {
       varroaAutoNextToggle.checked = (s.varroaAutoNext === 'true');
     }).catch(()=>{ varroaAutoNextToggle.checked = false; });
+  }
+  const varroaFotoToggle=document.getElementById('toggle-varroa-foto');
+  if(varroaFotoToggle){
+    apiGet('./api/settings').then(s => {
+      varroaFotoToggle.checked = (s.varroaFotoSpeichern !== 'false'); // Standard: an
+    }).catch(()=>{ varroaFotoToggle.checked = true; });
   }
   // Aktions- und Beobachtungs-Buttons: Checkbox-Zustand laden (Default: alle an)
   apiGet('./api/settings').then(s=>{

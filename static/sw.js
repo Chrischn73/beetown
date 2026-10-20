@@ -1,7 +1,7 @@
 /* Service-Worker: App-Hülle offline verfügbar, API-Aufrufe immer live (Netzwerk). */
-const CACHE = 'beetown-shell-v2.9.51';
+const CACHE = 'beetown-shell-v2.9.52';
 const SHELL = [
-  './', './index.html', './app.js', './styles.css', './manifest.json',
+  './', './index.html', './app.js', './varroa.js', './styles.css', './manifest.json',
   './icon-192.png', './icon-512.png',
 ];
 
