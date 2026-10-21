@@ -65,6 +65,13 @@ Der Ordner `data/` bleibt unangetastet.
 
 - Fotos aus **Kamera oder Galerie**, je Foto eine **optionale Beschreibung**; auf dem Handy verkleinert, zentral gespeichert. Beim Löschen eines Eintrags/Volks/ Standorts werden die zugehörigen Bilddateien auf dem Server mitgelöscht
 
+- **Automatische Varroa-Zählung per Windelfoto**: Windel im Varroa-Dialog oder über **„🔍 Varroa“** im Eintrag fotografieren (immer in hoher Auflösung, 3000 px) – die Milben werden direkt im Browser gezählt (klassische Bildauswertung, keine KI, kein Internet, keine zusätzliche Server-Software). Die Zahl steht als überschreibbarer Vorschlag im Feld, dazu ein Kontrollbild mit Kreisen (blau = Milbe, lila = mehrere zusammen) und einem Raster mit Zählwert pro Feld zum Nachzählen.
+  - Der **Varroa-Schieber wird erkannt**: Ist keine Windel im Bild (Tisch, Prospekt, Wabe …), erscheint „Kein Varroa-Schieber erkannt – bitte selbst zählen“ statt einer Zahl. Gezählt wird nur auf der Windel, Rahmen, Leisten und Hintergrund sind im Kontrollbild abgedunkelt.
+  - Dreck, Pollen, Schrauben, Löcher der Kunststoffwindel und tote Bienen werden über Form, Dunkelheit und Umgebung aussortiert.
+  - Per Haken wählbar, ob das markierte Bild und/oder das Original am Eintrag gespeichert wird (Original standardmäßig aus); **„🗑 Zählung verwerfen“** stellt den vorherigen Wert wieder her.
+  - **Nachträglich zählen**: Beim Bearbeiten eines Eintrags hat jedes gespeicherte Foto den Knopf **„🔍 zählen“**.
+  - Fotos über „📷 Kamera“/„🖼 Galerie“ werden nur mit 1280 px gespeichert – darauf ist die Zählung ungenau (Hinweis „wenig Auflösung“).
+
 - **Archiv**: Völker archivieren und – mit Wahl des Ziel-Standorts – wiederherstellen; im Archiv nach Jahr sortiert. Archivierte Völker bleiben erhalten, auch wenn ihr ursprünglicher Standort gelöscht wird. Ein archiviertes Volk lässt sich aus dem Archiv heraus öffnen und schreibgeschützt einsehen (Stockkarte, alle Einträge inkl. Varroa-Zählungen und Fotos – keine Bearbeitung möglich). Beim Verschieben ins Archiv wird der Volksname automatisch mit „Archiv-" markiert (nur einmalig, kein doppeltes Präfix bei erneutem Archivieren/Wiederherstellen); bei der Wiederherstellung bleiben sämtliche Daten des Volks erhalten. Im Archiv kann ein Volk auch endgültig gelöscht werden (inkl. aller Einträge und Fotos)
 
 - **Oxalsäure-Blockbehandlung**: je gespeicherter Stufe wird automatisch eine Erinnerung für die nächste fällige Stufe angelegt (Tage zwischen den Stufen einstellbar, Standard 4). Völker desselben Standorts mit gleichem Fälligkeitsdatum landen dabei in **einer gemeinsamen Erinnerung** (je Volk eine Zeile) statt in Dubletten; bei der letzten Stufe entfällt die Erinnerung wieder
