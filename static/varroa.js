@@ -53,14 +53,137 @@
     return out;
   }
 
+  /* ---------- Schieber-Erkennung (v2.9.55) ----------
+     Geeicht an 23 Windelfotos vom 21.10.2026 plus Gegenbeispielen: Die Windel
+     ist die grosse, gleichmaessig helle Flaeche in der Farbe der Bildmitte
+     (weiss, beige oder gelb - nicht ueber "wenig Farbe" erkennen, sonst faellt
+     die gelbe Kunststoffwindel durch). Gemessen: Windeln Flaeche 0,46-0,85
+     des Bildes, Rechteckigkeit 0,84-0,98; Supermarkt-Prospekt 0,16 / 0,36.
+     Gearbeitet wird auf einer Vorschau mit ~320 px langer Kante. */
+  const BOARD_PREVIEW = 320;
+  const BOARD_TOL = 60;        // max. Abweichung je Farbkanal zur Bezugsfarbe
+  const BOARD_GRAY = 0.62;     // ... und mind. 62 % ihres Grauwerts
+  const BOARD_MIN_AREA = 0.25; // darunter: keine Windel
+  const BOARD_MIN_RECT = 0.75;
+  const BOARD_MARGIN = 0.01;   // Rand (Anteil der langen Kante): Schrauben, Leisten, Schlitze
+
+  function detectBoard(rgba, w, h){
+    const s = Math.max(1, Math.ceil(Math.max(w, h) / BOARD_PREVIEW));
+    const pw = Math.floor(w / s), ph = Math.floor(h / s), N = pw*ph;
+    // Vorschau: Mittelwert je s*s-Block
+    const pr = new Float32Array(N), pg = new Float32Array(N), pb = new Float32Array(N), gr = new Float32Array(N);
+    for(let y = 0; y < ph; y++){
+      for(let x = 0; x < pw; x++){
+        let r = 0, g = 0, b = 0;
+        for(let yy = y*s; yy < y*s + s; yy++){
+          let j = (yy*w + x*s)*4;
+          for(let xx = 0; xx < s; xx++, j += 4){ r += rgba[j]; g += rgba[j+1]; b += rgba[j+2]; }
+        }
+        const p = y*pw + x, c = s*s;
+        pr[p] = r/c; pg[p] = g/c; pb[p] = b/c; gr[p] = (pr[p] + pg[p] + pb[p]) / 3;
+      }
+    }
+    // Bezugsfarbe: Median der helleren Haelfte im mittleren Bildbereich (30-70 %)
+    const mid = [];
+    for(let y = Math.floor(ph*0.3); y < ph*0.7; y++)
+      for(let x = Math.floor(pw*0.3); x < pw*0.7; x++) mid.push(y*pw + x);
+    const median = a => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
+    const gmed = median(mid.map(p => gr[p]));
+    const hi = mid.filter(p => gr[p] >= gmed);
+    const ref = [median(hi.map(p => pr[p])), median(hi.map(p => pg[p])), median(hi.map(p => pb[p]))];
+    const refGray = (ref[0] + ref[1] + ref[2]) / 3;
+    const m = new Uint8Array(N);
+    for(let p = 0; p < N; p++){
+      const d = Math.max(Math.abs(pr[p] - ref[0]), Math.abs(pg[p] - ref[1]), Math.abs(pb[p] - ref[2]));
+      m[p] = d <= BOARD_TOL && gr[p] >= BOARD_GRAY*refGray ? 1 : 0;
+    }
+    // Groesste zusammenhaengende Flaeche (4er-Nachbarschaft)
+    const lab = new Int32Array(N), q = new Int32Array(N);
+    let cur = 0, best = 0, bestN = 0;
+    for(let i0 = 0; i0 < N; i0++){
+      if(!m[i0] || lab[i0]) continue;
+      cur++; let qh = 0, qt = 0, n = 0; q[qt++] = i0; lab[i0] = cur;
+      while(qh < qt){
+        const p = q[qh++], x = p % pw; n++;
+        if(x > 0 && m[p-1] && !lab[p-1]){ lab[p-1] = cur; q[qt++] = p-1; }
+        if(x < pw-1 && m[p+1] && !lab[p+1]){ lab[p+1] = cur; q[qt++] = p+1; }
+        if(p >= pw && m[p-pw] && !lab[p-pw]){ lab[p-pw] = cur; q[qt++] = p-pw; }
+        if(p < N-pw && m[p+pw] && !lab[p+pw]){ lab[p+pw] = cur; q[qt++] = p+pw; }
+      }
+      if(n > bestN){ bestN = n; best = cur; }
+    }
+    // Loecher fuellen (Milben, Dreck): innen ist alles, was von aussen nicht erreichbar ist
+    const out = new Uint8Array(N);
+    let qh = 0, qt = 0;
+    const push = p => { if(lab[p] !== best && !out[p]){ out[p] = 1; q[qt++] = p; } };
+    for(let x = 0; x < pw; x++){ push(x); push((ph-1)*pw + x); }
+    for(let y = 0; y < ph; y++){ push(y*pw); push(y*pw + pw - 1); }
+    while(qh < qt){
+      const p = q[qh++], x = p % pw;
+      if(x > 0) push(p-1); if(x < pw-1) push(p+1);
+      if(p >= pw) push(p-pw); if(p < N-pw) push(p+pw);
+    }
+    let area = 0;
+    for(let p = 0; p < N; p++) if(!out[p]) area++;
+    // Rechteckigkeit: Flaeche / kleinstes gedrehtes Rechteck (Winkel 0-87 Grad)
+    let rect = 0;
+    if(area){
+      const xs = new Float32Array(area), ys = new Float32Array(area);
+      for(let p = 0, k = 0; p < N; p++) if(!out[p]){ xs[k] = p % pw; ys[k] = (p - xs[k]) / pw; k++; }
+      for(let ang = 0; ang < 90; ang += 3){
+        const c = Math.cos(ang*Math.PI/180), sn = Math.sin(ang*Math.PI/180);
+        let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+        for(let k = 0; k < area; k++){
+          const u = xs[k]*c + ys[k]*sn, v = ys[k]*c - xs[k]*sn;
+          if(u < u0) u0 = u; if(u > u1) u1 = u; if(v < v0) v0 = v; if(v > v1) v1 = v;
+        }
+        rect = Math.max(rect, area / ((u1 - u0 + 1)*(v1 - v0 + 1)));
+      }
+    }
+    // Abstand zum Windelrand (Schachbrett-Distanz in Vorschau-Pixeln, Bildrand zaehlt als Rand)
+    const dist = new Uint16Array(N);
+    for(let p = 0; p < N; p++) dist[p] = out[p] ? 0 : 65535;
+    for(let y = 0; y < ph; y++) for(let x = 0; x < pw; x++){
+      const p = y*pw + x; if(!dist[p]) continue;
+      let d = (x === 0 || y === 0 || x === pw-1 || y === ph-1) ? 1 : dist[p];
+      if(x > 0) d = Math.min(d, dist[p-1] + 1);
+      if(y > 0){ d = Math.min(d, dist[p-pw] + 1); if(x > 0) d = Math.min(d, dist[p-pw-1] + 1); if(x < pw-1) d = Math.min(d, dist[p-pw+1] + 1); }
+      dist[p] = d;
+    }
+    for(let y = ph-1; y >= 0; y--) for(let x = pw-1; x >= 0; x--){
+      const p = y*pw + x; if(!dist[p]) continue;
+      let d = dist[p];
+      if(x < pw-1) d = Math.min(d, dist[p+1] + 1);
+      if(y < ph-1){ d = Math.min(d, dist[p+pw] + 1); if(x < pw-1) d = Math.min(d, dist[p+pw+1] + 1); if(x > 0) d = Math.min(d, dist[p+pw-1] + 1); }
+      dist[p] = d;
+    }
+    const minDist = BOARD_MARGIN * Math.max(pw, ph);
+    const inside = new Uint8Array(N);
+    for(let p = 0; p < N; p++) inside[p] = dist[p] > minDist ? 1 : 0;
+    area /= N;
+    return { ok: area >= BOARD_MIN_AREA && rect >= BOARD_MIN_RECT,
+             area: +area.toFixed(3), rect: +rect.toFixed(3), scale: s, w: pw, h: ph, inside };
+  }
+
+  /* Liegt Bildpunkt (x, y) im gezaehlten Bereich der Windel? */
+  function inBoard(board, x, y){
+    const px = Math.min(board.w - 1, Math.floor(x / board.scale)), py = Math.min(board.h - 1, Math.floor(y / board.scale));
+    return board.inside[py*board.w + px] === 1;
+  }
+
   /* Zaehlt Milben. rgba: Uint8ClampedArray/Uint8Array (w*h*4).
-     Rueckgabe: { total, marks:[{x,y,n}], width, height, ms }
+     Rueckgabe: { total, marks:[{x,y,n}], width, height, ms, board }
+     Ohne erkannte Windel: noBoard = true, total 0 (App zeigt "selbst zaehlen").
      opts.debug: zusaetzlich alle Flecken mit Merkmalen + Ablehnungsgrund. */
   function count(rgba, w, h, opts){
     opts = opts || {};
     const t0 = Date.now();
     const N = w*h;
     const k = Math.max(w, h) / 1280; // Massstab relativ zu 1280er-Fotos
+    const lowRes = Math.max(w, h) < 2000; // Milben dann nur 3-5 px gross
+    // Erst pruefen, ob ueberhaupt ein Varroa-Schieber im Bild ist
+    const board = detectBoard(rgba, w, h);
+    if(!board.ok) return { total: 0, marks: [], width: w, height: h, typ: 0, ms: Date.now() - t0, lowRes, noBoard: true, board };
     const gray = toGray(rgba, N);
     const bg = boxBlur(gray, w, h, Math.round(14*k));
 
@@ -116,6 +239,8 @@
     const reject = (b, why) => { b.reject = why; };
     const minArea = 3*k*k;
     blobs.forEach(b => { if(b.n < minArea) reject(b, 'klein'); });
+    // Nur auf der Windel zaehlen, ohne den Rand (Schrauben, Holzleiste, Lueftungsschlitze)
+    blobs.forEach(b => { if(!b.reject && !inBoard(board, b.cx, b.cy)) reject(b, 'ausserhalb'); });
 
     // Rand-Filter: liegt der Fleck an der Kante zum dunklen Rahmen, ist es in
     // mehreren Richtungen dauerhaft (10 und 18 px) dunkel.
@@ -188,8 +313,7 @@
       total += n;
       marks.push({ x: b.cx, y: b.cy, n });
     }
-    const res = { total, marks, width: w, height: h, typ: med, ms: Date.now() - t0,
-                  lowRes: Math.max(w, h) < 2000 }; // Milben dann nur 3-5 px gross
+    const res = { total, marks, width: w, height: h, typ: med, ms: Date.now() - t0, lowRes, board };
     if(opts.debug) res.blobs = blobs;
     return res;
   }
@@ -225,6 +349,16 @@
     c.width = w; c.height = h;
     const g = c.getContext('2d');
     g.drawImage(canvas, 0, 0);
+    // Nicht gezaehlter Bereich (ausserhalb der Windel und Rand) abgedunkelt
+    const brd = result.board;
+    if(brd && brd.ok){
+      const mc = document.createElement('canvas');
+      mc.width = brd.w; mc.height = brd.h;
+      const mg = mc.getContext('2d'), im = mg.createImageData(brd.w, brd.h);
+      for(let p = 0; p < brd.w*brd.h; p++) im.data[p*4 + 3] = brd.inside[p] ? 0 : 140;
+      mg.putImageData(im, 0, 0);
+      g.drawImage(mc, 0, 0, brd.w*brd.scale, brd.h*brd.scale); // weich hochskaliert, keine Treppenkante
+    }
     g.lineWidth = Math.max(2, Math.round(2*k));
     for(const m of result.marks){
       g.strokeStyle = m.n === 1 ? 'rgb(0,200,255)' : 'rgb(255,0,255)';
@@ -241,14 +375,14 @@
     for(let i = 1; i < cols; i++){ g.moveTo(i*w/cols, 0); g.lineTo(i*w/cols, h); }
     for(let j = 1; j < rows; j++){ g.moveTo(0, j*h/rows); g.lineTo(w, j*h/rows); }
     g.stroke();
-    g.font = `bold ${Math.round(28*k)}px sans-serif`;
+    g.font = `bold ${Math.round(20*k)}px sans-serif`; // klein + halbtransparent, damit keine Milben verdeckt werden
     g.textBaseline = 'top';
     for(let j = 0; j < rows; j++){
       for(let i = 0; i < cols; i++){
         const label = `${String.fromCharCode(65+j)}${i+1}: ${cells[i+','+j] || 0}`;
         const x0 = i*w/cols + 8*k, y0 = j*h/rows + 6*k, tw = g.measureText(label).width;
-        g.fillStyle = '#000'; g.fillRect(x0 - 4, y0 - 3, tw + 8, 30*k + 6);
-        g.fillStyle = 'rgb(255,220,0)'; g.fillText(label, x0, y0);
+        g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x0 - 4, y0 - 3, tw + 8, 22*k + 6);
+        g.fillStyle = 'rgba(255,220,0,0.85)'; g.fillText(label, x0, y0);
       }
     }
     return new Promise((resolve, reject) =>

@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.54';
+const APP_VERSION = 'v2.9.55';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -1096,6 +1096,23 @@ async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev, onDiscar
     const blob = await resizeImage(file, 3000, 0.92);
     await new Promise(r => setTimeout(r, 30)); // Hinweis erst anzeigen, Zaehlen blockiert kurz
     const {result, canvas} = await Varroa.analyze(blob);
+    if(result.noBoard){
+      // Kein Varroa-Schieber im Bild (Tisch, Prospekt, Wabe ...) - keine Zahl vorschlagen,
+      // das Foto laesst sich aber weiter (ohne Zaehlung) speichern
+      autoEl.innerHTML = `<p class="varroa-auto-warn">⚠ Kein Varroa-Schieber erkannt – bitte selbst zählen.</p>
+        <p class="varroa-auto-hint">Tipp: Windel möglichst ganz und von oben fotografieren.</p>
+        <div class="varroa-auto-opts">
+          <label class="check-item cfg-check"><input type="checkbox" class="va-save-orig"> <span>Foto trotzdem speichern</span></label>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm va-discard">🗑 Verwerfen</button>`;
+      const auto = {blob, marked: null, markUrl: null, total: null, el: autoEl};
+      autoEl.querySelector('.va-discard').onclick = () => {
+        autoEl.innerHTML = ''; autoEl.hidden = true;
+        if(countInp) delete countInp.dataset.vorZaehlung;
+        if(onDiscard) onDiscard();
+      };
+      return auto;
+    }
     const marked = await Varroa.markedBlob(canvas, result);
     const markUrl = URL.createObjectURL(marked);
     if(countInp) countInp.value = result.total;
@@ -1103,7 +1120,7 @@ async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev, onDiscar
       <img src="${markUrl}" class="varroa-auto-img" alt="Markiertes Windelfoto">
       <p class="varroa-auto-hint"><b>${result.total}</b> Milben automatisch gezählt – bitte prüfen.
       Bild antippen zum Vergrößern · <span style="color:#00a8d8">blau</span> = Milbe,
-      <span style="color:#d000d0">lila</span> = mehrere zusammen.</p>
+      <span style="color:#d000d0">lila</span> = mehrere zusammen, abgedunkelt = nicht gezählt.</p>
       ${result.lowRes ? '<p class="varroa-auto-warn">⚠ Foto hat wenig Auflösung – die Zählung ist ungenau.</p>' : ''}
       <div class="varroa-auto-opts">
         <label class="check-item cfg-check"><input type="checkbox" class="va-save-mark" ${saveFotos?'checked':''}> <span>Markiertes Bild speichern</span></label>
@@ -1128,7 +1145,7 @@ async function varroaAutoUpload(auto) {
   const fotos = [];
   if(auto.el.querySelector('.va-save-orig')?.checked){
     const {id} = await api('POST','./api/photos',auto.blob,true);
-    fotos.push({id, caption: `Windelfoto – automatisch gezählt: ${auto.total}`});
+    fotos.push({id, caption: auto.total === null ? 'Foto (HD)' : `Windelfoto – automatisch gezählt: ${auto.total}`});
   }
   if(auto.el.querySelector('.va-save-mark')?.checked){
     const {id} = await api('POST','./api/photos',auto.marked,true);
@@ -2677,7 +2694,7 @@ function entryForm(colonyId, existing, colony, allEntries) {
         varroaAnts:existing?.varroaAnts||0};
       if(existing) await api('PUT','./api/entries/'+existing.id,payload);
       else await api('POST','./api/entries',{...payload,colonyId,createdAt:new Date().toISOString()});
-      if(varroaAuto) URL.revokeObjectURL(varroaAuto.markUrl);
+      if(varroaAuto?.markUrl) URL.revokeObjectURL(varroaAuto.markUrl);
       /* Alle colony-Updates in einem einzigen PUT zusammenfassen */
       if(colony){
         let colonyUpdate = {...colony};
@@ -4232,7 +4249,7 @@ async function renderVarroaCount() {
         colonyId: c.id, date: todayInput(), type: 'Varroa-Zählung',
         notes: infoText, varroaCount: data.varroaCount || '0', varroaAnts: antsVal, photos: fotos
       });
-      if(varroaAuto) URL.revokeObjectURL(varroaAuto.markUrl);
+      if(varroaAuto?.markUrl) URL.revokeObjectURL(varroaAuto.markUrl);
       close();
       const sub = document.getElementById('varroa-sub-'+c.id);
       lastCountMap[c.id] = { varroaCount: data.varroaCount||'0', date: todayInput(), varroaAnts: antsVal };
