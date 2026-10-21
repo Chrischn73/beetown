@@ -580,6 +580,8 @@ li.card.dragging{opacity:.4;border:2px dashed var(--honey)}
 
 /* Punkt 2: Foto verschieben Button */
 .thumb-move{position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:4px;padding:2px 5px;font-size:.75rem;cursor:pointer}
+.thumb-count{position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:4px;padding:2px 5px;font-size:.72rem;cursor:pointer}
+.thumb-count.busy{opacity:.5;pointer-events:none}
 
 /* HR Sortierung im Editor */
 .hr-sort-ctrl{display:flex;flex-direction:column;gap:1px}

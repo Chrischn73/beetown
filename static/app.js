@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.56';
+const APP_VERSION = 'v2.9.57';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -1085,8 +1085,10 @@ async function uploadPhoto(file, highRes=false) {
    bei "Abbrechen" ein verwaistes Foto auf dem Server. Welche Bilder gespeichert
    werden, waehlt man per Haken am Ergebnis: Original immer abgewaehlt, markiertes
    Bild vorgewaehlt, wenn die Einstellung varroaFotoSpeichern an ist (saveFotos).
-   "Zaehlung verwerfen" stellt das Zahlfeld wieder her und ruft onDiscard. */
-async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev, onDiscard) {
+   "Zaehlung verwerfen" stellt das Zahlfeld wieder her und ruft onDiscard.
+   fromSaved: Foto haengt schon am Eintrag (nachtraeglich zaehlen) - dann kein
+   Haken "Original speichern". */
+async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev, onDiscard, fromSaved) {
   if(prev?.markUrl) URL.revokeObjectURL(prev.markUrl);
   if(countInp && countInp.dataset.vorZaehlung === undefined) countInp.dataset.vorZaehlung = countInp.value;
   autoEl.hidden = false;
@@ -1101,9 +1103,9 @@ async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev, onDiscar
       // das Foto laesst sich aber weiter (ohne Zaehlung) speichern
       autoEl.innerHTML = `<p class="varroa-auto-warn">⚠ Kein Varroa-Schieber erkannt – bitte selbst zählen.</p>
         <p class="varroa-auto-hint">Tipp: Windel möglichst ganz und von oben fotografieren.</p>
-        <div class="varroa-auto-opts">
+        ${fromSaved ? '' : `<div class="varroa-auto-opts">
           <label class="check-item cfg-check"><input type="checkbox" class="va-save-orig"> <span>Foto trotzdem speichern</span></label>
-        </div>
+        </div>`}
         <button type="button" class="btn btn-ghost btn-sm va-discard">🗑 Verwerfen</button>`;
       const auto = {blob, marked: null, markUrl: null, total: null, el: autoEl};
       autoEl.querySelector('.va-discard').onclick = () => {
@@ -1124,7 +1126,7 @@ async function varroaAutoCount(file, autoEl, countInp, saveFotos, prev, onDiscar
       ${result.lowRes ? '<p class="varroa-auto-warn">⚠ Foto hat wenig Auflösung – die Zählung ist ungenau.</p>' : ''}
       <div class="varroa-auto-opts">
         <label class="check-item cfg-check"><input type="checkbox" class="va-save-mark" ${saveFotos?'checked':''}> <span>Markiertes Bild speichern</span></label>
-        <label class="check-item cfg-check"><input type="checkbox" class="va-save-orig"> <span>Original speichern</span></label>
+        ${fromSaved ? '' : '<label class="check-item cfg-check"><input type="checkbox" class="va-save-orig"> <span>Original speichern</span></label>'}
       </div>
       <button type="button" class="btn btn-ghost btn-sm va-discard">🗑 Zählung verwerfen</button>`;
     autoEl.querySelector('img').onclick = () => openLightbox(markUrl, `${result.total} Milben automatisch gezählt`);
@@ -1174,11 +1176,24 @@ function wirePhotos(photos, thumbsId='form-thumbs', allEntries, currentEntryId, 
         <div class="thumb-wrap"><img class="thumb" src="${photoURL(p.id)}">
           <button class="thumb-del" type="button" data-i="${i}">✕</button>
           ${allEntries && allEntries.length > 1 ? `<button class="thumb-move" type="button" data-i="${i}" title="Zu anderem Eintrag verschieben">↗</button>` : ''}
+          ${onVarroa && !/^Windelfoto markiert/.test(p.caption||'') ? `<button class="thumb-count" type="button" data-i="${i}" title="Milben auf diesem Foto automatisch zählen">🔍 zählen</button>` : ''}
         </div>
         <input class="cap-inp" data-i="${i}" placeholder="Beschreibung (optional)" value="${esc(p.caption||'')}">
       </div>`).join('');
     container.querySelectorAll('.thumb-del').forEach((b)=>b.onclick=()=>{photos.splice(+b.dataset.i,1);draw();});
     container.querySelectorAll('.cap-inp').forEach((inp)=>inp.oninput=()=>{photos[+inp.dataset.i].caption=inp.value;});
+    // Schon gespeichertes Foto nachtraeglich zaehlen (gleiche Zaehlung wie "🔍 Varroa")
+    container.querySelectorAll('.thumb-count').forEach((b)=>b.onclick=async()=>{
+      const labels=[...document.querySelectorAll('.btn-photo'), ...container.querySelectorAll('.thumb-count')];
+      labels.forEach((l)=>l.classList.add('busy'));
+      try{
+        const res = await fetch(photoURL(photos[+b.dataset.i].id));
+        if(!res.ok) throw new Error('Foto nicht ladbar ('+res.status+')');
+        const blob = await res.blob();
+        await onVarroa(new File([blob], 'foto.jpg', {type: blob.type || 'image/jpeg'}), true);
+      } catch(err){ alert('Zählung nicht möglich: '+err.message); }
+      finally { labels.forEach((l)=>l.classList.remove('busy')); }
+    });
     container.querySelectorAll('.thumb-move').forEach((b)=>b.onclick=()=>{
       const photo = photos[+b.dataset.i];
       const others = (allEntries||[]).filter(e => e.id !== currentEntryId);
@@ -2868,14 +2883,14 @@ function entryForm(colonyId, existing, colony, allEntries) {
      scrollte das Fenster dorthin (Handy: man musste erst nach oben; Chrome am PC trotz
      preventScroll). Datum ist ohnehin mit heute vorbelegt. */
   wireObs(obs,swarmCounts,selectValues);
-  wirePhotos(photos,'form-thumbs',allEntries,existing?.id, async(file)=>{
+  wirePhotos(photos,'form-thumbs',allEntries,existing?.id, async(file, fromSaved)=>{
     const s=await settingsP;
     document.getElementById('entry-varroa-wrap').hidden=false;
     varroaAuto=await varroaAutoCount(file, document.getElementById('entry-varroa-auto'),
       document.querySelector('input[name="varroaCount"]'), s.varroaFotoSpeichern!=='false', varroaAuto, ()=>{
         varroaAuto=null;
         if(!hasVarroaCount) document.getElementById('entry-varroa-wrap').hidden=true;
-      });
+      }, fromSaved);
   });
 }
 
