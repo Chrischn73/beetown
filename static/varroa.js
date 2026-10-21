@@ -65,7 +65,7 @@
   const BOARD_GRAY = 0.62;     // ... und mind. 62 % ihres Grauwerts
   const BOARD_MIN_AREA = 0.25; // darunter: keine Windel
   const BOARD_MIN_RECT = 0.75;
-  const BOARD_MARGIN = 0.01;   // Rand (Anteil der langen Kante): Schrauben, Leisten, Schlitze
+  const BOARD_MARGIN = 0;      // kein fester Rand mehr (v2.9.56): Milben liegen oft direkt am Rand
 
   function detectBoard(rgba, w, h){
     const s = Math.max(1, Math.ceil(Math.max(w, h) / BOARD_PREVIEW));
@@ -162,7 +162,7 @@
     for(let p = 0; p < N; p++) inside[p] = dist[p] > minDist ? 1 : 0;
     area /= N;
     return { ok: area >= BOARD_MIN_AREA && rect >= BOARD_MIN_RECT,
-             area: +area.toFixed(3), rect: +rect.toFixed(3), scale: s, w: pw, h: ph, inside };
+             area: +area.toFixed(3), rect: +rect.toFixed(3), scale: s, w: pw, h: ph, inside, dist };
   }
 
   /* Liegt Bildpunkt (x, y) im gezaehlten Bereich der Windel? */
@@ -197,17 +197,20 @@
     // Zusammenhaengende Flecken (8er-Nachbarschaft), Merkmale sammeln
     const blobs = [];
     const stack = new Int32Array(N > 1<<22 ? 1<<22 : N);
+    const lab = new Int32Array(N); // Fleck-Nummer + 1 je Pixel
     for(let i0 = 0; i0 < N; i0++){
       if(mask[i0] !== 1) continue;
       let sp = 0; stack[sp++] = i0; mask[i0] = 2;
-      let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sg = 0, sbr = 0, sbg = 0;
+      let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sg = 0, sbr = 0, sbg = 0, rmin = 9;
       let x0 = w, x1 = 0, y0 = h, y1 = 0;
       while(sp > 0){
         const p = stack[--sp];
         const x = p % w, y = (p - x) / w;
+        lab[p] = blobs.length + 1;
         n++; sx += x; sy += y; sxx += x*x; syy += y*y; sxy += x*y;
         const q = p*4;
         sg += gray[p]; sbg += bg[p];
+        const rr = gray[p] / bg[p]; if(rr < rmin) rmin = rr;
         sbr += rgba[q] - (rgba[q+1] + rgba[q+2])/2;
         if(x < x0) x0 = x; if(x > x1) x1 = x; if(y < y0) y0 = y; if(y > y1) y1 = y;
         for(let dy = -1; dy <= 1; dy++){
@@ -232,15 +235,20 @@
         elong: Math.sqrt(l1/l2),                       // 1 = rund
         fill: n / (4*Math.PI*Math.sqrt(l1*l2)),        // ~1 = gefuelltes Oval
         dark: (sg/n) / (sbg/n),                        // mittlere Dunkelheit rel. Hintergrund
+        rmin,                                          // dunkelster Pixel rel. Hintergrund (Milbe: fast schwarzer Kern)
         brown: sbr/n,
       });
     }
 
+    /* Filter und Schwellen (v2.9.56) geeicht an 18 handgezaehlten Feldern vom
+       21.10.2026 (Werkzeuge: Varroa-Counter/werkzeuge/). Reihenfolge wichtig. */
     const reject = (b, why) => { b.reject = why; };
-    const minArea = 3*k*k;
-    blobs.forEach(b => { if(b.n < minArea) reject(b, 'klein'); });
-    // Nur auf der Windel zaehlen, ohne den Rand (Schrauben, Holzleiste, Lueftungsschlitze)
+    const median = a => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
+    const k3 = 3*k*k; // frueher feste Mindestflaeche; aus groesserem Abstand sind Milben kleiner
+    blobs.forEach(b => { if(b.n < 1.5*k*k) reject(b, 'klein'); });
+    // Nur auf der Windel zaehlen (Rahmen, Gras, Schrauben in der Leiste)
     blobs.forEach(b => { if(!b.reject && !inBoard(board, b.cx, b.cy)) reject(b, 'ausserhalb'); });
+    const onBoard = blobs.filter(b => !b.reject);
 
     // Rand-Filter: liegt der Fleck an der Kante zum dunklen Rahmen, ist es in
     // mehreren Richtungen dauerhaft (10 und 18 px) dunkel.
@@ -258,25 +266,75 @@
       }
       return hits >= 3;
     };
-    blobs.forEach(b => { if(!b.reject && atEdge(b.cx, b.cy)) reject(b, 'kante'); });
 
-    // Umfeld: Anteil mittel-dunkler Pixel in einem Fenster um den Fleck
-    // (Biene: Koerper/Fluegel ringsum, Milbe: freie Windel)
-    const ctxR = 3*d1;
-    blobs.forEach(b => {
-      if(b.reject) return;
-      let s = 0, c = 0;
+    /* Umfeld-Merkmale. Pixel direkt am Rand milbenaehnlicher Nachbarn zaehlen
+       nicht als Kruemel (sonst wirkt ein dichtes Milbenfeld wie Dreck), gelber
+       Pollen auch nicht, und gemessen wird nur auf der Windel. */
+    const mk = blobs.map(b => b.n >= k3 && b.fill >= 0.8 && b.elong <= 2.2 && b.dark <= 0.32);
+    const ml = p => lab[p] > 0 && mk[lab[p]-1];
+    const near = new Uint8Array(N);
+    { const rr = Math.max(2, Math.round(1.5*k)), tmp = new Uint8Array(N);
+      for(let y = 0; y < h; y++){
+        let last = -1e9; for(let x = 0; x < w; x++){ if(ml(y*w + x)) last = x; if(x - last <= rr) tmp[y*w + x] = 1; }
+        last = 1e9;      for(let x = w-1; x >= 0; x--){ if(ml(y*w + x)) last = x; if(last - x <= rr) tmp[y*w + x] = 1; }
+      }
+      for(let x = 0; x < w; x++){
+        let last = -1e9; for(let y = 0; y < h; y++){ if(tmp[y*w + x]) last = y; if(y - last <= rr) near[y*w + x] = 1; }
+        last = 1e9;      for(let y = h-1; y >= 0; y--){ if(tmp[y*w + x]) last = y; if(last - y <= rr) near[y*w + x] = 1; }
+      }
+    }
+    const boardEdge = (x, y) => board.dist[Math.min(board.h-1, Math.floor(y/board.scale))*board.w + Math.min(board.w-1, Math.floor(x/board.scale))] <= 1;
+    const ctxR = 3*d1, hr = Math.max(2, Math.round(1.5*k));
+    onBoard.forEach(b => {
+      b.atEdge = atEdge(b.cx, b.cy);
+      // ctx: halbdunkle Pixel ringsum (Biene: Koerper/Fluegel)
+      // ctxg: graue Kruemel ringsum, nur Windel (Dreck)
+      let s = 0, c = 0, sg = 0, cg = 0;
       for(let y = Math.max(0, Math.round(b.cy - ctxR)); y <= Math.min(h-1, b.cy + ctxR); y += 2){
         for(let x = Math.max(0, Math.round(b.cx - ctxR)); x <= Math.min(w-1, b.cx + ctxR); x += 2){
           const p = y*w + x; c++;
-          if(mask[p] !== 2 && gray[p] < 0.75*bg[p]) s++;
+          const semi = mask[p] !== 2 && gray[p] < 0.75*bg[p];
+          if(semi) s++;
+          if(bg[p] < BG_MIN || mask[p] === 2 || boardEdge(x, y)) continue;
+          cg++;
+          if(semi && !near[p] && rgba[p*4] - rgba[p*4+2] <= 30) sg++;
         }
       }
-      b.ctx = c ? s/c : 0;
+      b.ctx = c ? s/c : 0; b.ctxg = cg ? sg/cg : 0;
+      // halod: halbdunkler grauer Hof direkt am Fleck (Milbe: scharfe Kante)
+      const bx0 = Math.round(b.cx - b.bw/2), by0 = Math.round(b.cy - b.bh/2);
+      let hd = 0, hc = 0;
+      for(let y = Math.max(0, by0 - hr); y <= Math.min(h-1, by0 + b.bh + hr); y++){
+        for(let x = Math.max(0, bx0 - hr); x <= Math.min(w-1, bx0 + b.bw + hr); x++){
+          const p = y*w + x; if(mask[p] === 2) continue;
+          hc++; if(gray[p] < 0.75*bg[p] && rgba[p*4] - rgba[p*4+2] <= 30) hd++;
+        }
+      }
+      b.halod = hc ? hd/hc : 0;
     });
+    // nm: milbenaehnliche Nachbarn im Umkreis (dichtes Milbenfeld)
+    { const like = onBoard.filter(b => b.n >= k3 && b.rmin <= 0.2 && b.fill >= 0.9 && b.elong <= 2.0);
+      const R = 30*k, grid = new Map(), key = (gx, gy) => gx*100003 + gy;
+      for(const b of like){ const kk = key(Math.floor(b.cx/R), Math.floor(b.cy/R)); if(!grid.has(kk)) grid.set(kk, []); grid.get(kk).push(b); }
+      for(const b of onBoard){
+        const gx = Math.floor(b.cx/R), gy = Math.floor(b.cy/R); let c = 0;
+        for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++)
+          for(const o of grid.get(key(gx+dx, gy+dy)) || [])
+            if(o !== b && (o.cx-b.cx)**2 + (o.cy-b.cy)**2 <= R*R) c++;
+        b.nm = c;
+      }
+    }
+    // Kante: nur verwerfen, was nicht wie eine Milbe aussieht (Milben liegen oft direkt an der Leiste)
+    onBoard.forEach(b => { if(b.atEdge && !(b.elong <= 2.6 && b.fill >= 0.8 && b.halod <= 0.3)) reject(b, 'kante'); });
+    // Mindestgroesse relativ zur typischen Milbe, aber nie groesser als frueher (3 k^2)
+    { const cand = blobs.filter(b => !b.reject);
+      const good = cand.filter(b => b.n >= k3 && b.fill >= 0.8 && b.elong <= 2 && b.dark <= 0.36).map(b => b.n);
+      const pm = good.length >= 15 ? median(good) : (median(cand.filter(b => b.n >= k3).map(b => b.n)) || k3);
+      const minN = Math.min(k3, 0.5*pm);
+      cand.forEach(b => { if(b.n < minN) reject(b, 'klein'); });
+    }
 
     // Typische Milbenflaeche pro Streifen (Perspektive: vorne groesser)
-    const median = a => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
     const live = blobs.filter(b => !b.reject);
     const med = live.length ? median(live.map(b => b.n)) : 1;
     const meds = [];
@@ -284,11 +342,13 @@
       const a = live.filter(b => i*h/BANDS <= b.cy && b.cy < (i+1)*h/BANDS).map(b => b.n);
       meds.push(a.length >= 15 ? median(a) : med);
     }
-
     // Umfeld einer typischen Einzelmilbe in diesem Foto (verschmutzte Windel
     // hat ueberall Kruemel - Biene erkennt man nur relativ dazu)
     const ctxMed = median(live.filter(b => b.n < 1.5*med).map(b => b.ctx)) || 0;
     const ctxBee = Math.max(0.06, 3*ctxMed);
+    // Dunkelheit einer typischen Milbe auf freier Windel in diesem Foto
+    const clean = live.filter(b => 0.7*med <= b.n && b.n <= 1.5*med && b.fill >= 0.85 && b.elong <= 2 && b.ctxg <= 0.04).map(b => b.dark);
+    const dref = clean.length >= 10 ? median(clean) : 0.30;
 
     let total = 0;
     const marks = [];
@@ -309,6 +369,16 @@
       if(n >= 3 && b.elong <= 1.35 && b.fill >= 0.93){ reject(b, 'loch'); continue; }
       // Tote Biene: dunkle Koerperteile mit viel Halbdunklem (Streifen, Fluegel) ringsum
       if(n >= 3 && b.ctx > ctxBee){ reject(b, 'biene'); continue; }
+      /* Dreck (v2.9.56): Dreck ist heller als die typische Milbe des Fotos, hat
+         keinen schwarzen Kern und liegt zwischen grauen Kruemeln. */
+      const dirty = (() => {
+        if(n >= 2 && b.ctxg > 0.04 && b.nm < 4) return true;        // Klumpen zwischen Kruemeln
+        if(b.nm >= 4) return false;                                  // dichtes Milbenfeld
+        if(b.rmin <= 0.18 && b.fill >= 0.94 && b.elong <= 2.3) return false; // eindeutige Milbe
+        const d = b.dark - dref;
+        return (b.ctxg > 0.12 && d > 0) || (b.halod > 0.16 && d > -0.02) || (b.ctxg > 0.03 && d > 0.02);
+      })();
+      if(dirty){ reject(b, 'dreck'); continue; }
       b.count = n;
       total += n;
       marks.push({ x: b.cx, y: b.cy, n });
