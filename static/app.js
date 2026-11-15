@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.57';
+const APP_VERSION = 'v2.9.58';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -199,7 +199,7 @@ function _beeBusy(on) {
 async function api(method, path, body, isRaw) {
   const opts = { method };
   if (body !== undefined) {
-    if (isRaw) { opts.body = body; opts.headers = { 'Content-Type': 'image/jpeg' }; }
+    if (isRaw) { opts.body = body; opts.headers = { 'Content-Type': typeof isRaw === 'string' ? isRaw : 'image/jpeg' }; }
     else { opts.body = JSON.stringify(body); opts.headers = { 'Content-Type': 'application/json' }; }
   }
   _beeBusy(true);
@@ -223,9 +223,29 @@ async function api(method, path, body, isRaw) {
   return ct.includes('application/json') ? res.json() : res;
 }
 const apiGet = (p) => api('GET', p);
+/* Volk speichern: nur die gegenüber `orig` geänderten Felder schicken (der Server
+   ändert seit v2.9.58 nur mitgeschickte Felder). So überschreibt ein länger offener
+   Tab oder ein zweites Gerät keine Felder, die hier gar nicht geändert wurden. */
+async function putColony(orig, neu) {
+  const diff = {};
+  for (const [k, v] of Object.entries(neu)) {
+    if (JSON.stringify(orig ? orig[k] : undefined) !== JSON.stringify(v)) diff[k] = v;
+  }
+  if (!Object.keys(diff).length) return { ok: true, unchanged: true };
+  return api('PUT', './api/colonies/' + (orig && orig.id ? orig.id : neu.id), diff);
+}
 
 /* ---------- Hilfsfunktionen ---------- */
 const $ = (sel, root = document) => root.querySelector(sel);
+/* Nur http(s)-Adressen als Link zulassen - kein javascript:/data: aus z. B. einem Backup.
+   Adressen ohne Schema (z. B. "192.168.1.5/waage") bekommen http:// davor. */
+const safeHttpUrl = (u) => {
+  const t = typeof u === 'string' ? u.trim() : '';
+  if (!t) return '';
+  if (/^https?:\/\//i.test(t)) return t;
+  if (/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(t)) return '';
+  return 'http://' + t;
+};
 const esc = (s) => (s == null ? '' : String(s).replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
 
@@ -439,17 +459,39 @@ function parseOxalBlockReminderLines(text) {
 function buildOxalBlockReminderText(lines) {
   return OXAL_BLOCK_REMINDER_MARKER+'\n'+lines.map((l)=>`• ${l.name}: Stufe ${l.stage}`).join('\n');
 }
+/* Zeilen einer Sammel-Erinnerung inkl. Volk-ID. Der Text bleibt maßgeblich (was
+   dort steht, ist noch offen); die ID kommt aus r.autoRefs (seit v2.9.58). Ältere
+   Erinnerungen ohne autoRefs haben Zeilen ohne colonyId. */
+function oxalBlockReminderLines(r) {
+  const lines = parseOxalBlockReminderLines(r.text);
+  if(!lines) return null;
+  const refs = Array.isArray(r.autoRefs) ? [...r.autoRefs] : [];
+  return lines.map((l)=>{
+    const i = refs.findIndex((x)=>x && x.name===l.name && x.stage===l.stage);
+    const colonyId = i>=0 ? refs.splice(i,1)[0].colonyId : undefined;
+    return {...l, colonyId};
+  });
+}
+function oxalBlockLineIsColony(line, r, colony) {
+  if(line.colonyId) return line.colonyId===colony.id;
+  /* Alt-Zeile ohne ID: nur über den Namen UND denselben Standort zuordnen */
+  return line.name===colony.name && (r.apiaryId||'')===(colony.apiaryId||'');
+}
+function oxalBlockReminderPayload(r, lines) {
+  return {...r, text:buildOxalBlockReminderText(lines),
+    autoRefs: lines.filter((l)=>l.colonyId).map((l)=>({colonyId:l.colonyId, name:l.name, stage:l.stage}))};
+}
 async function scheduleOxalBlockReminder(colony, fromDate, stage) {
   try {
     const reminders = await apiGet('./api/reminders').catch(()=>[]);
     /* Volk aus allen bestehenden Auto-Erinnerungen entfernen (alter Stand) */
     for(const r of reminders){
-      const lines = parseOxalBlockReminderLines(r.text);
+      const lines = oxalBlockReminderLines(r);
       if(!lines) continue;
-      const remaining = lines.filter((l)=>l.name!==colony.name);
+      const remaining = lines.filter((l)=>!oxalBlockLineIsColony(l, r, colony));
       if(remaining.length===lines.length) continue;
       if(remaining.length===0) await api('DELETE','./api/reminders/'+r.id);
-      else await api('PUT','./api/reminders/'+r.id,{...r,text:buildOxalBlockReminderText(remaining)});
+      else await api('PUT','./api/reminders/'+r.id,oxalBlockReminderPayload(r, remaining));
     }
     if(stage >= OXAL_BLOCK_MAX_STAGE) return;
 
@@ -462,14 +504,15 @@ async function scheduleOxalBlockReminder(colony, fromDate, stage) {
     const fresh = await apiGet('./api/reminders').catch(()=>[]);
     const target = fresh.find((r)=>r.apiaryId===(colony.apiaryId||'') && r.dueDate===dueDate && parseOxalBlockReminderLines(r.text));
     if(target){
-      const lines = parseOxalBlockReminderLines(target.text);
-      lines.push({name:colony.name, stage:stage+1});
-      await api('PUT','./api/reminders/'+target.id,{...target,text:buildOxalBlockReminderText(lines)});
+      const lines = oxalBlockReminderLines(target);
+      lines.push({name:colony.name, stage:stage+1, colonyId:colony.id});
+      await api('PUT','./api/reminders/'+target.id,oxalBlockReminderPayload(target, lines));
     } else {
       const apiaries = await apiGet('./api/apiaries').catch(()=>[]);
       const apiary = apiaries.find((a)=>a.id===colony.apiaryId);
       await api('POST','./api/reminders',{
         text: buildOxalBlockReminderText([{name:colony.name, stage:stage+1}]),
+        autoRefs: [{colonyId:colony.id, name:colony.name, stage:stage+1}],
         apiaryId: colony.apiaryId||'',
         apiaryName: apiary?apiary.name:'',
         dueDate,
@@ -900,11 +943,11 @@ async function syncRequeue(pre) {
     if(c.requeueFlag && !active){
       if(item && (item.done || item.manual || item.removedCriteria?.length)){
         /* Liste gewinnt: erledigt/entfernt -> Markierung am Volk aufheben */
-        await api('PUT','./api/colonies/'+c.id,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
+        await putColony(c,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
       } else if(item?.autoFlag){
         /* Kriterien weggefallen (Eintrag gelöscht/geändert) */
         delete yl[c.id]; listChanged = true;
-        await api('PUT','./api/colonies/'+c.id,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
+        await putColony(c,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
       } else {
         /* Markierung von Hand am Volk (oder aus dem Vorjahr) -> als manueller Eintrag übernehmen */
         const rs = requeueParseReasons(c);
@@ -919,7 +962,7 @@ async function syncRequeue(pre) {
         item = yl[c.id] = {...(item||{}), autoFlag:true}; listChanged = true;
       }
       if(!c.requeueFlag || want.length!==rs.length){
-        await api('PUT','./api/colonies/'+c.id,{...c,requeueFlag:1,requeueReasons:JSON.stringify(want)});
+        await putColony(c,{...c,requeueFlag:1,requeueReasons:JSON.stringify(want)});
       }
     }
   }
@@ -1004,7 +1047,7 @@ async function renderRequeue() {
       const it = l[y][id];
       const c = await apiGet('./api/colonies/'+id).catch(()=>null);
       const off = it?.done || (!it?.manual && (it?.removedCriteria||[]).length);
-      if(c && off && c.requeueFlag) await api('PUT','./api/colonies/'+id,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
+      if(c && off && c.requeueFlag) await putColony(c,{...c,requeueFlag:0,requeueReasons:'[]',requeueNote:''});
     }
     renderRequeue();
   };
@@ -1035,7 +1078,7 @@ async function renderRequeue() {
         await requeueSaveList(l);
         const c = await apiGet('./api/colonies/'+data.colonyId);
         const rs = requeueParseReasons(c);
-        await api('PUT','./api/colonies/'+c.id,{...c, requeueFlag:1,
+        await putColony(c,{...c, requeueFlag:1,
           requeueReasons:JSON.stringify([...new Set([...rs,'Sonstiges'])]),
           requeueNote: c.requeueNote || data.reason.trim()});
         close(); renderRequeue();
@@ -2354,7 +2397,7 @@ async function bulkMoveForm(currentApiaryId, colonies) {
       if(ids.length===0) return alert('Bitte mindestens ein Volk auswählen.');
       for(const cid of ids){
         const col=colonies.find((c)=>c.id===cid);
-        if(col) await api('PUT','./api/colonies/'+cid,{...col,apiaryId:data.targetApiaryId});
+        if(col) await putColony(col,{...col,apiaryId:data.targetApiaryId});
       }
       close(); renderColonies();
     },null);
@@ -2446,7 +2489,7 @@ async function colonyForm(apiaryId, existing) {
       if(existing){
         // existing als Basis – verhindert dass Felder wie requeueFlag etc. verloren gehen
         const payload = {...existing, ...data};
-        await api('PUT','./api/colonies/'+existing.id, payload);
+        await putColony(existing, payload);
       } else {
         await api('POST','./api/colonies',{...data,apiaryId,createdAt:new Date().toISOString()});
       }
@@ -2473,7 +2516,7 @@ async function colonyForm(apiaryId, existing) {
     if(rq) rq.onclick=()=>{ document.querySelector('.modal-back')?.remove(); requeueForm(existing,apiaryId); };
     const br=document.getElementById('m-breed');
     if(br) br.onclick=async()=>{
-      await api('PUT','./api/colonies/'+existing.id,{...existing,breedFlag:existing.breedFlag?0:1});
+      await putColony(existing,{...existing,breedFlag:existing.breedFlag?0:1});
       document.querySelector('.modal-back')?.remove(); renderColonies();
     };
   }
@@ -2493,7 +2536,7 @@ function requeueForm(colony, apiaryId) {
     async(data,close)=>{
       const clear=document.getElementById('rq-clear')?.checked;
       const reasons=[...document.querySelectorAll('.rq-check:checked')].map((x)=>x.value);
-      await api('PUT','./api/colonies/'+colony.id,{...colony,requeueFlag:clear?0:1,requeueReasons:clear?'[]':JSON.stringify(reasons),requeueNote:clear?'':data.requeueNote});
+      await putColony(colony,{...colony,requeueFlag:clear?0:1,requeueReasons:clear?'[]':JSON.stringify(reasons),requeueNote:clear?'':data.requeueNote});
       /* Umweiselungsliste (laufendes Jahr) mitziehen: aufheben = entfernen, markieren = manueller Eintrag */
       try {
         const year = String(new Date().getFullYear());
@@ -2528,7 +2571,7 @@ async function renderColony() {
   if(colony.scaleId){
     const scales=await apiGet('./api/scales');
     const scale=scales.find((s)=>s.id===colony.scaleId);
-    if(scale&&scale.url) scaleLink=`<a class="btn btn-ghost btn-sm scale-link" href="${esc(scale.url)}" target="_blank" rel="noopener">⚖️ ${esc(scale.name)}</a>`;
+    if(scale&&safeHttpUrl(scale.url)) scaleLink=`<a class="btn btn-ghost btn-sm scale-link" href="${esc(safeHttpUrl(scale.url))}" target="_blank" rel="noopener">⚖️ ${esc(scale.name)}</a>`;
   }
 
   app.innerHTML=`
@@ -2761,7 +2804,7 @@ function entryForm(colonyId, existing, colony, allEntries) {
             needsUpdate = true;
           }
         }
-        if(needsUpdate) await api('PUT','./api/colonies/'+colony.id, colonyUpdate);
+        if(needsUpdate) await putColony(colony, colonyUpdate);
       }
       await syncRequeueSafe(colonyId);
       close(); renderColony();
@@ -2954,7 +2997,7 @@ function massEntryForm(apiaryId, colonies) {
             if(massWeiselprobe)   upd.weiselprobeDate  =data.date||todayInput();
             if(massKaefigung)     upd.kaefigungDate     =data.date||todayInput();
             if(massKoeniginFrei)  upd.koeniginFreiDate  =data.date||todayInput();
-            await api('PUT','./api/colonies/'+cid,upd);
+            await putColony(col, upd);
           }
         }
       }
@@ -4706,7 +4749,7 @@ async function renderGewicht() {
           obs_extra: { gewicht: totalStr, teilgewicht1: t1raw, teilgewicht2: t2raw },
           createdAt: new Date().toISOString()
         });
-        await api('PUT','./api/colonies/'+savedColony.id, {...savedColony, currentWeight: totalStr, currentWeightDate: entryDate});
+        await putColony(savedColony, {...savedColony, currentWeight: totalStr, currentWeightDate: entryDate});
         savedColony.currentWeight = totalStr; savedColony.currentWeightDate = entryDate;
       }catch(err){ stepBtn.disabled=false; return alert('Fehler: '+err.message); }
       renderList();
@@ -5944,8 +5987,10 @@ async function renderSettings() {
       </div>
       <p class="muted" id="sysupd-status" style="margin-top:.6rem"></p>`)}</div>
     <div id="backup-section-wrap">${settingsSection('datensicherung','Backup',`
-      <a class="btn btn-ghost block" href="./api/backup" download>Backup exportieren (.json)</a>
-      <label class="btn btn-ghost block">Backup importieren<input type="file" accept="application/json,.json" id="import-input" hidden></label>`)}</div>
+      <a class="btn btn-ghost block" href="./api/backup?format=zip" download>Backup exportieren (.zip, mit Fotos)</a>
+      <a class="btn btn-ghost block" href="./api/backup" download style="margin-top:.5rem">Nur Daten exportieren (.json, ohne Fotos)</a>
+      <label class="btn btn-ghost block" style="margin-top:.5rem">Backup importieren (.zip oder .json)<input type="file" accept="application/zip,.zip,application/json,.json" id="import-input" hidden></label>
+      <p class="muted" style="margin-top:.5rem">Die .json-Datei enthält keine Fotos – für eine vollständige Sicherung die .zip-Datei nehmen.</p>`)}</div>
     ${settingsSection('bereinigen','Daten bereinigen',`
       <div id="bereinigen-warning" class="banner-error" style="display:none;margin-bottom:.75rem">
         ⚠️ Diese Aktionen sind erst wieder möglich, sobald ein Backup existiert, das
@@ -5998,7 +6043,7 @@ async function renderSettings() {
           bl.onclick=(ev)=>{
             ev.preventDefault();
             if(d.setupPortal) window.location.href=setupPortalUrl(d.landingPort,'/backup');
-            else window.location.href='./api/backup';
+            else window.location.href='./api/backup?format=zip';
           };
         }
       }
@@ -6398,7 +6443,12 @@ async function renderSettings() {
   $('#import-input').onchange=async(ev)=>{
     const file=ev.target.files[0]; if(!file) return;
     if(!confirm('Backup importieren? Vorhandene Daten werden ersetzt.')) return;
-    try{ const data=JSON.parse(await file.text()); await api('POST','./api/restore',data); alert('Backup importiert.'); go('apiaries'); }
+    try{
+      const istZip = /\.zip$/i.test(file.name) || /^application\/(x-)?zip/i.test(file.type);
+      if(istZip) await api('POST','./api/restore',file,'application/zip');
+      else { const data=JSON.parse(await file.text()); await api('POST','./api/restore',data); }
+      alert('Backup importiert.'); go('apiaries');
+    }
     catch(err){alert('Import fehlgeschlagen: '+err.message);}
   };
 }

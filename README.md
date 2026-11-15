@@ -8,7 +8,7 @@ Eine von zwei Optionen:
 
 2. einen **Linux-Server**
 
-Beide sollten nur im **lokalen Netz** betrieben werden, da die App keine Benutzer-/Passwort-Abfrage bietet.
+Die App ist mit einem Passwort geschützt, das beim ersten Aufruf festgelegt wird. Trotzdem sollte sie nur im **lokalen Netz** oder über ein **VPN** erreichbar sein und nicht direkt aus dem Internet: Es gibt kein HTTPS und keine Sperre nach Fehlversuchen.
 
 BeeTown ist eine Web-App zur Imkereiverwaltung: Standorte, Völker, Stockkarten-Einträge mit Fotos. Man kann dann über den Handy Browser auf die App zugeifen.
 

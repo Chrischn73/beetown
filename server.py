@@ -4,6 +4,7 @@ BeeTown – kleiner Server (nur Python-Standardbibliothek).
 """
 
 import os, re, json, sqlite3, secrets, mimetypes, hashlib, hmac, html, time, http.cookies
+import shutil, sys, tempfile, traceback, zipfile
 from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -289,6 +290,8 @@ def landing_port():
 
 os.makedirs(PHOTO_DIR, exist_ok=True)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+BACKUP_FOTO_RE = re.compile(r"^photos/[A-Za-z0-9_-]{1,40}\.jpg$")
+RESTORE_MAX_BYTES = 4 * 1024**3
 # Einmalige Startbelegung fuer honey_products (Name, Preis in Euro, Gewicht in Gramm, Button-Farbe) -
 # entspricht den in der bisher genutzten Excel-Liste tatsaechlich verwendeten Sorten/Groessen.
 DEFAULT_HONEY_PRODUCTS = [
@@ -387,7 +390,7 @@ def init_db():
             id TEXT PRIMARY KEY, text TEXT, apiaryId TEXT, apiaryName TEXT, createdAt TEXT,
             dueDate TEXT, remindDaysBefore INTEGER DEFAULT 0, repeatMode TEXT DEFAULT 'none',
             repeatWeekdays TEXT DEFAULT '[]', repeatIntervalWeeks INTEGER DEFAULT 0,
-            repeatMonthDay INTEGER DEFAULT 0);
+            repeatMonthDay INTEGER DEFAULT 0, autoRefs TEXT DEFAULT '[]');
         CREATE TABLE IF NOT EXISTS honey_harvests(
             id TEXT PRIMARY KEY, year INTEGER, tracht TEXT, menge REAL, notizen TEXT, apiaryId TEXT, apiaryName TEXT, anzahlVoelker INTEGER DEFAULT 0, createdAt TEXT);
         CREATE TABLE IF NOT EXISTS sirup_calc(
@@ -465,6 +468,7 @@ def init_db():
         ("reminders","repeatWeekdays",      "ALTER TABLE reminders ADD COLUMN repeatWeekdays TEXT DEFAULT '[]'"),
         ("reminders","repeatIntervalWeeks", "ALTER TABLE reminders ADD COLUMN repeatIntervalWeeks INTEGER DEFAULT 0"),
         ("reminders","repeatMonthDay",      "ALTER TABLE reminders ADD COLUMN repeatMonthDay INTEGER DEFAULT 0"),
+        ("reminders","autoRefs",            "ALTER TABLE reminders ADD COLUMN autoRefs TEXT DEFAULT '[]'"),
         ("honey_products","color",       "ALTER TABLE honey_products ADD COLUMN color TEXT DEFAULT ''"),
         ("honey_products","kind",        "ALTER TABLE honey_products ADD COLUMN kind TEXT DEFAULT 'sonstige'"),
         ("honey_products","giftSetVarieties",  "ALTER TABLE honey_products ADD COLUMN giftSetVarieties INTEGER DEFAULT 0"),
@@ -540,6 +544,8 @@ def parse_reminder(r):
     d = dict(r)
     try: d["repeatWeekdays"] = json.loads(d.get("repeatWeekdays") or "[]")
     except Exception: d["repeatWeekdays"] = []
+    try: d["autoRefs"] = json.loads(d.get("autoRefs") or "[]")
+    except Exception: d["autoRefs"] = []
     return d
 
 def photo_ids(photos):
@@ -589,6 +595,21 @@ def delete_colony_cascade(con, cid):
     delete_photos(con, ids)
 
 
+def _int0(v): return int(v or 0)
+def _text(v): return v
+# Per PUT aenderbare Volks-Felder (archived/archivedAt/sortOrder/createdAt laufen
+# ueber eigene Endpunkte) mit Umwandlung des Werts.
+COLONY_PUT_FELDER = {
+    "apiaryId":_text, "name":_text, "queenYear":_text, "queenNr":_text, "queenGen":_text,
+    "status":_text, "source":_text, "notes":_text, "scaleId":_text,
+    "demareeStage":_text, "demareedAt":_text, "demareeEndedAt":_text,
+    "requeueFlag":_int0, "requeueReasons":_text, "requeueNote":_text, "breedFlag":_int0,
+    "honigRaeume":_text, "umlarvDate":_text, "weiselprobeDate":_text, "kaefigungDate":_text,
+    "koeniginFreiDate":_text, "currentWeight":_text, "currentWeightDate":_text, "zielGewicht":_text,
+    "oxalBlockStage":_text, "oxalBlockStartAt":_text, "oxalBlockLastAt":_text,
+}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "BeeTown"
 
@@ -607,6 +628,26 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(data)
 
     def _err(self, code, msg): self._json({"error":msg}, code)
+
+    def send_response(self, code, message=None):
+        self._antwort_begonnen=True
+        super().send_response(code, message)
+
+    def _api(self, fn, path):
+        """Ruft einen API-Handler auf und macht aus einer Ausnahme eine saubere
+        JSON-Fehlerantwort. Vorher brach der Server bei z.B. int("") einfach die
+        Verbindung ab, und die App meldete "Server nicht erreichbar - VPN?"."""
+        self._antwort_begonnen=False
+        try:
+            return fn(path)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
+            if self._antwort_begonnen: return
+            if isinstance(e,(ValueError,TypeError,KeyError)):
+                return self._err(400, f"Ungültige Eingabe ({type(e).__name__}: {e})")
+            return self._err(500, f"Interner Serverfehler ({type(e).__name__}) – Details im Journal")
 
     def _rjson(self):
         n=int(self.headers.get("Content-Length",0))
@@ -733,7 +774,7 @@ class Handler(BaseHTTPRequestHandler):
         if p.startswith("/api/") and zugang is not True: return self._err(401,"Nicht angemeldet")
         if zugang is None: return self._redirect("/einrichten")
         if zugang is False: return self._redirect("/login")
-        if p.startswith("/api/"): return self.api_get(p)
+        if p.startswith("/api/"): return self._api(self.api_get, p)
         self.serve_static(p)
 
     def do_POST(self):
@@ -744,19 +785,19 @@ class Handler(BaseHTTPRequestHandler):
         zugang=self._zugang_pruefen()
         if zugang is None: return self._redirect("/einrichten")
         if zugang is False: return self._err(403,"Nicht angemeldet")
-        if p.startswith("/api/"): return self.api_post(p)
+        if p.startswith("/api/"): return self._api(self.api_post, p)
         self._err(404,"Not found")
 
     def do_PUT(self):
         zugang=self._zugang_pruefen()
         if zugang is not True: return self._err(403,"Nicht angemeldet")
-        if self.path.startswith("/api/"): return self.api_put(self.path)
+        if self.path.startswith("/api/"): return self._api(self.api_put, self.path)
         self._err(404,"Not found")
 
     def do_DELETE(self):
         zugang=self._zugang_pruefen()
         if zugang is not True: return self._err(403,"Nicht angemeldet")
-        if self.path.startswith("/api/"): return self.api_delete(self.path)
+        if self.path.startswith("/api/"): return self._api(self.api_delete, self.path)
         self._err(404,"Not found")
 
     def serve_static(self, path):
@@ -908,7 +949,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json([parse_sale(r) for r in rs])
             if path=="/api/honey_costs":
                 return self._json(rows(con,"SELECT * FROM honey_costs ORDER BY date DESC, createdAt DESC"))
-            if path=="/api/backup": return self.api_backup(con)
+            if path=="/api/backup": return self.api_backup(con,(q.get("format") or [""])[0])
             m=re.match(r"^/api/photos/([^/]+)$",path)
             if m:
                 pid=m.group(1)
@@ -924,6 +965,8 @@ class Handler(BaseHTTPRequestHandler):
         finally: con.close()
 
     def api_post(self, path):
+        if path=="/api/restore" and re.match(r"application/(x-)?zip",self.headers.get("Content-Type") or "",re.I):
+            return self.api_restore_zip()
         if path=="/api/settings":
             body2=self._rjson()
             con2=db()
@@ -935,10 +978,11 @@ class Handler(BaseHTTPRequestHandler):
             body2=self._rjson()
             rid=new_id()
             con2=db()
-            con2.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore,repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            con2.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore,repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay,autoRefs) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (rid,body2.get("text",""),body2.get("apiaryId",""),body2.get("apiaryName",""),body2.get("createdAt",""),body2.get("dueDate",""),
                  int(body2.get("remindDaysBefore",0) or 0),body2.get("repeatMode","none"),json.dumps(body2.get("repeatWeekdays",[])),
-                 int(body2.get("repeatIntervalWeeks",0) or 0),int(body2.get("repeatMonthDay",0) or 0)))
+                 int(body2.get("repeatIntervalWeeks",0) or 0),int(body2.get("repeatMonthDay",0) or 0),
+                 json.dumps(body2.get("autoRefs",[]))))
             con2.commit(); con2.close()
             return self._json({"id":rid})
         if path=="/api/honey_harvests":
@@ -1189,22 +1233,16 @@ class Handler(BaseHTTPRequestHandler):
                 con.execute("UPDATE apiaries SET name=?,location=?,notes=? WHERE id=?",
                     (body.get("name",""),body.get("location",""),body.get("notes",""),rid))
             elif kind=="colonies":
-                con.execute("""UPDATE colonies SET
-                    apiaryId=?,name=?,queenYear=?,queenNr=?,queenGen=?,status=?,source=?,notes=?,scaleId=?,
-                    demareeStage=?,demareedAt=?,demareeEndedAt=?,
-                    requeueFlag=?,requeueReasons=?,requeueNote=?,breedFlag=?,honigRaeume=?,umlarvDate=?,weiselprobeDate=?,kaefigungDate=?,koeniginFreiDate=?,
-                    currentWeight=?,currentWeightDate=?,zielGewicht=?,oxalBlockStage=?,oxalBlockStartAt=?,oxalBlockLastAt=?
-                    WHERE id=?""",
-                    (body.get("apiaryId",""),body.get("name",""),body.get("queenYear",""),body.get("queenNr",""),
-                     body.get("queenGen",""),body.get("status","ok"),body.get("source",""),
-                     body.get("notes",""),body.get("scaleId",""),
-                     body.get("demareeStage",""),body.get("demareedAt",""),body.get("demareeEndedAt",""),
-                     int(body.get("requeueFlag",0) or 0),body.get("requeueReasons","[]"),
-                     body.get("requeueNote",""),int(body.get("breedFlag",0) or 0),
-                     body.get("honigRaeume","[]"),body.get("umlarvDate",""),
-                     body.get("weiselprobeDate",""),body.get("kaefigungDate",""),body.get("koeniginFreiDate",""),
-                     body.get("currentWeight",""),body.get("currentWeightDate",""),body.get("zielGewicht",""),
-                     body.get("oxalBlockStage",""),body.get("oxalBlockStartAt",""),body.get("oxalBlockLastAt",""),rid))
+                # Nur die mitgeschickten Felder aendern. Die App schickt seit v2.9.58
+                # nur geaenderte Felder (putColony in app.js) - so ueberschreibt ein
+                # laenger offener Tab / zweites Geraet keine Felder, die es gar nicht
+                # geaendert hat. Dasselbe Feld auf zwei Geraeten: der Letzte gewinnt.
+                sets=[]; werte=[]
+                for feld,umwandeln in COLONY_PUT_FELDER.items():
+                    if feld in body:
+                        sets.append(feld+"=?"); werte.append(umwandeln(body[feld]))
+                if sets:
+                    con.execute("UPDATE colonies SET "+",".join(sets)+" WHERE id=?",(*werte,rid))
             elif kind=="entries":
                 old=con.execute("SELECT photos,photoIds FROM entries WHERE id=?",(rid,)).fetchone()
                 old_ids=photo_ids(entry_photos(old)) if old else []
@@ -1225,6 +1263,10 @@ class Handler(BaseHTTPRequestHandler):
                      body.get("dueDate",""),int(body.get("remindDaysBefore",0) or 0),
                      body.get("repeatMode","none"),json.dumps(body.get("repeatWeekdays",[])),
                      int(body.get("repeatIntervalWeeks",0) or 0),int(body.get("repeatMonthDay",0) or 0),rid))
+                # autoRefs (Volk-IDs der automatischen Blockbehandlungs-Erinnerung) nur
+                # aendern, wenn mitgeschickt - das Erinnerungs-Formular kennt das Feld nicht.
+                if "autoRefs" in body:
+                    con.execute("UPDATE reminders SET autoRefs=? WHERE id=?",(json.dumps(body.get("autoRefs") or []),rid))
             elif kind=="scales":
                 con.execute("UPDATE scales SET name=?,url=?,notes=? WHERE id=?",
                     (body.get("name",""),body.get("url",""),body.get("notes",""),rid))
@@ -1316,10 +1358,73 @@ class Handler(BaseHTTPRequestHandler):
             con.commit(); self._json({"ok":True})
         finally: con.close()
 
-    def api_backup(self, con):
+    def api_backup(self, con, fmt=""):
+        """Export als JSON (nur Daten) oder mit format=zip als ZIP: backup.json +
+        photos/<id>.jpg. Das ZIP wird in eine Temp-Datei unter DATA_DIR gebaut
+        (nicht /tmp - das ist oft eine RAM-Disk) und in Bloecken ausgeliefert."""
         con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('_lastBackupAt',?)",(now_iso(),))
         con.commit()
-        out={"app":"imkerei","version":9,
+        out=self._backup_daten(con)
+        if fmt=="zip":
+            datum=datetime.now().strftime("%Y-%m-%d")
+            with tempfile.TemporaryFile(dir=DATA_DIR) as tmp:
+                with zipfile.ZipFile(tmp,"w") as zf:
+                    zf.writestr("backup.json", json.dumps(out), compress_type=zipfile.ZIP_DEFLATED)
+                    if os.path.isdir(PHOTO_DIR):
+                        for name in sorted(os.listdir(PHOTO_DIR)):
+                            if BACKUP_FOTO_RE.match("photos/"+name):
+                                # JPEGs sind schon komprimiert - nur ablegen spart CPU auf dem Pi
+                                zf.write(os.path.join(PHOTO_DIR,name),"photos/"+name,compress_type=zipfile.ZIP_STORED)
+                tmp.seek(0,2); groesse=tmp.tell(); tmp.seek(0)
+                self.send_response(200)
+                self.send_header("Content-Type","application/zip")
+                self.send_header("Content-Disposition",f'attachment; filename="beetown-backup-{datum}.zip"')
+                self.send_header("Content-Length",str(groesse))
+                self.end_headers()
+                shutil.copyfileobj(tmp,self.wfile,1<<20)
+            return
+        body=json.dumps(out).encode()
+        self.send_response(200)
+        self.send_header("Content-Type","application/json; charset=utf-8")
+        self.send_header("Content-Disposition",'attachment; filename="beetown-backup.json"')
+        self.send_header("Content-Length",str(len(body)))
+        self.end_headers(); self.wfile.write(body)
+
+    def api_restore_zip(self):
+        """Import eines ZIP-Backups (backup.json + photos/). Upload wird in
+        Bloecken in eine Temp-Datei geschrieben statt komplett in den RAM."""
+        n=int(self.headers.get("Content-Length",0))
+        if n<=0: return self._err(400,"Leerer Upload")
+        if n>RESTORE_MAX_BYTES: return self._err(413,"Backup-Datei zu groß")
+        with tempfile.TemporaryFile(dir=DATA_DIR) as tmp:
+            rest=n
+            while rest>0:
+                chunk=self.rfile.read(min(rest,1<<20))
+                if not chunk: return self._err(400,"Upload abgebrochen")
+                tmp.write(chunk); rest-=len(chunk)
+            tmp.seek(0)
+            try: zf=zipfile.ZipFile(tmp)
+            except zipfile.BadZipFile: return self._err(400,"Keine gültige Backup-Datei (ZIP defekt)")
+            with zf:
+                try: data=json.loads(zf.read("backup.json").decode())
+                except KeyError: return self._err(400,"Keine gültige Backup-Datei (backup.json fehlt)")
+                if not isinstance(data,dict) or data.get("app")!="imkerei":
+                    return self._err(400,"Keine gültige Backup-Datei")
+                # Fotos zuerst: zusaetzliche Dateien schaden nicht, falls danach
+                # der Datenbank-Teil scheitert (der wird dann komplett zurueckgerollt).
+                os.makedirs(PHOTO_DIR,exist_ok=True)
+                for info in zf.infolist():
+                    if info.is_dir() or not BACKUP_FOTO_RE.match(info.filename): continue
+                    ziel=os.path.join(PHOTO_DIR,info.filename.split("/",1)[1])
+                    with zf.open(info) as src, open(ziel+".restore-tmp","wb") as dst:
+                        shutil.copyfileobj(src,dst,1<<20)
+                    os.replace(ziel+".restore-tmp",ziel)
+        con=db()
+        try: return self.api_restore(con,data)
+        finally: con.close()
+
+    def _backup_daten(self, con):
+        return {"app":"imkerei","version":9,
              "apiaries":rows(con,"SELECT * FROM apiaries"),
              "colonies":rows(con,"SELECT * FROM colonies"),
              "entries":[parse_entry(r) for r in con.execute("SELECT * FROM entries").fetchall()],
@@ -1334,12 +1439,6 @@ class Handler(BaseHTTPRequestHandler):
              "honey_sales":[parse_sale(r) for r in con.execute("SELECT * FROM honey_sales").fetchall()],
              "honey_costs":rows(con,"SELECT * FROM honey_costs"),
              "settings":rows(con,"SELECT * FROM settings")}
-        body=json.dumps(out).encode()
-        self.send_response(200)
-        self.send_header("Content-Type","application/json; charset=utf-8")
-        self.send_header("Content-Disposition",'attachment; filename="beetown-backup.json"')
-        self.send_header("Content-Length",str(len(body)))
-        self.end_headers(); self.wfile.write(body)
 
     def api_restore(self, con, body):
         if body.get("app")!="imkerei": return self._err(400,"Keine gültige Backup-Datei")
@@ -1394,10 +1493,11 @@ class Handler(BaseHTTPRequestHandler):
                  h.get("notizen",""),h.get("apiaryId",""),h.get("apiaryName",""),
                  int(h.get("anzahlVoelker",0) or 0),h.get("createdAt","")))
         for r in body.get("reminders",[]):
-            con.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore,repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            con.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore,repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay,autoRefs) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r["id"],r.get("text",""),r.get("apiaryId",""),r.get("apiaryName",""),r.get("createdAt",""),
                  r.get("dueDate",""),int(r.get("remindDaysBefore",0) or 0),r.get("repeatMode","none"),
-                 json.dumps(r.get("repeatWeekdays",[])),int(r.get("repeatIntervalWeeks",0) or 0),int(r.get("repeatMonthDay",0) or 0)))
+                 json.dumps(r.get("repeatWeekdays",[])),int(r.get("repeatIntervalWeeks",0) or 0),int(r.get("repeatMonthDay",0) or 0),
+                 json.dumps(r.get("autoRefs",[]))))
         for sc in body.get("sirup_calc",[]):
             con.execute("INSERT INTO sirup_calc(id,date,ratio,mode,inputValue,sugar,water,result,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
                 (sc["id"],sc.get("date",""),sc.get("ratio",""),sc.get("mode",""),
