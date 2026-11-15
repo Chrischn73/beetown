@@ -360,126 +360,168 @@ def db():
 def column_exists(con, table, col):
     return any(r[1]==col for r in con.execute(f"PRAGMA table_info({table})").fetchall())
 
+# ---------------------------------------------------------------------------
+# Spalten-Definition: EINE Stelle pro Spalte (seit v2.9.59). Daraus entstehen
+# CREATE TABLE, die Migration (fehlende Spalten per ALTER TABLE), Neuanlage
+# (POST), Speichern (PUT) und Wiederherstellen (Restore). Vorher stand jede
+# Spalte an bis zu fuenf Stellen - eine vergessene Stelle im Restore haette
+# Daten beim Zurueckspielen eines Backups still verschwinden lassen.
+#
+# Neue Spalte = eine Zeile hier. Sonderfaelle (Zeitstempel, Standardwerte aus
+# Einstellungen, Foto-Aufraeumen) stehen in den POST/PUT/Restore-Hooks unten.
+# ---------------------------------------------------------------------------
+class Sp:
+    """Eine Spalte.
+    art:     text | int | float | bool | json  (Umwandlung des Werts aus dem JSON-Body)
+    std:     Wert, wenn die Spalte im Body/Backup fehlt
+    streng:  bei POST/PUT kein "or 0" - leerer Wert gibt 400 (Restore bleibt nachsichtig)
+    alt:     Altspalte - nur noch in der Tabelle, nie aus Body/Backup gesetzt
+    nur_wenn_gesendet: PUT aendert die Spalte nur, wenn sie im Body steht"""
+    __slots__ = ("name", "typ", "sql_default", "art", "std", "streng", "alt", "nur_wenn_gesendet")
+
+    def __init__(self, name, typ="TEXT", sql_default=None, art="text", std="",
+                 streng=False, alt=False, nur_wenn_gesendet=False):
+        self.name, self.typ, self.sql_default, self.art, self.std = name, typ, sql_default, art, std
+        self.streng, self.alt, self.nur_wenn_gesendet = streng, alt, nur_wenn_gesendet
+
+
+def _int(name, default=0, **kw):
+    return Sp(name, "INTEGER", None if default is None else str(default), "int", 0, **kw)
+
+def _json(name, std, sql_default=None, **kw):
+    return Sp(name, "TEXT", sql_default, "json", std, **kw)
+
+
+SCHEMA = {
+    "apiaries": [Sp("id"), Sp("name"), Sp("location"), Sp("notes"), Sp("createdAt")],
+    "colonies": [
+        Sp("id"), Sp("apiaryId"), Sp("name"), Sp("queenYear"), Sp("queenNr"), Sp("queenGen"),
+        Sp("status", std="ok"), Sp("source"), Sp("notes"), Sp("scaleId"),
+        _int("sortOrder"), Sp("createdAt"), _int("archived"), Sp("archivedAt", std=None),
+        Sp("demareeStage"), Sp("demareedAt"), Sp("demareeEndedAt"),
+        _int("requeueFlag"), Sp("requeueReasons", std="[]"), Sp("requeueNote"), _int("breedFlag"),
+        Sp("honigRaeume", std="[]"), Sp("umlarvDate"), Sp("weiselprobeDate"), Sp("kaefigungDate"),
+        Sp("koeniginFreiDate"), Sp("currentWeight"), Sp("currentWeightDate"), Sp("zielGewicht"),
+        Sp("oxalBlockStage"), Sp("oxalBlockStartAt"), Sp("oxalBlockLastAt"),
+    ],
+    "entries": [
+        Sp("id"), Sp("colonyId"), Sp("date"), Sp("type"), Sp("notes"),
+        Sp("photoIds", alt=True),  # vor "photos"; init_db() und entry_photos() werten sie noch aus
+        _json("obs", []), _json("photos", []), _json("obs_extra", {}),
+        Sp("temper"), Sp("strength"), Sp("food"), Sp("demareeAction"), Sp("entryHrNr"),
+        Sp("oxalBlockAction"), Sp("varroaCount"), _int("varroaAnts"), Sp("createdAt"),
+    ],
+    "scales": [Sp("id"), Sp("name"), Sp("url"), Sp("notes"), Sp("createdAt")],
+    "trachten": [Sp("id"), Sp("name"), Sp("createdAt")],
+    "reminders": [
+        Sp("id"), Sp("text"), Sp("apiaryId"), Sp("apiaryName"), Sp("createdAt"), Sp("dueDate"),
+        _int("remindDaysBefore"), Sp("repeatMode", sql_default="'none'", std="none"),
+        _json("repeatWeekdays", [], "'[]'"), _int("repeatIntervalWeeks"), _int("repeatMonthDay"),
+        _json("autoRefs", [], "'[]'", nur_wenn_gesendet=True),
+    ],
+    "honey_harvests": [
+        Sp("id"), _int("year", None, streng=True), Sp("tracht"),
+        Sp("menge", "REAL", None, "float", 0, streng=True), Sp("notizen"),
+        Sp("apiaryId"), Sp("apiaryName"), _int("anzahlVoelker"), Sp("createdAt"),
+    ],
+    "sirup_calc": [Sp("id"), Sp("date"), Sp("ratio"), Sp("mode"), Sp("inputValue"), Sp("sugar"),
+                   Sp("water"), Sp("result"), Sp("createdAt")],
+    "honey_stir_batches": [
+        Sp("id"), Sp("honeyType"), Sp("amountKg"), Sp("seedDate"), Sp("seedTemp"), Sp("seedAmountG"),
+        Sp("seedHoneyType"), Sp("status", sql_default="'active'", std="active"), Sp("conclusion"),
+        Sp("createdAt"),
+    ],
+    "honey_stir_entries": [Sp("id"), Sp("batchId"), Sp("date"), Sp("temp"), Sp("appearance"),
+                           _json("photos", []), Sp("notes"), Sp("createdAt")],
+    "honey_products": [
+        Sp("id"), Sp("name"), Sp("price", "REAL", "0", "float", 0), _int("sizeGrams"),
+        Sp("active", "INTEGER", "1", "bool", True), _int("sortOrder"),
+        Sp("color", sql_default="''"), Sp("kind", sql_default="'sonstige'", std="sonstige"),
+        _int("giftSetVarieties"), _json("giftSetProductIds", [], "'[]'"), Sp("createdAt"),
+    ],
+    "honey_sales": [Sp("id"), Sp("date"), Sp("category"), Sp("buyerName"), _json("items", []),
+                    Sp("total", "REAL", "0", "float", 0), Sp("notes"), Sp("createdAt"), Sp("updatedAt")],
+    "honey_costs": [Sp("id"), Sp("date"), Sp("description"), Sp("supplier"),
+                    Sp("amount", "REAL", "0", "float", 0), Sp("notes"), Sp("createdAt"), Sp("updatedAt")],
+}
+
+# Spalten, die PUT nie anfasst (zusaetzlich zu id und Altspalten)
+PUT_OHNE = {
+    "colonies": {"archived", "archivedAt", "sortOrder", "createdAt"},  # eigene Endpunkte
+    "entries": {"colonyId", "createdAt"},                              # Formular schickt colonyId nicht
+    "honey_stir_entries": {"batchId", "createdAt"},
+}
+PUT_OHNE_STANDARD = {"createdAt"}
+# Tabellen, bei denen PUT nur mitgeschickte Felder aendert (sonst: fehlend = Standardwert)
+PUT_TEILWEISE = {"colonies"}
+# Tabellen ohne PUT-Endpunkt
+PUT_GESPERRT = {"sirup_calc"}
+# Bei diesen Tabellen setzt der Server createdAt bei der Neuanlage selbst
+POST_CREATED_JETZT = {"scales", "trachten", "honey_harvests", "honey_stir_batches",
+                      "honey_stir_entries", "honey_products", "honey_sales", "honey_costs"}
+
+
+def _umwandeln(sp, v, streng):
+    if sp.art == "text": return v
+    if sp.art == "json": return json.dumps(sp.std if v is None else v)  # null -> [] bzw. {}
+    if sp.art == "bool": return 1 if v else 0
+    if sp.art == "int":  return int(v) if streng else int(v or 0)
+    if sp.art == "float": return float(v) if streng else float(v or 0)
+    raise ValueError(sp.art)
+
+
+def _spalten(tabelle, ohne=()):
+    return [sp for sp in SCHEMA[tabelle] if sp.name != "id" and not sp.alt and sp.name not in ohne]
+
+
+def werte_aus_body(tabelle, body, modus):
+    """modus: "post" | "put" | "restore". Liefert {spalte: umgewandelter Wert}."""
+    if modus == "put":
+        ohne = PUT_OHNE.get(tabelle, PUT_OHNE_STANDARD)
+        teilweise = tabelle in PUT_TEILWEISE
+    else:
+        ohne, teilweise = (), False
+    werte = {}
+    for sp in _spalten(tabelle, ohne):
+        if (teilweise or (modus == "put" and sp.nur_wenn_gesendet)) and sp.name not in body:
+            continue
+        werte[sp.name] = _umwandeln(sp, body.get(sp.name, sp.std), sp.streng and modus != "restore")
+    return werte
+
+
+def zeile_einfuegen(con, tabelle, werte):
+    namen = list(werte)
+    con.execute(f"INSERT INTO {tabelle}({','.join(namen)}) VALUES({','.join('?' * len(namen))})",
+                [werte[n] for n in namen])
+
+
+def zeile_aendern(con, tabelle, rid, werte):
+    if not werte: return
+    namen = list(werte)
+    con.execute(f"UPDATE {tabelle} SET {','.join(n + '=?' for n in namen)} WHERE id=?",
+                [werte[n] for n in namen] + [rid])
+
+
+def _spalten_sql(sp):
+    if sp.name == "id": return "id TEXT PRIMARY KEY"
+    return f"{sp.name} {sp.typ}" + (f" DEFAULT {sp.sql_default}" if sp.sql_default is not None else "")
+
+
 def init_db():
     con = db()
+    for tabelle, spalten in SCHEMA.items():
+        con.execute(f"CREATE TABLE IF NOT EXISTS {tabelle}({', '.join(_spalten_sql(sp) for sp in spalten)})")
+        # Migration: jede in SCHEMA definierte, aber fehlende Spalte ergaenzen
+        for sp in spalten:
+            if sp.name != "id" and not column_exists(con, tabelle, sp.name):
+                con.execute(f"ALTER TABLE {tabelle} ADD COLUMN {_spalten_sql(sp)}")
     con.executescript("""
-        CREATE TABLE IF NOT EXISTS apiaries(
-            id TEXT PRIMARY KEY, name TEXT, location TEXT, notes TEXT, createdAt TEXT);
-        CREATE TABLE IF NOT EXISTS colonies(
-            id TEXT PRIMARY KEY, apiaryId TEXT, name TEXT, queenYear TEXT,
-            queenNr TEXT, queenGen TEXT, status TEXT, source TEXT, notes TEXT,
-            scaleId TEXT, sortOrder INTEGER DEFAULT 0, createdAt TEXT,
-            archived INTEGER DEFAULT 0, archivedAt TEXT,
-            demareeStage TEXT, demareedAt TEXT, demareeEndedAt TEXT,
-            requeueFlag INTEGER DEFAULT 0, requeueReasons TEXT, requeueNote TEXT,
-            breedFlag INTEGER DEFAULT 0, honigRaeume TEXT, umlarvDate TEXT, weiselprobeDate TEXT, kaefigungDate TEXT, koeniginFreiDate TEXT,
-            currentWeight TEXT, currentWeightDate TEXT, zielGewicht TEXT,
-            oxalBlockStage TEXT, oxalBlockStartAt TEXT, oxalBlockLastAt TEXT);
-        CREATE TABLE IF NOT EXISTS entries(
-            id TEXT PRIMARY KEY, colonyId TEXT, date TEXT, type TEXT,
-            notes TEXT, photoIds TEXT, obs TEXT, photos TEXT,
-            obs_extra TEXT, temper TEXT, strength TEXT, food TEXT, demareeAction TEXT, entryHrNr TEXT, oxalBlockAction TEXT,
-            varroaCount TEXT, varroaAnts INTEGER DEFAULT 0, createdAt TEXT);
-        CREATE TABLE IF NOT EXISTS scales(
-            id TEXT PRIMARY KEY, name TEXT, url TEXT, notes TEXT, createdAt TEXT);
-        CREATE TABLE IF NOT EXISTS trachten(
-            id TEXT PRIMARY KEY, name TEXT, createdAt TEXT);
         CREATE TABLE IF NOT EXISTS settings(
             key TEXT PRIMARY KEY, value TEXT);
-        CREATE TABLE IF NOT EXISTS reminders(
-            id TEXT PRIMARY KEY, text TEXT, apiaryId TEXT, apiaryName TEXT, createdAt TEXT,
-            dueDate TEXT, remindDaysBefore INTEGER DEFAULT 0, repeatMode TEXT DEFAULT 'none',
-            repeatWeekdays TEXT DEFAULT '[]', repeatIntervalWeeks INTEGER DEFAULT 0,
-            repeatMonthDay INTEGER DEFAULT 0, autoRefs TEXT DEFAULT '[]');
-        CREATE TABLE IF NOT EXISTS honey_harvests(
-            id TEXT PRIMARY KEY, year INTEGER, tracht TEXT, menge REAL, notizen TEXT, apiaryId TEXT, apiaryName TEXT, anzahlVoelker INTEGER DEFAULT 0, createdAt TEXT);
-        CREATE TABLE IF NOT EXISTS sirup_calc(
-            id TEXT PRIMARY KEY, date TEXT, ratio TEXT, mode TEXT,
-            inputValue TEXT, sugar TEXT, water TEXT, result TEXT, createdAt TEXT);
-        CREATE TABLE IF NOT EXISTS honey_stir_batches(
-            id TEXT PRIMARY KEY, honeyType TEXT, amountKg TEXT,
-            seedDate TEXT, seedTemp TEXT, seedAmountG TEXT, seedHoneyType TEXT,
-            status TEXT DEFAULT 'active', conclusion TEXT, createdAt TEXT);
-        CREATE TABLE IF NOT EXISTS honey_stir_entries(
-            id TEXT PRIMARY KEY, batchId TEXT, date TEXT, temp TEXT,
-            appearance TEXT, photos TEXT, notes TEXT, createdAt TEXT);
-        CREATE TABLE IF NOT EXISTS honey_products(
-            id TEXT PRIMARY KEY, name TEXT, price REAL DEFAULT 0, sizeGrams INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1, sortOrder INTEGER DEFAULT 0, color TEXT DEFAULT '',
-            kind TEXT DEFAULT 'sonstige', giftSetVarieties INTEGER DEFAULT 0,
-            giftSetProductIds TEXT DEFAULT '[]', createdAt TEXT);
-        CREATE TABLE IF NOT EXISTS honey_sales(
-            id TEXT PRIMARY KEY, date TEXT, category TEXT, buyerName TEXT, items TEXT,
-            total REAL DEFAULT 0, notes TEXT, createdAt TEXT, updatedAt TEXT);
-        CREATE TABLE IF NOT EXISTS honey_costs(
-            id TEXT PRIMARY KEY, date TEXT, description TEXT, supplier TEXT, amount REAL DEFAULT 0,
-            notes TEXT, createdAt TEXT, updatedAt TEXT);
         CREATE INDEX IF NOT EXISTS idx_col_apiary ON colonies(apiaryId);
         CREATE INDEX IF NOT EXISTS idx_ent_colony ON entries(colonyId);
         CREATE INDEX IF NOT EXISTS idx_stirentry_batch ON honey_stir_entries(batchId);
     """)
-    migrations = [
-        ("colonies","archived",      "ALTER TABLE colonies ADD COLUMN archived INTEGER DEFAULT 0"),
-        ("colonies","archivedAt",    "ALTER TABLE colonies ADD COLUMN archivedAt TEXT"),
-        ("colonies","queenYear",     "ALTER TABLE colonies ADD COLUMN queenYear TEXT"),
-        ("colonies","source",        "ALTER TABLE colonies ADD COLUMN source TEXT"),
-        ("colonies","notes",         "ALTER TABLE colonies ADD COLUMN notes TEXT"),
-        ("colonies","queenNr",       "ALTER TABLE colonies ADD COLUMN queenNr TEXT"),
-        ("colonies","queenGen",      "ALTER TABLE colonies ADD COLUMN queenGen TEXT"),
-        ("colonies","scaleId",       "ALTER TABLE colonies ADD COLUMN scaleId TEXT"),
-        ("colonies","sortOrder",     "ALTER TABLE colonies ADD COLUMN sortOrder INTEGER DEFAULT 0"),
-        ("colonies","demareeStage",  "ALTER TABLE colonies ADD COLUMN demareeStage TEXT"),
-        ("colonies","demareedAt",    "ALTER TABLE colonies ADD COLUMN demareedAt TEXT"),
-        ("colonies","demareeEndedAt","ALTER TABLE colonies ADD COLUMN demareeEndedAt TEXT"),
-        ("colonies","requeueFlag",   "ALTER TABLE colonies ADD COLUMN requeueFlag INTEGER DEFAULT 0"),
-        ("colonies","requeueReasons","ALTER TABLE colonies ADD COLUMN requeueReasons TEXT"),
-        ("colonies","requeueNote",   "ALTER TABLE colonies ADD COLUMN requeueNote TEXT"),
-        ("colonies","breedFlag",     "ALTER TABLE colonies ADD COLUMN breedFlag INTEGER DEFAULT 0"),
-        ("entries","obs",        "ALTER TABLE entries ADD COLUMN obs TEXT"),
-        ("entries","photos",     "ALTER TABLE entries ADD COLUMN photos TEXT"),
-        ("entries","obs_extra",  "ALTER TABLE entries ADD COLUMN obs_extra TEXT"),
-        ("entries","temper",     "ALTER TABLE entries ADD COLUMN temper TEXT"),
-        ("entries","strength",   "ALTER TABLE entries ADD COLUMN strength TEXT"),
-        ("entries","food",       "ALTER TABLE entries ADD COLUMN food TEXT"),
-        ("entries","demareeAction","ALTER TABLE entries ADD COLUMN demareeAction TEXT"),
-        ("entries","entryHrNr",    "ALTER TABLE entries ADD COLUMN entryHrNr TEXT"),
-        ("colonies","honigRaeume",   "ALTER TABLE colonies ADD COLUMN honigRaeume TEXT"),
-        ("colonies","umlarvDate",    "ALTER TABLE colonies ADD COLUMN umlarvDate TEXT"),
-        ("reminders","apiaryId",    "ALTER TABLE reminders ADD COLUMN apiaryId TEXT"),
-        ("reminders","apiaryName",  "ALTER TABLE reminders ADD COLUMN apiaryName TEXT"),
-        ("colonies","weiselprobeDate","ALTER TABLE colonies ADD COLUMN weiselprobeDate TEXT"),
-        ("colonies","kaefigungDate",    "ALTER TABLE colonies ADD COLUMN kaefigungDate TEXT"),
-        ("colonies","koeniginFreiDate", "ALTER TABLE colonies ADD COLUMN koeniginFreiDate TEXT"),
-        ("honey_harvests","apiaryId",   "ALTER TABLE honey_harvests ADD COLUMN apiaryId TEXT"),
-        ("honey_harvests","apiaryName", "ALTER TABLE honey_harvests ADD COLUMN apiaryName TEXT"),
-        ("honey_harvests","anzahlVoelker", "ALTER TABLE honey_harvests ADD COLUMN anzahlVoelker INTEGER DEFAULT 0"),
-        ("colonies","currentWeight",     "ALTER TABLE colonies ADD COLUMN currentWeight TEXT"),
-        ("colonies","currentWeightDate", "ALTER TABLE colonies ADD COLUMN currentWeightDate TEXT"),
-        ("colonies","zielGewicht",       "ALTER TABLE colonies ADD COLUMN zielGewicht TEXT"),
-        ("colonies","oxalBlockStage",    "ALTER TABLE colonies ADD COLUMN oxalBlockStage TEXT"),
-        ("colonies","oxalBlockStartAt",  "ALTER TABLE colonies ADD COLUMN oxalBlockStartAt TEXT"),
-        ("colonies","oxalBlockLastAt",   "ALTER TABLE colonies ADD COLUMN oxalBlockLastAt TEXT"),
-        ("entries","oxalBlockAction",    "ALTER TABLE entries ADD COLUMN oxalBlockAction TEXT"),
-        ("entries","varroaCount",        "ALTER TABLE entries ADD COLUMN varroaCount TEXT"),
-        ("entries","varroaAnts",         "ALTER TABLE entries ADD COLUMN varroaAnts INTEGER DEFAULT 0"),
-        ("reminders","dueDate",          "ALTER TABLE reminders ADD COLUMN dueDate TEXT"),
-        ("reminders","remindDaysBefore", "ALTER TABLE reminders ADD COLUMN remindDaysBefore INTEGER DEFAULT 0"),
-        ("reminders","repeatMode",          "ALTER TABLE reminders ADD COLUMN repeatMode TEXT DEFAULT 'none'"),
-        ("reminders","repeatWeekdays",      "ALTER TABLE reminders ADD COLUMN repeatWeekdays TEXT DEFAULT '[]'"),
-        ("reminders","repeatIntervalWeeks", "ALTER TABLE reminders ADD COLUMN repeatIntervalWeeks INTEGER DEFAULT 0"),
-        ("reminders","repeatMonthDay",      "ALTER TABLE reminders ADD COLUMN repeatMonthDay INTEGER DEFAULT 0"),
-        ("reminders","autoRefs",            "ALTER TABLE reminders ADD COLUMN autoRefs TEXT DEFAULT '[]'"),
-        ("honey_products","color",       "ALTER TABLE honey_products ADD COLUMN color TEXT DEFAULT ''"),
-        ("honey_products","kind",        "ALTER TABLE honey_products ADD COLUMN kind TEXT DEFAULT 'sonstige'"),
-        ("honey_products","giftSetVarieties",  "ALTER TABLE honey_products ADD COLUMN giftSetVarieties INTEGER DEFAULT 0"),
-        ("honey_products","giftSetProductIds", "ALTER TABLE honey_products ADD COLUMN giftSetProductIds TEXT DEFAULT '[]'"),
-        ("honey_sales","updatedAt",  "ALTER TABLE honey_sales ADD COLUMN updatedAt TEXT"),
-        ("honey_costs","updatedAt",  "ALTER TABLE honey_costs ADD COLUMN updatedAt TEXT"),
-        ("honey_stir_entries","notes",    "ALTER TABLE honey_stir_entries ADD COLUMN notes TEXT"),
-    ]
-    for table, col, sql in migrations:
-        if not column_exists(con, table, col):
-            con.execute(sql)
     # Bestehende Zeilen ohne updatedAt (vor Einfuehrung dieser Spalte) auf ihr createdAt setzen,
     # damit die "Geaendert"-Spalte nicht leer bleibt.
     con.execute("UPDATE honey_sales SET updatedAt=createdAt WHERE updatedAt IS NULL")
@@ -594,20 +636,6 @@ def delete_colony_cascade(con, cid):
     con.execute("DELETE FROM colonies WHERE id=?",(cid,))
     delete_photos(con, ids)
 
-
-def _int0(v): return int(v or 0)
-def _text(v): return v
-# Per PUT aenderbare Volks-Felder (archived/archivedAt/sortOrder/createdAt laufen
-# ueber eigene Endpunkte) mit Umwandlung des Werts.
-COLONY_PUT_FELDER = {
-    "apiaryId":_text, "name":_text, "queenYear":_text, "queenNr":_text, "queenGen":_text,
-    "status":_text, "source":_text, "notes":_text, "scaleId":_text,
-    "demareeStage":_text, "demareedAt":_text, "demareeEndedAt":_text,
-    "requeueFlag":_int0, "requeueReasons":_text, "requeueNote":_text, "breedFlag":_int0,
-    "honigRaeume":_text, "umlarvDate":_text, "weiselprobeDate":_text, "kaefigungDate":_text,
-    "koeniginFreiDate":_text, "currentWeight":_text, "currentWeightDate":_text, "zielGewicht":_text,
-    "oxalBlockStage":_text, "oxalBlockStartAt":_text, "oxalBlockLastAt":_text,
-}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -974,90 +1002,9 @@ class Handler(BaseHTTPRequestHandler):
                 con2.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",(k,str(v)))
             con2.commit(); con2.close()
             return self._json({"ok":True})
-        if path=="/api/reminders":
-            body2=self._rjson()
-            rid=new_id()
-            con2=db()
-            con2.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore,repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay,autoRefs) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (rid,body2.get("text",""),body2.get("apiaryId",""),body2.get("apiaryName",""),body2.get("createdAt",""),body2.get("dueDate",""),
-                 int(body2.get("remindDaysBefore",0) or 0),body2.get("repeatMode","none"),json.dumps(body2.get("repeatWeekdays",[])),
-                 int(body2.get("repeatIntervalWeeks",0) or 0),int(body2.get("repeatMonthDay",0) or 0),
-                 json.dumps(body2.get("autoRefs",[]))))
-            con2.commit(); con2.close()
-            return self._json({"id":rid})
-        if path=="/api/honey_harvests":
-            body2=self._rjson()
-            rid=new_id()
-            con2=db()
-            con2.execute("INSERT INTO honey_harvests(id,year,tracht,menge,notizen,apiaryId,apiaryName,anzahlVoelker,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
-                (rid,int(body2.get("year",0)),body2.get("tracht",""),float(body2.get("menge",0)),
-                 body2.get("notizen",""),body2.get("apiaryId",""),body2.get("apiaryName",""),int(body2.get("anzahlVoelker",0) or 0),now_iso()))
-            con2.commit(); con2.close()
-            return self._json({"id":rid})
-        if path=="/api/honey_stir_batches":
-            body2=self._rjson()
-            rid=new_id()
-            con2=db()
-            con2.execute("""INSERT INTO honey_stir_batches
-                (id,honeyType,amountKg,seedDate,seedTemp,seedAmountG,seedHoneyType,status,conclusion,createdAt)
-                VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (rid,body2.get("honeyType",""),body2.get("amountKg",""),body2.get("seedDate",""),
-                 body2.get("seedTemp",""),body2.get("seedAmountG",""),body2.get("seedHoneyType",""),
-                 "active","",now_iso()))
-            con2.commit(); con2.close()
-            return self._json({"id":rid})
-        if path=="/api/honey_stir_entries":
-            body2=self._rjson()
-            rid=new_id()
-            con2=db()
-            con2.execute("""INSERT INTO honey_stir_entries
-                (id,batchId,date,temp,appearance,photos,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)""",
-                (rid,body2.get("batchId",""),body2.get("date",""),body2.get("temp",""),
-                 body2.get("appearance",""),json.dumps(body2.get("photos",[])),body2.get("notes",""),now_iso()))
-            con2.commit(); con2.close()
-            return self._json({"id":rid})
-        if path=="/api/honey_products":
-            body2=self._rjson()
-            rid=new_id()
-            con2=db()
-            maxSort=con2.execute("SELECT COALESCE(MAX(sortOrder),-1)+1 FROM honey_products").fetchone()[0]
-            con2.execute("INSERT INTO honey_products(id,name,price,sizeGrams,active,sortOrder,color,kind,giftSetVarieties,giftSetProductIds,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (rid,body2.get("name",""),float(body2.get("price",0) or 0),int(body2.get("sizeGrams",0) or 0),
-                 1 if body2.get("active",True) else 0,int(maxSort),body2.get("color",""),body2.get("kind","sonstige"),
-                 int(body2.get("giftSetVarieties",0) or 0),json.dumps(body2.get("giftSetProductIds",[])),now_iso()))
-            con2.commit(); con2.close()
-            return self._json({"id":rid})
-        if path=="/api/honey_sales":
-            body2=self._rjson()
-            rid=new_id()
-            con2=db()
-            ts=now_iso()
-            con2.execute("INSERT INTO honey_sales(id,date,category,buyerName,items,total,notes,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?)",
-                (rid,body2.get("date",""),body2.get("category",""),body2.get("buyerName",""),
-                 json.dumps(body2.get("items",[])),float(body2.get("total",0) or 0),body2.get("notes",""),ts,ts))
-            con2.commit(); con2.close()
-            return self._json({"id":rid})
-        if path=="/api/honey_costs":
-            body2=self._rjson()
-            rid=new_id()
-            con2=db()
-            ts=now_iso()
-            con2.execute("INSERT INTO honey_costs(id,date,description,supplier,amount,notes,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?)",
-                (rid,body2.get("date",""),body2.get("description",""),body2.get("supplier",""),
-                 float(body2.get("amount",0) or 0),body2.get("notes",""),ts,ts))
-            con2.commit(); con2.close()
-            return self._json({"id":rid})
-        if path=="/api/sirup_calc":
-            body2=self._rjson()
-            rid=new_id()
-            con2=db()
-            con2.execute("INSERT INTO sirup_calc(id,date,ratio,mode,inputValue,sugar,water,result,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
-                (rid,body2.get("date",""),body2.get("ratio",""),body2.get("mode",""),
-                 body2.get("inputValue",""),body2.get("sugar",""),body2.get("water",""),body2.get("result",""),
-                 body2.get("createdAt","") or now_iso()))
-            con2.execute("DELETE FROM sirup_calc WHERE id NOT IN (SELECT id FROM sirup_calc ORDER BY createdAt DESC LIMIT 20)")
-            con2.commit(); con2.close()
-            return self._json({"id":rid})
+        m=re.match(r"^/api/([a-z_]+)$",path)
+        if m and m.group(1) in SCHEMA:
+            return self._post_zeile(m.group(1), self._rjson())
         if path=="/api/logo":
             data=self._rraw()
             if not data: return self._err(400,"Leerer Upload")
@@ -1103,63 +1050,6 @@ class Handler(BaseHTTPRequestHandler):
                 con.commit(); return self._json({"ok":True})
 
             body=self._rjson()
-
-            if path=="/api/apiaries":
-                rid=new_id()
-                con.execute("INSERT INTO apiaries(id,name,location,notes,createdAt) VALUES(?,?,?,?,?)",
-                    (rid,body.get("name",""),body.get("location",""),body.get("notes",""),body.get("createdAt","")))
-                con.commit(); return self._json({"id":rid})
-
-            if path=="/api/colonies":
-                rid=new_id()
-                # Zielgewicht: falls nicht mitgeschickt, aus allgemeiner Einstellung übernehmen
-                zg = body.get("zielGewicht","")
-                if not zg:
-                    row = con.execute("SELECT value FROM settings WHERE key='zielGewicht'").fetchone()
-                    zg = row["value"] if row else "40"
-                con.execute("""INSERT INTO colonies
-                    (id,apiaryId,name,queenYear,queenNr,queenGen,status,source,notes,scaleId,
-                     sortOrder,createdAt,archived,demareeStage,demareedAt,demareeEndedAt,
-                     requeueFlag,requeueReasons,requeueNote,breedFlag,honigRaeume,umlarvDate,weiselprobeDate,kaefigungDate,koeniginFreiDate,
-                     currentWeight,currentWeightDate,zielGewicht,oxalBlockStage,oxalBlockStartAt,oxalBlockLastAt)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (rid,body.get("apiaryId",""),body.get("name",""),body.get("queenYear",""),
-                     body.get("queenNr",""),body.get("queenGen",""),body.get("status","ok"),
-                     body.get("source",""),body.get("notes",""),body.get("scaleId",""),
-                     body.get("sortOrder",0),body.get("createdAt",""),
-                     body.get("demareeStage",""),body.get("demareedAt",""),body.get("demareeEndedAt",""),
-                     int(body.get("requeueFlag",0) or 0),body.get("requeueReasons","[]"),
-                     body.get("requeueNote",""),int(body.get("breedFlag",0) or 0),
-                     body.get("honigRaeume","[]"),body.get("umlarvDate",""),
-                     body.get("weiselprobeDate",""),body.get("kaefigungDate",""),body.get("koeniginFreiDate",""),
-                     body.get("currentWeight",""),body.get("currentWeightDate",""),zg,
-                     body.get("oxalBlockStage",""),body.get("oxalBlockStartAt",""),body.get("oxalBlockLastAt","")))
-                con.commit(); return self._json({"id":rid})
-
-            if path=="/api/entries":
-                rid=new_id()
-                con.execute("""INSERT INTO entries
-                    (id,colonyId,date,type,notes,photos,obs,obs_extra,temper,strength,food,demareeAction,entryHrNr,oxalBlockAction,varroaCount,varroaAnts,createdAt)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (rid,body.get("colonyId",""),body.get("date",""),body.get("type",""),
-                     body.get("notes",""),json.dumps(body.get("photos",[])),
-                     json.dumps(body.get("obs",[])),json.dumps(body.get("obs_extra",{})),
-                     body.get("temper",""),body.get("strength",""),body.get("food",""),
-                     body.get("demareeAction",""),body.get("entryHrNr",""),body.get("oxalBlockAction",""),
-                     body.get("varroaCount",""),int(body.get("varroaAnts",0) or 0),body.get("createdAt","")))
-                con.commit(); return self._json({"id":rid})
-
-            if path=="/api/scales":
-                rid=new_id()
-                con.execute("INSERT INTO scales(id,name,url,notes,createdAt) VALUES(?,?,?,?,?)",
-                    (rid,body.get("name",""),body.get("url",""),body.get("notes",""),now_iso()))
-                con.commit(); return self._json({"id":rid})
-
-            if path=="/api/trachten":
-                rid=new_id()
-                con.execute("INSERT INTO trachten(id,name,createdAt) VALUES(?,?,?)",
-                    (rid,body.get("name","").strip(),now_iso()))
-                con.commit(); return self._json({"id":rid})
 
             if path=="/api/colonies/bulk-update":
                 ids=body.get("ids",[]); fields=body.get("fields",{})
@@ -1221,89 +1111,66 @@ class Handler(BaseHTTPRequestHandler):
             self._err(404,"Not found")
         finally: con.close()
 
+    def _post_zeile(self, tabelle, body):
+        """Neuanlage fuer jede Tabelle aus SCHEMA, Sonderfaelle je Tabelle hier."""
+        con=db()
+        try:
+            werte=werte_aus_body(tabelle, body, "post")
+            rid=new_id(); werte["id"]=rid
+            jetzt=now_iso()
+            if tabelle in POST_CREATED_JETZT: werte["createdAt"]=jetzt
+            if tabelle=="colonies":
+                werte["archived"]=0; werte["archivedAt"]=None
+                # Zielgewicht: falls nicht mitgeschickt, aus allgemeiner Einstellung
+                if not body.get("zielGewicht",""):
+                    row=con.execute("SELECT value FROM settings WHERE key='zielGewicht'").fetchone()
+                    werte["zielGewicht"]=row["value"] if row else "40"
+            elif tabelle=="trachten":
+                werte["name"]=body.get("name","").strip()
+            elif tabelle=="honey_stir_batches":
+                werte["status"]="active"; werte["conclusion"]=""
+            elif tabelle=="honey_products":
+                werte["sortOrder"]=int(con.execute(
+                    "SELECT COALESCE(MAX(sortOrder),-1)+1 FROM honey_products").fetchone()[0])
+            elif tabelle in ("honey_sales","honey_costs"):
+                werte["updatedAt"]=jetzt
+            elif tabelle=="sirup_calc":
+                werte["createdAt"]=body.get("createdAt","") or jetzt
+            zeile_einfuegen(con, tabelle, werte)
+            if tabelle=="sirup_calc":
+                con.execute("DELETE FROM sirup_calc WHERE id NOT IN (SELECT id FROM sirup_calc ORDER BY createdAt DESC LIMIT 20)")
+            con.commit(); return self._json({"id":rid})
+        finally: con.close()
+
     def api_put(self, path):
         con=db()
         try:
             body=self._rjson()
-            m=re.match(r"^/api/(apiaries|colonies|entries|scales|trachten|reminders|honey_harvests|honey_stir_batches|honey_stir_entries|honey_products|honey_sales|honey_costs)/([^/]+)$",path)
-            if not m: return self._err(404,"Not found")
-            kind,rid=m.group(1),m.group(2)
+            m=re.match(r"^/api/([a-z_]+)/([^/]+)$",path)
+            if not m or m.group(1) not in SCHEMA or m.group(1) in PUT_GESPERRT:
+                return self._err(404,"Not found")
+            tabelle,rid=m.group(1),m.group(2)
             if not ID_RE.match(rid): return self._err(400,"Bad id")
-            if kind=="apiaries":
-                con.execute("UPDATE apiaries SET name=?,location=?,notes=? WHERE id=?",
-                    (body.get("name",""),body.get("location",""),body.get("notes",""),rid))
-            elif kind=="colonies":
-                # Nur die mitgeschickten Felder aendern. Die App schickt seit v2.9.58
-                # nur geaenderte Felder (putColony in app.js) - so ueberschreibt ein
-                # laenger offener Tab / zweites Geraet keine Felder, die es gar nicht
-                # geaendert hat. Dasselbe Feld auf zwei Geraeten: der Letzte gewinnt.
-                sets=[]; werte=[]
-                for feld,umwandeln in COLONY_PUT_FELDER.items():
-                    if feld in body:
-                        sets.append(feld+"=?"); werte.append(umwandeln(body[feld]))
-                if sets:
-                    con.execute("UPDATE colonies SET "+",".join(sets)+" WHERE id=?",(*werte,rid))
-            elif kind=="entries":
+            # colonies: nur mitgeschickte Felder (PUT_TEILWEISE). Die App schickt seit
+            # v2.9.58 nur geaenderte Felder (putColony in app.js) - so ueberschreibt ein
+            # laenger offener Tab / zweites Geraet keine Felder, die es gar nicht
+            # geaendert hat. Dasselbe Feld auf zwei Geraeten: der Letzte gewinnt.
+            werte=werte_aus_body(tabelle, body, "put")
+            alte_fotos=[]
+            if tabelle=="entries":
                 old=con.execute("SELECT photos,photoIds FROM entries WHERE id=?",(rid,)).fetchone()
-                old_ids=photo_ids(entry_photos(old)) if old else []
-                new_photos=body.get("photos",[])
-                con.execute("""UPDATE entries SET
-                    date=?,type=?,notes=?,photos=?,obs=?,obs_extra=?,temper=?,strength=?,food=?,demareeAction=?,entryHrNr=?,oxalBlockAction=?,varroaCount=?,varroaAnts=?
-                    WHERE id=?""",
-                    (body.get("date",""),body.get("type",""),body.get("notes",""),
-                     json.dumps(new_photos),json.dumps(body.get("obs",[])),
-                     json.dumps(body.get("obs_extra",{})),
-                     body.get("temper",""),body.get("strength",""),body.get("food",""),
-                     body.get("demareeAction",""),body.get("entryHrNr",""),body.get("oxalBlockAction",""),
-                     body.get("varroaCount",""),int(body.get("varroaAnts",0) or 0),rid))
-                delete_photos(con,[p for p in old_ids if p not in photo_ids(new_photos)])
-            elif kind=="reminders":
-                con.execute("UPDATE reminders SET text=?,apiaryId=?,apiaryName=?,dueDate=?,remindDaysBefore=?,repeatMode=?,repeatWeekdays=?,repeatIntervalWeeks=?,repeatMonthDay=? WHERE id=?",
-                    (body.get("text",""),body.get("apiaryId",""),body.get("apiaryName",""),
-                     body.get("dueDate",""),int(body.get("remindDaysBefore",0) or 0),
-                     body.get("repeatMode","none"),json.dumps(body.get("repeatWeekdays",[])),
-                     int(body.get("repeatIntervalWeeks",0) or 0),int(body.get("repeatMonthDay",0) or 0),rid))
-                # autoRefs (Volk-IDs der automatischen Blockbehandlungs-Erinnerung) nur
-                # aendern, wenn mitgeschickt - das Erinnerungs-Formular kennt das Feld nicht.
-                if "autoRefs" in body:
-                    con.execute("UPDATE reminders SET autoRefs=? WHERE id=?",(json.dumps(body.get("autoRefs") or []),rid))
-            elif kind=="scales":
-                con.execute("UPDATE scales SET name=?,url=?,notes=? WHERE id=?",
-                    (body.get("name",""),body.get("url",""),body.get("notes",""),rid))
-            elif kind=="trachten":
-                con.execute("UPDATE trachten SET name=? WHERE id=?",(body.get("name","").strip(),rid))
-            elif kind=="honey_harvests":
-                con.execute("UPDATE honey_harvests SET year=?,tracht=?,menge=?,notizen=?,apiaryId=?,apiaryName=?,anzahlVoelker=? WHERE id=?",
-                    (int(body.get("year",0)),body.get("tracht",""),float(body.get("menge",0)),
-                     body.get("notizen",""),body.get("apiaryId",""),body.get("apiaryName",""),int(body.get("anzahlVoelker",0) or 0),rid))
-            elif kind=="honey_stir_batches":
-                con.execute("""UPDATE honey_stir_batches SET
-                    honeyType=?,amountKg=?,seedDate=?,seedTemp=?,seedAmountG=?,seedHoneyType=?,status=?,conclusion=?
-                    WHERE id=?""",
-                    (body.get("honeyType",""),body.get("amountKg",""),body.get("seedDate",""),
-                     body.get("seedTemp",""),body.get("seedAmountG",""),body.get("seedHoneyType",""),
-                     body.get("status","active"),body.get("conclusion",""),rid))
-            elif kind=="honey_stir_entries":
+                alte_fotos=photo_ids(entry_photos(old)) if old else []
+            elif tabelle=="honey_stir_entries":
                 old=con.execute("SELECT photos FROM honey_stir_entries WHERE id=?",(rid,)).fetchone()
-                old_ids=photo_ids(json.loads(old["photos"] or "[]")) if old else []
-                new_photos=body.get("photos",[])
-                con.execute("UPDATE honey_stir_entries SET date=?,temp=?,appearance=?,photos=?,notes=? WHERE id=?",
-                    (body.get("date",""),body.get("temp",""),body.get("appearance",""),
-                     json.dumps(new_photos),body.get("notes",""),rid))
-                delete_photos(con,[p for p in old_ids if p not in photo_ids(new_photos)])
-            elif kind=="honey_products":
-                con.execute("UPDATE honey_products SET name=?,price=?,sizeGrams=?,active=?,sortOrder=?,color=?,kind=?,giftSetVarieties=?,giftSetProductIds=? WHERE id=?",
-                    (body.get("name",""),float(body.get("price",0) or 0),int(body.get("sizeGrams",0) or 0),
-                     1 if body.get("active",True) else 0,int(body.get("sortOrder",0) or 0),body.get("color",""),body.get("kind","sonstige"),
-                     int(body.get("giftSetVarieties",0) or 0),json.dumps(body.get("giftSetProductIds",[])),rid))
-            elif kind=="honey_sales":
-                con.execute("UPDATE honey_sales SET date=?,category=?,buyerName=?,items=?,total=?,notes=?,updatedAt=? WHERE id=?",
-                    (body.get("date",""),body.get("category",""),body.get("buyerName",""),
-                     json.dumps(body.get("items",[])),float(body.get("total",0) or 0),body.get("notes",""),now_iso(),rid))
-            elif kind=="honey_costs":
-                con.execute("UPDATE honey_costs SET date=?,description=?,supplier=?,amount=?,notes=?,updatedAt=? WHERE id=?",
-                    (body.get("date",""),body.get("description",""),body.get("supplier",""),
-                     float(body.get("amount",0) or 0),body.get("notes",""),now_iso(),rid))
+                alte_fotos=photo_ids(json.loads(old["photos"] or "[]")) if old else []
+            elif tabelle=="trachten":
+                werte["name"]=body.get("name","").strip()
+            elif tabelle in ("honey_sales","honey_costs"):
+                werte["updatedAt"]=now_iso()
+            zeile_aendern(con, tabelle, rid, werte)
+            if alte_fotos:
+                neue=photo_ids(body.get("photos",[]))
+                delete_photos(con,[p for p in alte_fotos if p not in neue])
             con.commit(); self._json({"ok":True})
         finally: con.close()
 
@@ -1442,97 +1309,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_restore(self, con, body):
         if body.get("app")!="imkerei": return self._err(400,"Keine gültige Backup-Datei")
-        for t in ("apiaries","colonies","entries","scales","trachten","honey_harvests","reminders","sirup_calc",
-                  "honey_stir_batches","honey_stir_entries","honey_products","honey_sales","honey_costs",
-                  "settings"): con.execute(f"DELETE FROM {t}")
-        for a in body.get("apiaries",[]):
-            con.execute("INSERT INTO apiaries(id,name,location,notes,createdAt) VALUES(?,?,?,?,?)",
-                (a["id"],a.get("name",""),a.get("location",""),a.get("notes",""),a.get("createdAt","")))
-        for c in body.get("colonies",[]):
-            con.execute("""INSERT INTO colonies
-                (id,apiaryId,name,queenYear,queenNr,queenGen,status,source,notes,scaleId,
-                 sortOrder,createdAt,archived,archivedAt,demareeStage,demareedAt,demareeEndedAt,
-                 requeueFlag,requeueReasons,requeueNote,breedFlag,honigRaeume,umlarvDate,
-                 weiselprobeDate,kaefigungDate,koeniginFreiDate,currentWeight,currentWeightDate,zielGewicht,
-                 oxalBlockStage,oxalBlockStartAt,oxalBlockLastAt)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (c["id"],c.get("apiaryId",""),c.get("name",""),c.get("queenYear",""),
-                 c.get("queenNr",""),c.get("queenGen",""),c.get("status","ok"),
-                 c.get("source",""),c.get("notes",""),c.get("scaleId",""),
-                 c.get("sortOrder",0),c.get("createdAt",""),
-                 int(c.get("archived",0) or 0),c.get("archivedAt"),
-                 c.get("demareeStage",""),c.get("demareedAt",""),c.get("demareeEndedAt",""),
-                 int(c.get("requeueFlag",0) or 0),c.get("requeueReasons","[]"),
-                 c.get("requeueNote",""),int(c.get("breedFlag",0) or 0),
-                 c.get("honigRaeume","[]"),c.get("umlarvDate",""),
-                 c.get("weiselprobeDate",""),c.get("kaefigungDate",""),c.get("koeniginFreiDate",""),
-                 c.get("currentWeight",""),c.get("currentWeightDate",""),c.get("zielGewicht",""),
-                 c.get("oxalBlockStage",""),c.get("oxalBlockStartAt",""),c.get("oxalBlockLastAt","")))
-        for e in body.get("entries",[]):
-            photos=e.get("photos") or [{"id":p,"caption":""} for p in e.get("photoIds",[])]
-            con.execute("""INSERT INTO entries
-                (id,colonyId,date,type,notes,photos,obs,obs_extra,temper,strength,food,demareeAction,entryHrNr,oxalBlockAction,varroaCount,varroaAnts,createdAt)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (e["id"],e.get("colonyId",""),e.get("date",""),e.get("type",""),
-                 e.get("notes",""),json.dumps(photos),json.dumps(e.get("obs",[])),
-                 json.dumps(e.get("obs_extra",{})),
-                 e.get("temper",""),e.get("strength",""),e.get("food",""),
-                 e.get("demareeAction",""),e.get("entryHrNr",""),e.get("oxalBlockAction",""),
-                 e.get("varroaCount",""),int(e.get("varroaAnts",0) or 0),e.get("createdAt","")))
-        for s in body.get("scales",[]):
-            con.execute("INSERT INTO scales(id,name,url,notes,createdAt) VALUES(?,?,?,?,?)",
-                (s["id"],s.get("name",""),s.get("url",""),s.get("notes",""),s.get("createdAt","")))
-        for t in body.get("trachten",[]):
-            con.execute("INSERT INTO trachten(id,name,createdAt) VALUES(?,?,?)",
-                (t["id"],t.get("name",""),t.get("createdAt","")))
-        for h in body.get("honey_harvests",[]):
-            con.execute("""INSERT INTO honey_harvests
-                (id,year,tracht,menge,notizen,apiaryId,apiaryName,anzahlVoelker,createdAt)
-                VALUES(?,?,?,?,?,?,?,?,?)""",
-                (h["id"],int(h.get("year",0) or 0),h.get("tracht",""),float(h.get("menge",0) or 0),
-                 h.get("notizen",""),h.get("apiaryId",""),h.get("apiaryName",""),
-                 int(h.get("anzahlVoelker",0) or 0),h.get("createdAt","")))
-        for r in body.get("reminders",[]):
-            con.execute("INSERT INTO reminders(id,text,apiaryId,apiaryName,createdAt,dueDate,remindDaysBefore,repeatMode,repeatWeekdays,repeatIntervalWeeks,repeatMonthDay,autoRefs) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (r["id"],r.get("text",""),r.get("apiaryId",""),r.get("apiaryName",""),r.get("createdAt",""),
-                 r.get("dueDate",""),int(r.get("remindDaysBefore",0) or 0),r.get("repeatMode","none"),
-                 json.dumps(r.get("repeatWeekdays",[])),int(r.get("repeatIntervalWeeks",0) or 0),int(r.get("repeatMonthDay",0) or 0),
-                 json.dumps(r.get("autoRefs",[]))))
-        for sc in body.get("sirup_calc",[]):
-            con.execute("INSERT INTO sirup_calc(id,date,ratio,mode,inputValue,sugar,water,result,createdAt) VALUES(?,?,?,?,?,?,?,?,?)",
-                (sc["id"],sc.get("date",""),sc.get("ratio",""),sc.get("mode",""),
-                 sc.get("inputValue",""),sc.get("sugar",""),sc.get("water",""),sc.get("result",""),sc.get("createdAt","")))
-        for b in body.get("honey_stir_batches",[]):
-            con.execute("""INSERT INTO honey_stir_batches
-                (id,honeyType,amountKg,seedDate,seedTemp,seedAmountG,seedHoneyType,status,conclusion,createdAt)
-                VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (b["id"],b.get("honeyType",""),b.get("amountKg",""),b.get("seedDate",""),
-                 b.get("seedTemp",""),b.get("seedAmountG",""),b.get("seedHoneyType",""),
-                 b.get("status","active"),b.get("conclusion",""),b.get("createdAt","")))
-        for e in body.get("honey_stir_entries",[]):
-            con.execute("""INSERT INTO honey_stir_entries
-                (id,batchId,date,temp,appearance,photos,notes,createdAt) VALUES(?,?,?,?,?,?,?,?)""",
-                (e["id"],e.get("batchId",""),e.get("date",""),e.get("temp",""),
-                 e.get("appearance",""),json.dumps(e.get("photos",[])),e.get("notes",""),e.get("createdAt","")))
-        for p in body.get("honey_products",[]):
-            con.execute("""INSERT INTO honey_products
-                (id,name,price,sizeGrams,active,sortOrder,color,kind,giftSetVarieties,giftSetProductIds,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                (p["id"],p.get("name",""),float(p.get("price",0) or 0),int(p.get("sizeGrams",0) or 0),
-                 1 if p.get("active",True) else 0,int(p.get("sortOrder",0) or 0),p.get("color",""),
-                 p.get("kind","sonstige"),int(p.get("giftSetVarieties",0) or 0),
-                 json.dumps(p.get("giftSetProductIds",[])),p.get("createdAt","")))
-        for sa in body.get("honey_sales",[]):
-            con.execute("""INSERT INTO honey_sales
-                (id,date,category,buyerName,items,total,notes,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?)""",
-                (sa["id"],sa.get("date",""),sa.get("category",""),sa.get("buyerName",""),
-                 json.dumps(sa.get("items",[])),float(sa.get("total",0) or 0),sa.get("notes",""),
-                 sa.get("createdAt",""),sa.get("updatedAt") or sa.get("createdAt","")))
-        for co in body.get("honey_costs",[]):
-            con.execute("""INSERT INTO honey_costs
-                (id,date,description,supplier,amount,notes,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?)""",
-                (co["id"],co.get("date",""),co.get("description",""),co.get("supplier",""),
-                 float(co.get("amount",0) or 0),co.get("notes",""),
-                 co.get("createdAt",""),co.get("updatedAt") or co.get("createdAt","")))
+        for t in list(SCHEMA)+["settings"]: con.execute(f"DELETE FROM {t}")
+        for tabelle in SCHEMA:
+            for zeile in body.get(tabelle,[]):
+                werte=werte_aus_body(tabelle, zeile, "restore")
+                werte["id"]=zeile["id"]
+                if tabelle=="entries" and not zeile.get("photos"):
+                    # sehr alte Backups: nur photoIds statt photos
+                    werte["photos"]=json.dumps([{"id":p,"caption":""} for p in zeile.get("photoIds",[])])
+                elif tabelle in ("honey_sales","honey_costs"):
+                    werte["updatedAt"]=zeile.get("updatedAt") or zeile.get("createdAt","")
+                zeile_einfuegen(con, tabelle, werte)
         for s in body.get("settings",[]):
             con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
                 (s.get("key",""),s.get("value","")))

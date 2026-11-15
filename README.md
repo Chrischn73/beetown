@@ -78,3 +78,13 @@ Der Ordner `data/` bleibt unangetastet.
 
 - **„BK"-Sonderbehandlung**: Völker/Standorte, deren Name mit einem einstellbaren Präfix beginnt (Standard „BK"), werden in Übersichten (Alle Völker, Gewicht, Varroa-Zählung, Varroa-Historie, Ziel-Gewicht setzen) gesondert behandelt bzw. ausgeblendet. Präfix unter **Einstellungen** änderbar, leer lassen deaktiviert die Sonderbehandlung
 
+
+## Entwicklung
+
+Automatische Tests (Python 3 + pytest, startet den Server mit leerem Datenordner):
+
+```bash
+python3 -m pytest tests/ -q
+```
+
+Neue Datenbank-Spalte: nur eine Zeile in `SCHEMA` in `server.py` ergänzen – Tabelle, Migration, Neuanlage, Speichern und Backup/Restore leiten sich daraus ab.
