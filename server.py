@@ -292,6 +292,7 @@ os.makedirs(PHOTO_DIR, exist_ok=True)
 ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 BACKUP_FOTO_RE = re.compile(r"^photos/[A-Za-z0-9_-]{1,40}\.jpg$")
 RESTORE_MAX_BYTES = 4 * 1024**3
+UPLOAD_MAX_BYTES = 25 * 1024**2   # einzelnes Foto bzw. Logo
 # Einmalige Startbelegung fuer honey_products (Name, Preis in Euro, Gewicht in Gramm, Button-Farbe) -
 # entspricht den in der bisher genutzten Excel-Liste tatsaechlich verwendeten Sorten/Groessen.
 DEFAULT_HONEY_PRODUCTS = [
@@ -350,8 +351,29 @@ def has_recent_backup(con):
     if dt is None: return False
     if dt.tzinfo is None: dt=dt.replace(tzinfo=timezone.utc)
     return (datetime.now(timezone.utc)-dt)<=timedelta(days=BACKUP_GRACE_DAYS)
+class _Verbindung(sqlite3.Connection):
+    """Datenbankverbindung, die zu loeschende Foto-Dateien erst NACH einem
+    erfolgreichen commit() entfernt (seit v2.9.60). Vorher wurden die Dateien
+    vor dem commit geloescht - scheiterte das Speichern danach, war das Foto
+    weg, der Eintrag zeigte aber noch darauf."""
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.dateien_nach_commit = []
+
+    def commit(self):
+        super().commit()
+        weg, self.dateien_nach_commit = self.dateien_nach_commit, []
+        for pfad in weg:
+            try: os.remove(pfad)
+            except FileNotFoundError: pass
+
+    def rollback(self):
+        self.dateien_nach_commit = []
+        super().rollback()
+
+
 def db():
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, factory=_Verbindung)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA journal_mode = WAL")
@@ -617,16 +639,16 @@ def referenced_photo_ids(con):
     return refs
 
 def delete_photos(con, ids):
-    # Erst NACH der DB-Aenderung aufrufen: loescht nur Dateien, auf die kein
-    # Eintrag mehr zeigt. Ein per "Foto verschieben" an einen anderen Eintrag
-    # gehaengtes Foto bleibt so erhalten, auch wenn der alte Eintrag es abgibt.
+    # Erst NACH der DB-Aenderung aufrufen: merkt nur Dateien zum Loeschen vor,
+    # auf die kein Eintrag mehr zeigt. Ein per "Foto verschieben" an einen
+    # anderen Eintrag gehaengtes Foto bleibt so erhalten, auch wenn der alte
+    # Eintrag es abgibt. Geloescht wird erst beim commit() (siehe _Verbindung).
     ids=[p for p in (ids or []) if ID_RE.match(str(p))]
     if not ids: return
     refs=referenced_photo_ids(con)
     for pid in ids:
         if pid in refs: continue
-        try: os.remove(os.path.join(PHOTO_DIR, pid+".jpg"))
-        except FileNotFoundError: pass
+        con.dateien_nach_commit.append(os.path.join(PHOTO_DIR, pid+".jpg"))
 
 def delete_colony_cascade(con, cid):
     ids=[]
@@ -680,6 +702,14 @@ class Handler(BaseHTTPRequestHandler):
     def _rjson(self):
         n=int(self.headers.get("Content-Length",0))
         return json.loads(self.rfile.read(n).decode()) if n>0 else {}
+
+    def _upload_zu_gross(self, grenze):
+        """True (und 413 gesendet), wenn der Upload groesser als `grenze` ist.
+        Der Rest der Anfrage wird nicht gelesen - deshalb Verbindung schliessen."""
+        if int(self.headers.get("Content-Length",0) or 0) <= grenze: return False
+        self.close_connection=True
+        self._err(413, f"Datei zu groß (höchstens {grenze // (1024*1024)} MB)")
+        return True
 
     def _rraw(self):
         n=int(self.headers.get("Content-Length",0))
@@ -831,8 +861,10 @@ class Handler(BaseHTTPRequestHandler):
     def serve_static(self, path):
         if path in ("/",""): path="/index.html"
         rel=path.lstrip("/")
-        full=os.path.normpath(os.path.join(STATIC_DIR,rel))
-        if not full.startswith(STATIC_DIR) or not os.path.isfile(full):
+        basis=os.path.abspath(STATIC_DIR)
+        full=os.path.abspath(os.path.join(basis,rel))
+        # commonpath statt startswith: "/opt/imkerei/static2" beginnt auch mit ".../static"
+        if os.path.commonpath([full,basis])!=basis or not os.path.isfile(full):
             return self._err(404,"Not found")
         ct=mimetypes.guess_type(full)[0] or "application/octet-stream"
         with open(full,"rb") as f: self._bytes(f.read(),ct)
@@ -1006,11 +1038,13 @@ class Handler(BaseHTTPRequestHandler):
         if m and m.group(1) in SCHEMA:
             return self._post_zeile(m.group(1), self._rjson())
         if path=="/api/logo":
+            if self._upload_zu_gross(UPLOAD_MAX_BYTES): return
             data=self._rraw()
             if not data: return self._err(400,"Leerer Upload")
             with open(LOGO_PATH,"wb") as f: f.write(data)
             return self._json({"ok":True})
         if path=="/api/photos":
+            if self._upload_zu_gross(UPLOAD_MAX_BYTES): return
             data=self._rraw()
             if not data: return self._err(400,"Leerer Upload")
             pid=new_id()

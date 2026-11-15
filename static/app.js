@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.59';
+const APP_VERSION = 'v2.9.60';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -841,7 +841,7 @@ const REQUEUE_REASONS = ['Sanftmut','Schwarmlust','Wildbau','Volksstärke','Lege
 
 function requeueBadge(colony) {
   if (!colony.requeueFlag) return '';
-  const reasons = colony.requeueReasons ? JSON.parse(colony.requeueReasons) : [];
+  const reasons = requeueParseReasons(colony);
   const tip = reasons.length ? reasons.join(', ') : '';
   return `<span class="requeue-badge" title="${esc(tip)}">⚠ Umweiselung${tip ? ': '+esc(tip) : ''}</span>`;
 }
@@ -918,7 +918,9 @@ function requeueItemVisible(item, met) {
   const removed = item?.removedCriteria || [];
   return met.some(k=>!removed.includes(k));
 }
-function requeueParseReasons(c) { try { return JSON.parse(c.requeueReasons||'[]')||[]; } catch(_) { return []; } }
+/* Robust gegen kaputte/fremde Werte: Ein einzelnes Volk mit ungültigem requeueReasons
+   darf nicht die ganze Völkerliste beim Rendern abbrechen lassen. */
+function requeueParseReasons(c) { try { const r = JSON.parse((c && c.requeueReasons) || '[]'); return Array.isArray(r) ? r : []; } catch(_) { return []; } }
 
 /* Gleicht Liste (aktuelles Jahr) und requeueFlag an den Völkern ab. Läuft nach dem
    Speichern/Löschen von Einträgen und beim Öffnen der Liste - nur wenn der Button aktiv ist. */
@@ -2291,7 +2293,7 @@ async function renderColonies() {
         <li class="card" data-id="${c.id}" data-open="${c.id}">
           <div class="status-col">
             ${(c.status==='dead')?'<span class="status-skull">💀</span>':(c.status==='dissolved')?'<span class="status-skull" title="Aufgelöst">✕</span>':(c.status==='varroa')?'<img class="status-varroa-icon" src="./icons/varroa.png" title="Varroa?" alt="Varroa?">':'<div class="dot dot-'+esc(c.status||'ok')+'" title="Zustand"></div>'}
-${c.requeueFlag?(()=>{const _r=c.requeueReasons?JSON.parse(c.requeueReasons||'[]'):[];const _cls=_r.includes('Sanftmut')?'requeue-dot-red':'';return `<span class="requeue-dot ${_cls}" title="Umweiselung">⚠</span>`;})():''}
+${c.requeueFlag?(()=>{const _r=requeueParseReasons(c);const _cls=_r.includes('Sanftmut')?'requeue-dot-red':'';return `<span class="requeue-dot ${_cls}" title="Umweiselung">⚠</span>`;})():''}
             ${c.breedFlag?'<span class="breed-dot" title="Nachzucht">⭐</span>':''}
           </div>
           <div class="card-main">
@@ -2523,7 +2525,7 @@ async function colonyForm(apiaryId, existing) {
 }
 
 function requeueForm(colony, apiaryId) {
-  const current = colony.requeueReasons ? JSON.parse(colony.requeueReasons) : [];
+  const current = requeueParseReasons(colony);
   openModal('Umweiselung markieren',`
     <p class="muted">Gründe (mehrere möglich):</p>
     <div class="check-list">
@@ -3131,7 +3133,7 @@ async function renderAll() {
     <ul class="all-list${cols.showStatus&&cols.showFlags&&all.some(c=>c.requeueFlag||c.breedFlag)?' has-flags':''}">
       ${all.map(c => {
         const status = STATUS_ICON[c.status||'ok'] || '🟢';
-        const _reqReasons = c.requeueFlag ? (() => { try{ return JSON.parse(c.requeueReasons||'[]'); }catch(_){return [];} })() : [];
+        const _reqReasons = c.requeueFlag ? requeueParseReasons(c) : [];
         const _reqCls = _reqReasons.includes('Sanftmut') ? 'requeue-dot-sm requeue-red' : 'requeue-dot-sm requeue-orange';
         const requeue = c.requeueFlag ? `<span class="${_reqCls}" title="Umweiselung">⚠</span>` : '';
         const breed   = c.breedFlag   ? '<span class="breed-dot-sm"   title="Nachzucht">⭐</span>' : '';

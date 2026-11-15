@@ -1,6 +1,7 @@
 """API-Verhalten: Fehlerbehandlung, Teil-Update am Volk, Erinnerungen,
 Grund-CRUD je Tabelle."""
 import json
+import os
 
 
 # ---------- Fehlerbehandlung (v2.9.58) ----------
@@ -206,3 +207,61 @@ def test_schema_ist_einzige_quelle(app):
         db_spalten = [r[1] for r in con.execute(f"PRAGMA table_info({t})")]
         assert db_spalten == [sp.name for sp in app.server.SCHEMA[t]], t
     con.close()
+
+
+# ---------- Kleinkram v2.9.60 ----------
+
+def test_foto_upload_zu_gross_413(app):
+    import urllib.request, urllib.error, http.client
+    grenze = app.server.UPLOAD_MAX_BYTES
+    # Nur den Kopf mit zu grossem Content-Length schicken - der Server darf
+    # gar nicht erst lesen und antwortet sofort mit 413.
+    verbindung = http.client.HTTPConnection("127.0.0.1", app.httpd.server_port, timeout=10)
+    verbindung.putrequest("POST", "/api/photos")
+    verbindung.putheader("Content-Type", "image/jpeg")
+    verbindung.putheader("Content-Length", str(grenze + 1))
+    verbindung.endheaders()
+    antwort = verbindung.getresponse()
+    assert antwort.status == 413
+    verbindung.close()
+    assert os.listdir(app.server.PHOTO_DIR) == []
+
+
+def test_foto_bleibt_wenn_speichern_scheitert(app):
+    """Foto aus Eintrag entfernt, aber commit kommt nie (Rollback) -> Datei bleibt."""
+    _, cid = _volk(app)
+    pid = app.json("POST", "/api/photos", raw=b"\xff\xd8x", content_type="image/jpeg")["id"]
+    pfad = os.path.join(app.server.PHOTO_DIR, pid + ".jpg")
+    eid = app.post("/api/entries", {"colonyId": cid, "photos": [{"id": pid, "caption": ""}]})["id"]
+    con = app.db()
+    con.execute("UPDATE entries SET photos='[]' WHERE id=?", (eid,))
+    app.server.delete_photos(con, [pid])
+    assert os.path.exists(pfad)          # erst vorgemerkt
+    con.rollback(); con.close()
+    assert os.path.exists(pfad)          # Rollback: Datei bleibt
+    con = app.db()
+    con.execute("UPDATE entries SET photos='[]' WHERE id=?", (eid,))
+    app.server.delete_photos(con, [pid])
+    con.commit(); con.close()
+    assert not os.path.exists(pfad)      # commit: jetzt weg
+
+
+def test_eintrag_loeschen_entfernt_foto(app):
+    _, cid = _volk(app)
+    pid = app.json("POST", "/api/photos", raw=b"\xff\xd8x", content_type="image/jpeg")["id"]
+    eid = app.post("/api/entries", {"colonyId": cid, "photos": [{"id": pid, "caption": ""}]})["id"]
+    app.delete(f"/api/entries/{eid}")
+    assert not os.path.exists(os.path.join(app.server.PHOTO_DIR, pid + ".jpg"))
+
+
+def test_statische_dateien_nur_aus_static(app, tmp_path, monkeypatch):
+    basis = tmp_path / "static"
+    (basis / "sub").mkdir(parents=True)
+    (basis / "sub" / "a.txt").write_text("ok")
+    nachbar = tmp_path / "static2"
+    nachbar.mkdir()
+    (nachbar / "geheim.txt").write_text("geheim")
+    monkeypatch.setattr(app.server, "STATIC_DIR", str(basis))
+    assert app.request("GET", "/sub/a.txt")[0] == 200
+    for pfad in ("/../static2/geheim.txt", "/%2e%2e/static2/geheim.txt", "/..%2fstatic2/geheim.txt"):
+        assert app.request("GET", pfad)[0] == 404, pfad
