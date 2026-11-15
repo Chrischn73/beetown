@@ -265,3 +265,47 @@ def test_statische_dateien_nur_aus_static(app, tmp_path, monkeypatch):
     assert app.request("GET", "/sub/a.txt")[0] == 200
     for pfad in ("/../static2/geheim.txt", "/%2e%2e/static2/geheim.txt", "/..%2fstatic2/geheim.txt"):
         assert app.request("GET", pfad)[0] == 404, pfad
+
+
+# ---------- Verwaiste Fotos aufraeumen (v2.9.61) ----------
+
+def _foto(app, alter_s=0, name=None):
+    pid = app.json("POST", "/api/photos", raw=b"\xff\xd8x", content_type="image/jpeg")["id"]
+    pfad = os.path.join(app.server.PHOTO_DIR, (name or pid + ".jpg"))
+    if name: os.replace(os.path.join(app.server.PHOTO_DIR, pid + ".jpg"), pfad)
+    if alter_s:
+        t = os.path.getmtime(pfad) - alter_s
+        os.utime(pfad, (t, t))
+    return pid, pfad
+
+
+def test_fotos_aufraeumen_loescht_nur_alte_verwaiste(app):
+    _, cid = _volk(app)
+    tag = 24 * 3600
+    alt_verwaist = _foto(app, 2 * tag)[1]
+    neu_verwaist = _foto(app, 60)[1]
+    alt_genutzt_id, alt_genutzt = _foto(app, 2 * tag)
+    app.post("/api/entries", {"colonyId": cid, "photos": [{"id": alt_genutzt_id, "caption": ""}]})
+    rest_tmp = _foto(app, 2 * tag, name="abcdef.jpg.restore-tmp")[1]
+    fremd = os.path.join(app.server.PHOTO_DIR, "liesmich.txt")
+    open(fremd, "w").close(); os.utime(fremd, (0, 0))
+
+    erg = app.server.fotos_aufraeumen()
+
+    assert erg["geloescht"] == 2 and erg["fehlend"] == []
+    assert not os.path.exists(alt_verwaist) and not os.path.exists(rest_tmp)
+    assert os.path.exists(neu_verwaist) and os.path.exists(alt_genutzt) and os.path.exists(fremd)
+
+
+def test_fotos_aufraeumen_meldet_fehlende_datei(app):
+    _, cid = _volk(app)
+    app.post("/api/entries", {"colonyId": cid, "photos": [{"id": "gibtsnicht", "caption": ""}]})
+    assert app.server.fotos_aufraeumen()["fehlend"] == ["gibtsnicht"]
+
+
+def test_fotos_aufraeumen_ruehrcharge_foto_bleibt(app):
+    bid = app.post("/api/honey_stir_batches", {"honeyType": "Raps"})["id"]
+    pid, pfad = _foto(app, 2 * 24 * 3600)
+    app.post("/api/honey_stir_entries", {"batchId": bid, "photos": [{"id": pid, "caption": ""}]})
+    assert app.server.fotos_aufraeumen()["geloescht"] == 0
+    assert os.path.exists(pfad)

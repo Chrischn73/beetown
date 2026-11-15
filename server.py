@@ -4,7 +4,7 @@ BeeTown – kleiner Server (nur Python-Standardbibliothek).
 """
 
 import os, re, json, sqlite3, secrets, mimetypes, hashlib, hmac, html, time, http.cookies
-import shutil, sys, tempfile, traceback, zipfile
+import shutil, sys, tempfile, threading, traceback, zipfile
 from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -649,6 +649,63 @@ def delete_photos(con, ids):
     for pid in ids:
         if pid in refs: continue
         con.dateien_nach_commit.append(os.path.join(PHOTO_DIR, pid+".jpg"))
+
+FOTO_AUFRAEUMEN_ALTER_S = 24 * 3600     # juengere Dateien nie anfassen
+FOTO_AUFRAEUMEN_INTERVALL_S = 24 * 3600
+FOTO_DATEI_RE = re.compile(r"^([A-Za-z0-9_-]{1,40})\.jpg(\.restore-tmp)?$")
+
+
+def fotos_aufraeumen(min_alter_s=FOTO_AUFRAEUMEN_ALTER_S):
+    """Loescht verwaiste Fotodateien (seit v2.9.61). Ein Foto wird schon beim
+    Aufnehmen hochgeladen - bricht man das Formular ab oder stirbt der Tab,
+    zeigt kein Eintrag darauf. Geloescht wird nur, was laenger als
+    `min_alter_s` unberuehrt ist: ein gerade offenes Formular (Foto hochgeladen,
+    Eintrag noch nicht gespeichert) bleibt so sicher erhalten. Dazu Reste
+    eines abgebrochenen ZIP-Restores (*.jpg.restore-tmp).
+    Liefert {"geloescht", "bytes", "fehlend"} - "fehlend" = Fotos, auf die
+    ein Eintrag zeigt, deren Datei es aber nicht gibt (nur gemeldet)."""
+    con = db()
+    try:
+        refs = referenced_photo_ids(con)
+    finally:
+        con.close()
+    grenze = time.time() - min_alter_s
+    geloescht = groesse = 0
+    vorhanden = set()
+    try:
+        namen = os.listdir(PHOTO_DIR)
+    except OSError:
+        namen = []
+    for name in namen:
+        m = FOTO_DATEI_RE.match(name)
+        if not m: continue
+        pfad = os.path.join(PHOTO_DIR, name)
+        if not m.group(2):
+            vorhanden.add(m.group(1))
+            if m.group(1) in refs: continue
+        try:
+            st = os.stat(pfad)
+            if st.st_mtime > grenze: continue
+            os.remove(pfad)
+        except OSError:
+            continue
+        geloescht += 1; groesse += st.st_size
+    return {"geloescht": geloescht, "bytes": groesse, "fehlend": sorted(refs - vorhanden)}
+
+
+def _fotos_aufraeumen_schleife():
+    while True:
+        try:
+            erg = fotos_aufraeumen()
+            if erg["geloescht"] or erg["fehlend"]:
+                print(f"Foto-Aufraeumen: {erg['geloescht']} verwaiste Datei(en) geloescht "
+                      f"({erg['bytes'] // 1024} KB), {len(erg['fehlend'])} Foto(s) fehlen"
+                      + (f": {', '.join(erg['fehlend'][:10])}" if erg["fehlend"] else ""),
+                      file=sys.stderr, flush=True)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+        time.sleep(FOTO_AUFRAEUMEN_INTERVALL_S)
+
 
 def delete_colony_cascade(con, cid):
     ids=[]
@@ -1364,6 +1421,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     init_db()
+    threading.Thread(target=_fotos_aufraeumen_schleife, daemon=True, name="fotos-aufraeumen").start()
     httpd = ThreadingHTTPServer((HOST,PORT),Handler)
     print(f"BeeTown-Server läuft auf http://{HOST}:{PORT}  (Daten: {DATA_DIR})")
     try: httpd.serve_forever()
