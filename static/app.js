@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-const APP_VERSION = 'v2.9.61';
+const APP_VERSION = 'v2.9.62';
 const BACKUP_GRACE_DAYS_FRONTEND = 3; // muss zu BACKUP_GRACE_DAYS in server.py passen
 
 /* Baut eine URL zum Setup-Portal (Backup-/Update-Seite). Laeuft das Portal
@@ -83,7 +83,7 @@ const HOME_BTN_CONFIG = [
   {key:'all',         label:'Völker'},
   {key:'honey',       label:'Ernte'},
   {key:'honeystir',   label:'Rühren'},
-  {key:'verkauf',     label:'Verkauf'},
+  {key:'verkauf',     label:'Finanzen'},
   {key:'fuetterung',  label:'Fütterung'},
   {key:'lastentries', label:'Verlauf'},
   {key:'varroacount', label:'Varroazählung'},
@@ -1701,7 +1701,7 @@ async function renderApiaries() {
       <button class="btn btn-ghost home-btn ${homeBtnHidden('all')}" id="open-all" style="${homeBtnSizeVars('all')}${homeBtnColorStyle('all')}"><span class="home-btn-icon">🐝</span>${homeBtnLabelHTML('all','Völker')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('honey')}" id="open-honey" style="${homeBtnSizeVars('honey')}${homeBtnColorStyle('honey')}"><span class="home-btn-icon">🍯</span>${homeBtnLabelHTML('honey','Ernte')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('honeystir')}" id="open-honeystir" style="${homeBtnSizeVars('honeystir')}${homeBtnColorStyle('honeystir')}"><span class="home-btn-icon"><img src="./icons/ruehren.svg" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('honeystir','Rühren')}</button>
-      <button class="btn btn-ghost home-btn ${homeBtnHidden('verkauf')}" id="open-verkauf" style="${homeBtnSizeVars('verkauf')}${homeBtnColorStyle('verkauf')}"><span class="home-btn-icon">💰</span>${homeBtnLabelHTML('verkauf','Verkauf')}</button>
+      <button class="btn btn-ghost home-btn ${homeBtnHidden('verkauf')}" id="open-verkauf" style="${homeBtnSizeVars('verkauf')}${homeBtnColorStyle('verkauf')}"><span class="home-btn-icon">💰</span>${homeBtnLabelHTML('verkauf','Finanzen')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('fuetterung')}" id="open-fuetterung" style="${homeBtnSizeVars('fuetterung')}${homeBtnColorStyle('fuetterung')}"><span class="home-btn-icon">🍬</span>${homeBtnLabelHTML('fuetterung','Fütterung')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('lastentries')}" id="open-lastentries" title="Verlauf" style="${homeBtnSizeVars('lastentries')}${homeBtnColorStyle('lastentries')}"><span class="home-btn-icon">🕒</span>${homeBtnLabelHTML('lastentries','Verlauf')}</button>
       <button class="btn btn-ghost home-btn ${homeBtnHidden('varroacount')}" id="open-varroacount" title="Varroa Zählung" style="${homeBtnSizeVars('varroacount')}${homeBtnColorStyle('varroacount')}"><span class="home-btn-icon"><img src="./icons/varroa.png" alt="" style="width:22px;height:22px;object-fit:contain"></span>${homeBtnLabelHTML('varroacount','Varroazählung')}</button>
@@ -4935,7 +4935,7 @@ function inWJ(dateStr, wj){
 }
 
 async function renderVerkauf(){
-  setHeader('Verkauf', true);
+  setHeader('Finanzen', true);
   let [products, sales, costs, settings] = await Promise.all([
     apiGet('./api/honey_products'),
     apiGet('./api/honey_sales'),
@@ -5898,7 +5898,7 @@ async function renderSettings() {
       <div class="section-h">Verlauf</div>
       <label class="lbl">Anzahl Einträge im Verlauf (über alle Völker)</label>
       <input class="inp" id="last-entries-limit" type="number" min="1" max="500" value="90">
-      <div class="section-h">Verkauf – Erfassen</div>
+      <div class="section-h">Finanzen – Erfassen</div>
       <label class="lbl">Produkt-Kacheln pro Zeile</label>
       <select class="inp" id="vk-tiles-per-row">
         <option value="auto">Automatisch (je nach Bildschirmbreite)</option>
