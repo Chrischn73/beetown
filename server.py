@@ -112,6 +112,54 @@ def zugang_cookie_gueltig(cookie_header):
     return hmac.compare_digest(morsel.value, sollwert)
 
 
+# Login-Bremse (seit v2.9.61): nach LOGIN_MAX_FEHLVERSUCHE falschen Passwoertern
+# in Folge ist /login fuer diese IP LOGIN_SPERRE_SEKUNDEN gesperrt. Vorher gab es
+# nur 0,3 s Pause, die bei parallelen Anfragen (ThreadingHTTPServer) kaum bremste.
+# Nur im Speicher: ein Dienst-Neustart hebt alle Sperren auf (Notausgang, falls
+# man sich selbst ausgesperrt hat). Fehlversuche verfallen nach Ablauf der
+# Sperrdauer ohne neuen Fehlversuch.
+LOGIN_MAX_FEHLVERSUCHE = 5
+LOGIN_SPERRE_SEKUNDEN = 15 * 60
+_login_lock = threading.Lock()
+_login_fehler = {}   # ip -> {"anzahl": int, "zuletzt": float, "gesperrt_bis": float}
+
+
+def login_gesperrt_noch(ip):
+    """Restliche Sperrzeit in Sekunden (0 = nicht gesperrt)."""
+    with _login_lock:
+        e = _login_fehler.get(ip)
+        rest = (e["gesperrt_bis"] - time.time()) if e else 0
+        return int(rest) + 1 if rest > 0 else 0
+
+
+def login_fehlversuch(ip):
+    """Zaehlt einen Fehlversuch. Liefert die Sperrzeit in Sekunden, falls die IP
+    damit gesperrt wird, sonst 0."""
+    jetzt = time.time()
+    with _login_lock:
+        for k in [k for k, e in _login_fehler.items()
+                  if max(e["zuletzt"], e["gesperrt_bis"]) < jetzt - LOGIN_SPERRE_SEKUNDEN]:
+            del _login_fehler[k]
+        e = _login_fehler.setdefault(ip, {"anzahl": 0, "zuletzt": 0.0, "gesperrt_bis": 0.0})
+        e["anzahl"] += 1; e["zuletzt"] = jetzt
+        if e["anzahl"] >= LOGIN_MAX_FEHLVERSUCHE:
+            e["anzahl"] = 0; e["gesperrt_bis"] = jetzt + LOGIN_SPERRE_SEKUNDEN
+            print(f"Login-Bremse: {ip} nach {LOGIN_MAX_FEHLVERSUCHE} Fehlversuchen "
+                  f"{LOGIN_SPERRE_SEKUNDEN // 60} Min. gesperrt", file=sys.stderr, flush=True)
+            return LOGIN_SPERRE_SEKUNDEN
+        return 0
+
+
+def login_erfolg(ip):
+    with _login_lock:
+        _login_fehler.pop(ip, None)
+
+
+def _sperr_text(sekunden):
+    return (f"Zu viele Fehlversuche – Anmeldung von diesem Gerät für {max(1, -(-sekunden // 60))} "
+            "Min. gesperrt. Ein Neustart des Dienstes hebt die Sperre sofort auf.")
+
+
 # Automatische bzw. ohne Login ausloesbare Neustarts (Update ueber das
 # Setup-Portal, naechtlicher Systemcheck, "Neu starten" im Portal)
 # hinterlegen hier vorher eine Markierung ("imkerei.service", "alle" fuer
@@ -830,9 +878,18 @@ class Handler(BaseHTTPRequestHandler):
     def _post_login(self):
         if not zugang_eingerichtet(): return self._redirect("/einrichten")
         form=self._rform()
+        ip=self.client_address[0]
+        rest=login_gesperrt_noch(ip)
+        if rest:
+            # Waehrend der Sperre wird das Passwort gar nicht erst geprueft -
+            # sonst liesse sich trotz Sperre weiter durchprobieren.
+            return self._html(_seite_login(_sperr_text(rest)), 429)
         if not pruefe_zugang_passwort(form.get("passwort","")):
-            time.sleep(0.3)  # winziger Bremsklotz gegen automatisiertes Durchprobieren
-            return self._html(_seite_login("Falsches Passwort."))
+            time.sleep(0.3)
+            rest=login_fehlversuch(ip)
+            return self._html(_seite_login(_sperr_text(rest) if rest else "Falsches Passwort."),
+                              429 if rest else 200)
+        login_erfolg(ip)
         self._setze_zugang_cookie_und_redirect("/")
 
     def _post_zuruecksetzen(self):
@@ -1400,7 +1457,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_restore(self, con, body):
         if body.get("app")!="imkerei": return self._err(400,"Keine gültige Backup-Datei")
+        # Der Schalter fuer den Passwortschutz gehoert zu DIESER Installation,
+        # nicht zu den Daten: ein Backup, in dem er aus war, darf den Schutz
+        # beim Einspielen nicht still abschalten (seit v2.9.61).
+        zugang_aus=con.execute("SELECT value FROM settings WHERE key='zugangDeaktiviert'").fetchone()
         for t in list(SCHEMA)+["settings"]: con.execute(f"DELETE FROM {t}")
+        if zugang_aus:
+            con.execute("INSERT INTO settings(key,value) VALUES('zugangDeaktiviert',?)",(zugang_aus["value"],))
         for tabelle in SCHEMA:
             for zeile in body.get(tabelle,[]):
                 werte=werte_aus_body(tabelle, zeile, "restore")
@@ -1412,6 +1475,7 @@ class Handler(BaseHTTPRequestHandler):
                     werte["updatedAt"]=zeile.get("updatedAt") or zeile.get("createdAt","")
                 zeile_einfuegen(con, tabelle, werte)
         for s in body.get("settings",[]):
+            if s.get("key")=="zugangDeaktiviert": continue
             con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
                 (s.get("key",""),s.get("value","")))
         con.commit(); self._json({"ok":True})

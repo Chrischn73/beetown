@@ -309,3 +309,55 @@ def test_fotos_aufraeumen_ruehrcharge_foto_bleibt(app):
     app.post("/api/honey_stir_entries", {"batchId": bid, "photos": [{"id": pid, "caption": ""}]})
     assert app.server.fotos_aufraeumen()["geloescht"] == 0
     assert os.path.exists(pfad)
+
+
+# ---------- Login-Bremse (v2.9.61) ----------
+
+def _login(app, passwort):
+    status, daten, _ = app.request("POST", "/login", raw=f"passwort={passwort}".encode(),
+                                   content_type="application/x-www-form-urlencoded")
+    return status, daten.decode()
+
+
+def test_login_sperre_nach_5_fehlversuchen(app):
+    app.server.setze_zugang_passwort("richtig")
+    for _ in range(4):
+        status, text = _login(app, "falsch")
+        assert status == 200 and "Falsches Passwort" in text
+    status, text = _login(app, "falsch")
+    assert status == 429 and "Zu viele Fehlversuche" in text
+    # Waehrend der Sperre hilft auch das richtige Passwort nicht
+    status, text = _login(app, "richtig")
+    assert status == 429 and "Zu viele Fehlversuche" in text
+
+
+def test_login_sperre_laeuft_ab(app):
+    app.server.setze_zugang_passwort("richtig")
+    for _ in range(5): _login(app, "falsch")
+    for e in app.server._login_fehler.values(): e["gesperrt_bis"] = 0
+    status, text = _login(app, "richtig")
+    assert status == 200 and "Falsches" not in text and "Zu viele" not in text
+
+
+def test_login_erfolg_setzt_zaehler_zurueck(app):
+    app.server.setze_zugang_passwort("richtig")
+    for _ in range(4): _login(app, "falsch")
+    _login(app, "richtig")
+    for _ in range(4):
+        status, _ = _login(app, "falsch")
+        assert status == 200
+
+
+# ---------- Restore laesst den Passwortschutz-Schalter in Ruhe (v2.9.61) ----------
+
+def test_restore_uebernimmt_zugang_aus_nicht(app):
+    app.post("/api/settings", {"zugangDeaktiviert": "false"})
+    app.post("/api/restore", {"app": "imkerei", "settings": [
+        {"key": "zugangDeaktiviert", "value": "true"}, {"key": "x", "value": "1"}]})
+    s = app.get("/api/settings")
+    assert s["zugangDeaktiviert"] == "false" and s["x"] == "1"
+
+
+def test_restore_ohne_lokalen_schalter_legt_keinen_an(app):
+    app.post("/api/restore", {"app": "imkerei", "settings": [{"key": "zugangDeaktiviert", "value": "true"}]})
+    assert "zugangDeaktiviert" not in app.get("/api/settings")
